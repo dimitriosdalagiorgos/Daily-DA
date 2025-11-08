@@ -11,6 +11,7 @@ library(purrr)
 day_name <- "Monday"
 clubs_file <- "dailyclubs.csv"
 responses_file <- "dailyresponses.csv"
+students_file <- "students.csv"
 set.seed(42)
 
 # --- Create output subfolder ---
@@ -25,9 +26,11 @@ cat(sprintf("=== SINGLE DAY CLUB ASSIGNMENT WITH AUDIT LOG: %s ===\n\n", day_nam
 # --- 1. Load Data (same as before) ---
 clubs <- read_csv(clubs_file, show_col_types = FALSE)
 responses <- read_csv(responses_file, show_col_types = FALSE)
+students <- read_csv(students_file, show_col_types = FALSE)
 
 colnames(clubs) <- tolower(trimws(colnames(clubs)))
 colnames(responses) <- trimws(colnames(responses))
+colnames(students) <- trimws(colnames(students))
 
 if (!"club_name" %in% colnames(clubs)) {
   stop("Error: dailyclubs.csv must have 'club_name' column")
@@ -42,19 +45,57 @@ clubs <- clubs %>%
     club_capacity = as.integer(club_capacity)
   )
 
-if (!"Surname" %in% colnames(responses) || !"Name" %in% colnames(responses)) {
-  stop("Error: dailyresponses.csv must have 'Surname' and 'Name' columns")
+registry_col_students <- colnames(students)[tolower(colnames(students)) == "registrynr"]
+if (length(registry_col_students) != 1) {
+  stop("Error: students.csv must have a 'RegistryNr' column")
+}
+
+students <- students %>%
+  rename(RegistryNr = all_of(registry_col_students)) %>%
+  mutate(
+    RegistryNr = as.character(RegistryNr),
+    Surname = trimws(as.character(Surname)),
+    Name = trimws(as.character(Name)),
+    student_id = RegistryNr
+  ) %>%
+  select(student_id, RegistryNr, Surname, Name)
+
+if (anyDuplicated(students$student_id) > 0) {
+  duplicated_ids <- students$student_id[duplicated(students$student_id)]
+  stop(sprintf("Error: Duplicate RegistryNr values in students.csv: %s",
+               paste(unique(duplicated_ids), collapse = ", ")))
+}
+
+student_lookup <- students %>% select(student_id, Surname, Name)
+
+registry_col_responses <- colnames(responses)[tolower(colnames(responses)) == "registrynr"]
+if (length(registry_col_responses) != 1) {
+  stop("Error: dailyresponses.csv must have a 'RegistryNr' column")
 }
 
 responses <- responses %>%
-  mutate(student_id = paste(Surname, Name, sep = "_")) %>%
-  select(student_id, Surname, Name, everything())
+  rename(RegistryNr = all_of(registry_col_responses)) %>%
+  mutate(
+    RegistryNr = as.character(RegistryNr),
+    student_id = RegistryNr
+  ) %>%
+  left_join(student_lookup, by = "student_id")
+
+missing_students <- responses %>% filter(is.na(Surname) | is.na(Name))
+if (nrow(missing_students) > 0) {
+  stop(sprintf("Error: students.csv is missing %d RegistryNr entries found in dailyresponses.csv: %s",
+               n_distinct(missing_students$student_id),
+               paste(unique(missing_students$student_id), collapse = ", ")))
+}
+
+responses <- responses %>%
+  select(student_id, RegistryNr, Surname, Name, everything())
 
 student_col <- "student_id"
 
-club_names_in_responses <- colnames(responses)[-(1:3)]
-responses_data <- responses %>% select(student_id, Surname, Name)
-responses_prefs <- responses %>% select(-Surname, -Name)
+club_names_in_responses <- colnames(responses)[-(1:4)]
+responses_data <- responses %>% select(student_id, RegistryNr, Surname, Name)
+responses_prefs <- responses %>% select(-RegistryNr, -Surname, -Name)
 colnames(responses_prefs) <- c("student_id", tolower(trimws(club_names_in_responses)))
 responses <- responses_prefs
 
@@ -260,12 +301,12 @@ if (length(unassigned_final) > 0) {
   cat(sprintf("Students UNASSIGNED: %d\n", length(unassigned_final)))
   
   # Analyze why they're unassigned
-  unassigned_analysis <- tibble(student_id = unassigned_final) %>%
-    mutate(
-      Surname = sub("_.*", "", student_id),
-      Name = sub(".*?_", "", student_id)
-    ) %>%
-    left_join(
+unassigned_analysis <- tibble(student_id = unassigned_final) %>%
+  left_join(student_lookup, by = "student_id") %>%
+  mutate(
+    RegistryNr = student_id
+  ) %>%
+  left_join(
       student_preferences %>%
         group_by(across(all_of(student_col))) %>%
         summarise(
@@ -286,39 +327,56 @@ if (length(unassigned_final) > 0) {
   
   cat("  Details:\n")
   for (i in 1:nrow(unassigned_analysis)) {
-    cat(sprintf("    %s %s - %s\n", 
-                unassigned_analysis$Surname[i], 
-                unassigned_analysis$Name[i],
+    surname_display <- unassigned_analysis$Surname[i]
+    name_display <- unassigned_analysis$Name[i]
+    if (is.na(surname_display) || surname_display == "") {
+      surname_display <- unassigned_analysis$student_id[i]
+    }
+    if (is.na(name_display)) {
+      name_display <- ""
+    }
+    cat(sprintf("    %s %s - %s\n",
+                surname_display,
+                name_display,
                 unassigned_analysis$reason[i]))
   }
   cat("\n")
-  
+
   # Save unassigned with reasons
   unassigned_file <- file.path(output_dir, sprintf("%s_unassigned.csv", tolower(day_name)))
-  write_csv(unassigned_analysis %>% select(Surname, Name, reason), unassigned_file)
+  write_csv(unassigned_analysis %>%
+              transmute(RegistryNr = student_id,
+                        Surname = coalesce(Surname, ""),
+                        Name = coalesce(Name, ""),
+                        reason),
+            unassigned_file)
   cat(sprintf("✓ Saved unassigned students with reasons: %s\n\n", unassigned_file))
 }
 
 # --- 6. Finalize and Add Student Info ---
 final_assignments <- tentative_assignments %>%
   left_join(clubs %>% select(club_id, club_name, club_capacity), by = "club_id") %>%
-  mutate(
-    Surname = sub("_.*", "", get(student_col)),
-    Name = sub(".*?_", "", get(student_col))
+  left_join(student_lookup, by = setNames("student_id", student_col)) %>%
+  mutate(RegistryNr = !!sym(student_col)) %>%
+  select(
+    student_id = !!sym(student_col),
+    RegistryNr,
+    Surname, Name,
+    club_id, club_name,
+    preference_rank, club_capacity
   ) %>%
-  select(Surname, Name, club_name, preference_rank, club_capacity) %>%
-  arrange(Surname, Name)
+  arrange(Surname, Name, RegistryNr)
 
 # Add student names to audit log
 audit_log <- audit_log %>%
+  left_join(student_lookup, by = "student_id") %>%
   mutate(
-    Surname = if_else(!is.na(student_id), sub("_.*", "", student_id), NA_character_),
-    Name = if_else(!is.na(student_id), sub(".*?_", "", student_id), NA_character_),
-    club_name = if_else(!is.na(club_id), 
-                        clubs$club_name[match(club_id, clubs$club_id)], 
+    RegistryNr = student_id,
+    club_name = if_else(!is.na(club_id),
+                        clubs$club_name[match(club_id, clubs$club_id)],
                         NA_character_)
   ) %>%
-  select(round, event, Surname, Name, club_name, preference_rank, detail)
+  select(round, event, student_id, RegistryNr, Surname, Name, club_name, preference_rank, detail)
 
 # --- [NEW] Attach ORIGINAL preference rank to final outputs -------------------
 
@@ -343,25 +401,43 @@ orig_file <- find_original_file()
 
 # Διαβάζουμε το αρχικό (πλήρες) dailyresponses
 orig <- read_csv(orig_file, show_col_types = FALSE)
+colnames(orig) <- trimws(colnames(orig))
 
-# Έλεγχοι βασικής δομής
-if (!all(c("Surname","Name") %in% names(orig))) {
-  stop("Το αρχικό αρχείο πρέπει να έχει στήλες Surname, Name")
+registry_col_orig <- colnames(orig)[tolower(colnames(orig)) == "registrynr"]
+if (length(registry_col_orig) != 1) {
+  stop("Το αρχικό αρχείο πρέπει να έχει στήλη RegistryNr")
 }
 
-# Φτιάχνουμε student_id ώστε να ταυτίζεται με αυτό του script
 orig <- orig %>%
+  rename(RegistryNr = all_of(registry_col_orig)) %>%
   mutate(
-    Surname = trimws(Surname),
-    Name    = trimws(Name),
-    student_id = paste(Surname, Name, sep = "_")
-  ) %>%
-  select(student_id, Surname, Name, everything())
+    RegistryNr = as.character(RegistryNr),
+    student_id = RegistryNr
+  )
+
+if (!all(c("Surname", "Name") %in% colnames(orig))) {
+  orig <- orig %>%
+    left_join(student_lookup, by = "student_id")
+} else {
+  orig <- orig %>%
+    mutate(
+      Surname = trimws(as.character(Surname)),
+      Name = trimws(as.character(Name))
+    )
+}
+
+missing_in_orig <- orig %>% filter(is.na(Surname) | is.na(Name))
+if (nrow(missing_in_orig) > 0) {
+  warning(sprintf("Προειδοποίηση: %d μαθητές στο αρχικό αρχείο δεν βρέθηκαν στο students.csv", n_distinct(missing_in_orig$student_id)))
+}
+
+orig <- orig %>%
+  select(student_id, RegistryNr, Surname, Name, everything())
 
 # Ονόματα στηλών-ομίλων και κανονικοποίηση όπως στο main script
-club_cols_orig <- colnames(orig)[-(1:3)]
+club_cols_orig <- setdiff(colnames(orig), c("student_id", "RegistryNr", "Surname", "Name"))
 orig_prefs <- orig %>%
-  select(-Surname, -Name)
+  select(student_id, all_of(club_cols_orig))
 
 # ομογενοποίηση ονομάτων ομίλων σε club_id (lower + trim)
 norm_names <- tolower(trimws(club_cols_orig))
@@ -390,18 +466,17 @@ original_rank_map <- orig_prefs %>%
 final_assignments <- tentative_assignments %>%
   # κρατάμε ids από τον αλγόριθμο
   left_join(clubs %>% select(club_id, club_name, club_capacity), by = "club_id") %>%
-  mutate(
-    Surname = sub("_.*", "", !!sym(student_col)),
-    Name    = sub(".*?_", "", !!sym(student_col))
-  ) %>%
+  left_join(student_lookup, by = setNames("student_id", student_col)) %>%
+  mutate(RegistryNr = !!sym(student_col)) %>%
   # κρατάμε ΟΠΩΣΔΗΠΟΤΕ τα ids για το join
   select(
     student_id = !!sym(student_col),
+    RegistryNr,
     Surname, Name,
     club_id, club_name,
     preference_rank, club_capacity
   ) %>%
-  arrange(Surname, Name)
+  arrange(Surname, Name, RegistryNr)
 
 # --- Join με το αρχικό rank
 final_assignments <- final_assignments %>%
@@ -444,7 +519,11 @@ if (exists("student_reports")) {
 
 # --- 7. Save Outputs ---
 output_file <- file.path(output_dir,sprintf("%s_assignments.csv", tolower(day_name)))
-write_csv(final_assignments, output_file)
+final_assignments_output <- final_assignments %>%
+  mutate(RegistryNr = coalesce(RegistryNr, student_id)) %>%
+  select(RegistryNr, Surname, Name, club_id, club_name,
+         preference_rank, any_of(c("original_preference_rank")), club_capacity)
+write_csv(final_assignments_output, output_file)
 cat(sprintf("✓ Saved assignments: %s\n", output_file))
 
 audit_file <- file.path(output_dir, sprintf("%s_audit_log.csv", tolower(day_name)))
@@ -457,35 +536,39 @@ cat("\nGenerating individual student reports...\n")
 student_reports <- tibble()
 
 for (student in unique(responses$student_id)) {
-  surname <- sub("_.*", "", student)
-  name <- sub(".*?_", "", student)
-  
+  student_info <- student_lookup %>% filter(student_id == student)
+  surname <- if (nrow(student_info) > 0 && !is.na(student_info$Surname[1]) && student_info$Surname[1] != "") student_info$Surname[1] else student
+  name <- if (nrow(student_info) > 0 && !is.na(student_info$Name[1])) student_info$Name[1] else ""
+
   # Get student's story from audit log
   student_events <- audit_log %>%
-    filter(Surname == surname & Name == name) %>%
+    filter(student_id == student) %>%
     arrange(round)
-  
+
   # Final assignment
   final_club <- final_assignments %>%
-    filter(Surname == surname & Name == name)
-  
+    filter(student_id == student)
+
   if (nrow(final_club) > 0) {
-    summary <- sprintf("Assigned to %s (preference #%d)", 
-                       final_club$club_name[1], 
+    summary <- sprintf("Assigned to %s (preference #%d)",
+                       final_club$club_name[1],
                        final_club$preference_rank[1])
-    
+
     # Count proposals and rejections
     num_proposals <- sum(student_events$event == "PROPOSAL")
     num_rejections <- sum(student_events$event == "REJECTED")
-    
-    story <- sprintf("Made %d proposals. Rejected %d times. Finally accepted by %s in round %d.", 
-                     num_proposals, 
+
+    accepted_rounds <- student_events$round[student_events$event == "ACCEPTED"]
+    final_round <- if (length(accepted_rounds) > 0) max(accepted_rounds) else NA_integer_
+
+    story <- sprintf("Made %d proposals. Rejected %d times. Finally accepted by %s%s.",
+                     num_proposals,
                      num_rejections,
                      final_club$club_name[1],
-                     max(student_events$round[student_events$event == "ACCEPTED"]))
+                     if (!is.na(final_round)) sprintf(" in round %d", final_round) else "")
   } else {
     summary <- "Not assigned to any club"
-    
+
     num_proposals <- sum(student_events$event == "PROPOSAL")
     if (num_proposals == 0) {
       story <- "Did not submit any preferences"
@@ -493,9 +576,10 @@ for (student in unique(responses$student_id)) {
       story <- sprintf("Made %d proposals but all were rejected", num_proposals)
     }
   }
-  
+
   student_reports <- student_reports %>%
     bind_rows(tibble(
+      RegistryNr = student,
       Surname = surname,
       Name = name,
       outcome = summary,
@@ -503,7 +587,7 @@ for (student in unique(responses$student_id)) {
     ))
 }
 
-student_reports <- student_reports %>% arrange(Surname, Name)
+student_reports <- student_reports %>% arrange(Surname, Name, RegistryNr)
 
 report_file <- file.path(output_dir, sprintf("%s_student_reports.csv", tolower(day_name)))
 write_csv(student_reports, report_file)
@@ -513,27 +597,42 @@ cat(sprintf("✓ Saved student reports: %s\n", report_file))
 cat("\nGenerating detailed parent reports...\n")
 
 for (student in unique(responses$student_id)) {
-  surname <- sub("_.*", "", student)
-  name <- sub(".*?_", "", student)
-  
+  student_info <- student_lookup %>% filter(student_id == student)
+  surname <- if (nrow(student_info) > 0 && !is.na(student_info$Surname[1]) && student_info$Surname[1] != "") student_info$Surname[1] else student
+  name <- if (nrow(student_info) > 0 && !is.na(student_info$Name[1])) student_info$Name[1] else ""
+
   student_log <- audit_log %>%
-    filter(Surname == surname & Name == name) %>%
+    filter(student_id == student) %>%
     select(round, event, club_name, preference_rank, detail)
-  
+
   if (nrow(student_log) > 0) {
-    student_file <- file.path(output_dir, sprintf("%s_report_%s_%s.txt", 
-                            tolower(day_name), 
-                            gsub(" ", "_", surname), 
-                            gsub(" ", "_", name)))
-    
+    file_stub <- if (nrow(student_info) > 0 && !is.na(student_info$Surname[1]) && student_info$Surname[1] != "" &&
+                     !is.na(student_info$Name[1]) && student_info$Name[1] != "") {
+      sprintf("%s_%s_%s", student,
+              gsub(" ", "_", student_info$Surname[1]),
+              gsub(" ", "_", student_info$Name[1]))
+    } else if (nrow(student_info) > 0 && !is.na(student_info$Surname[1]) && student_info$Surname[1] != "") {
+      sprintf("%s_%s", student, gsub(" ", "_", student_info$Surname[1]))
+    } else {
+      student
+    }
+
+    student_file <- file.path(output_dir, sprintf("%s_report_%s.txt",
+                            tolower(day_name),
+                            file_stub))
+
     sink(student_file)
     cat(sprintf("CLUB ASSIGNMENT REPORT: %s\n", day_name))
-    cat(sprintf("Student: %s %s\n\n", surname, name))
+    if (name != "") {
+      cat(sprintf("Student: %s %s (RegistryNr: %s)\n\n", surname, name, student))
+    } else {
+      cat(sprintf("Student RegistryNr: %s\n\n", student))
+    }
     cat("=" %>% rep(60) %>% paste(collapse = ""), "\n\n")
-    
+
     final_club <- final_assignments %>%
-      filter(Surname == surname & Name == name)
-    
+      filter(student_id == student)
+
     if (nrow(final_club) > 0) {
       cat(sprintf("FINAL ASSIGNMENT: %s\n", final_club$club_name[1]))
       cat(sprintf("This was your preference #%d\n\n", final_club$preference_rank[1]))
@@ -563,7 +662,7 @@ for (student in unique(responses$student_id)) {
   }
 }
 
-cat(sprintf("✓ Generated %d individual parent reports\n", 
+cat(sprintf("✓ Generated %d individual parent reports\n",
             length(unique(responses$student_id))))
 
 # --- 10. Generate Per-Club Reports ---
@@ -603,8 +702,10 @@ for (club in clubs$club_id) {
       cat("ENROLLED STUDENTS:\n")
       for (i in 1:nrow(final_enrolled)) {
         student <- final_enrolled[i,]
-        cat(sprintf("  %d. %s %s (ranked this club #%d)\n", 
-                    i, student$Surname, student$Name, student$preference_rank))
+        surname_display <- ifelse(!is.na(student$Surname) && student$Surname != "", student$Surname, student$RegistryNr)
+        name_display <- ifelse(!is.na(student$Name) && student$Name != "", student$Name, "")
+        cat(sprintf("  %d. %s %s (RegistryNr: %s, ranked this club #%d)\n",
+                    i, surname_display, name_display, student$RegistryNr, student$preference_rank))
       }
       cat("\n")
     }
@@ -641,23 +742,51 @@ for (club in clubs$club_id) {
       if (log_entry$event == "CLUB_EVALUATION") {
         cat(sprintf("  %s\n", log_entry$detail))
       } else if (log_entry$event == "PROPOSAL") {
-        cat(sprintf("  → Received proposal from %s %s (their preference #%d)\n",
-                    log_entry$Surname, log_entry$Name, log_entry$preference_rank))
+        student_label <- if (!is.na(log_entry$Surname) && log_entry$Surname != "") {
+          str_trim(paste(log_entry$Surname, coalesce(log_entry$Name, "")))
+        } else if (!is.na(log_entry$RegistryNr)) {
+          log_entry$RegistryNr
+        } else {
+          "Unknown student"
+        }
+        cat(sprintf("  → Received proposal from %s (their preference #%d)\n",
+                    student_label, log_entry$preference_rank))
         proposals_this_round <- proposals_this_round %>%
           bind_rows(log_entry)
       } else if (log_entry$event == "ACCEPTED") {
-        cat(sprintf("  ✓ ACCEPTED: %s %s (preference #%d)\n",
-                    log_entry$Surname, log_entry$Name, log_entry$preference_rank))
+        student_label <- if (!is.na(log_entry$Surname) && log_entry$Surname != "") {
+          str_trim(paste(log_entry$Surname, coalesce(log_entry$Name, "")))
+        } else if (!is.na(log_entry$RegistryNr)) {
+          log_entry$RegistryNr
+        } else {
+          "Unknown student"
+        }
+        cat(sprintf("  ✓ ACCEPTED: %s (preference #%d)\n",
+                    student_label, log_entry$preference_rank))
         proposals_this_round <- proposals_this_round %>%
           bind_rows(log_entry)
       } else if (log_entry$event == "REJECTED") {
-        cat(sprintf("  ✗ REJECTED: %s %s (preference #%d) - at capacity\n",
-                    log_entry$Surname, log_entry$Name, log_entry$preference_rank))
+        student_label <- if (!is.na(log_entry$Surname) && log_entry$Surname != "") {
+          str_trim(paste(log_entry$Surname, coalesce(log_entry$Name, "")))
+        } else if (!is.na(log_entry$RegistryNr)) {
+          log_entry$RegistryNr
+        } else {
+          "Unknown student"
+        }
+        cat(sprintf("  ✗ REJECTED: %s (preference #%d) - at capacity\n",
+                    student_label, log_entry$preference_rank))
         proposals_this_round <- proposals_this_round %>%
           bind_rows(log_entry)
       } else if (log_entry$event == "RETAINED") {
-        cat(sprintf("  ↻ RETAINED: %s %s (from previous round)\n",
-                    log_entry$Surname, log_entry$Name))
+        student_label <- if (!is.na(log_entry$Surname) && log_entry$Surname != "") {
+          str_trim(paste(log_entry$Surname, coalesce(log_entry$Name, "")))
+        } else if (!is.na(log_entry$RegistryNr)) {
+          log_entry$RegistryNr
+        } else {
+          "Unknown student"
+        }
+        cat(sprintf("  ↻ RETAINED: %s (from previous round)\n",
+                    student_label))
         proposals_this_round <- proposals_this_round %>%
           bind_rows(log_entry)
       }
@@ -752,8 +881,8 @@ club_sheets <- list()
 for (club in unique(final_assignments$club_name)) {
   df <- final_assignments %>%
     filter(club_name == club) %>%
-    select(Surname, Name, preference_rank, original_preference_rank) %>%
-    arrange(Surname, Name)
+    select(RegistryNr, Surname, Name, preference_rank, original_preference_rank) %>%
+    arrange(Surname, Name, RegistryNr)
   
   # Clean sheet name: remove illegal Excel chars and shorten if needed
   sheet_name <- gsub("[\\/:*?\\[\\]]", "_", substr(club, 1, 31))
@@ -771,5 +900,6 @@ cat("\nFiles created:\n")
 cat(sprintf("  1. %s - Final assignments\n", output_file))
 cat(sprintf("  2. %s - Complete audit log\n", audit_file))
 cat(sprintf("  3. %s - Student summaries\n", report_file))
-cat(sprintf("  4. Individual student reports: %s_report_[Surname]_[Name].txt\n", tolower(day_name)))
+cat(sprintf("  4. Individual student reports: %s_report_[RegistryNr]_*.txt\n", tolower(day_name)))
 cat(sprintf("  5. Individual club reports: %s_club_report_[ClubName].txt\n", tolower(day_name)))
+
