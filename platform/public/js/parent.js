@@ -51,11 +51,13 @@ async function start() {
 async function loginView(notice) {
   logout.classList.add("hidden");
   const out = el("div");
+  // Hints go under the box, so boxes side by side stay in line.
   const field = (name, label, hint, type = "text", extra = {}) =>
-    el("label", { for: name }, label, hint ? el("span.hint", {}, hint) : null, el("input", { id: name, name, type, required: true, autocomplete: "off", ...extra }));
+    el("label", { for: name }, label, el("input", { id: name, name, type, required: true, autocomplete: "off", ...extra }), hint ? el("span.hint.after", {}, hint) : null);
   const form = el("form.card", { novalidate: true },
-    field("password", "Κωδικός γονέων", "Τον έχει ανακοινώσει το σχολείο.", "password", { autocomplete: "current-password", value: rememberedPassword }),
-    field("am", "Αριθμός μητρώου μαθητή", null, "text", { inputmode: "numeric", pattern: "[0-9]*" }),
+    el("div.login-short", {},
+      field("password", "Κωδικός γονέων", "Τον έχει ανακοινώσει το σχολείο.", "password", { autocomplete: "current-password", value: rememberedPassword, size: 12 }),
+      field("am", "Αριθμός μητρώου μαθητή", null, "text", { inputmode: "numeric", pattern: "[0-9]*", size: 8 })),
     el("div.grid-2", {},
       field("surname", "Επώνυμο μαθητή"),
       field("name", "Όνομα μαθητή", "Αν είναι σύνθετο, αρκεί το ένα από τα δύο."),

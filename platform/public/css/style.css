@@ -251,3 +251,9 @@ footer.site { max-width: 960px; margin: 0 auto; padding: 0 16px 32px; color: var
 nav.tabs.subtabs { margin-top: 12px; }
 nav.tabs.subtabs button { font-size: 0.95rem; }
 ul.help li { margin: 6px 0; }
+
+/* Parent login: short boxes for the password and the ΑΜ, side by side */
+label .hint.after { margin-top: 4px; }
+.login-short { display: flex; flex-wrap: wrap; gap: 0 24px; align-items: flex-start; }
+.login-short #password { width: 14rem; max-width: 100%; }
+.login-short #am { width: 9rem; max-width: 100%; }
