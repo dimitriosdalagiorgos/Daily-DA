@@ -95,22 +95,42 @@ test("wrong file: missing columns reported per sheet", () => {
   assert.match(r.problems[0].message, /«Όμιλοι».*«Κωδικός»/);
 });
 
-test("readiness: days without clubs for a grade, and too few seats", () => {
-  const { clubs } = importClubs(good);
+test("readiness: shared clubs are not counted twice (groups of mandatory grades)", () => {
+  // Α 140, Β 130, Γ 50. Monday: Α-only 60, Β-only 50, shared Α+Β 120.
   const students = [
-    ...Array.from({ length: 20 }, (_, i) => ({ am: `a${i}`, grade: "Α" })),
-    ...Array.from({ length: 12 }, (_, i) => ({ am: `b${i}`, grade: "Β" })),
-    ...Array.from({ length: 12 }, (_, i) => ({ am: `c${i}`, grade: "Γ" })),
+    ...Array.from({ length: 140 }, (_, i) => ({ am: `a${i}`, grade: "Α" })),
+    ...Array.from({ length: 130 }, (_, i) => ({ am: `b${i}`, grade: "Β" })),
+    ...Array.from({ length: 50 }, (_, i) => ({ am: `c${i}`, grade: "Γ" })),
   ];
-  const messages = checkReadiness(students, clubs).map((p) => p.message);
-  assert.deepEqual(messages, [
-    "Δευτέρα: οι όμιλοι για την Α τάξη έχουν 15 θέσεις για 20 μαθητές — κάποιοι θα μείνουν χωρίς όμιλο.",
-    "Δευτέρα: συνολικά 35 θέσεις για 44 μαθητές (τάξεις Α, Β, Γ) — κάποιοι θα μείνουν χωρίς όμιλο.",
-    "Τρίτη: συνολικά 30 θέσεις για 44 μαθητές (τάξεις Α, Β, Γ) — κάποιοι θα μείνουν χωρίς όμιλο.",
-    "Τετάρτη: συνολικά 30 θέσεις για 44 μαθητές (τάξεις Α, Β, Γ) — κάποιοι θα μείνουν χωρίς όμιλο.",
-    "Πέμπτη: δεν υπάρχει όμιλος για την Α τάξη.",
-    // Β and Γ fit one at a time (20 ≥ 12) but share the same 20 seats.
-    "Πέμπτη: συνολικά 20 θέσεις για 24 μαθητές (τάξεις Β, Γ) — κάποιοι θα μείνουν χωρίς όμιλο.",
-    "Παρασκευή: συνολικά 30 θέσεις για 44 μαθητές (τάξεις Α, Β, Γ) — κάποιοι θα μείνουν χωρίς όμιλο.",
+  const clubs = [
+    { code: 1, days: ["mon"], grades: ["Α"], capacity: 60 },
+    { code: 2, days: ["mon"], grades: ["Β"], capacity: 50 },
+    { code: 3, days: ["mon"], grades: ["Α", "Β"], capacity: 120 },
+    { code: 4, days: ["mon"], grades: ["Γ"], capacity: 20 },
+  ];
+  // Each grade alone passes (180 ≥ 140, 170 ≥ 130) but together 230 < 270.
+  let p = checkReadiness(students, clubs, { mandatoryGrades: ["Α", "Β"] });
+  assert.deepEqual(p.map((x) => [x.level, x.grades.join("+"), x.seats, x.students]), [
+    ["error", "Α+Β", 230, 270],
+    ["warning", "Γ", 20, 50],
   ]);
+  assert.match(p[0].message, /Δευτέρα: οι όμιλοι για τις τάξεις Α \+ Β έχουν 230 θέσεις για 270 μαθητές \(υποχρεωτική ένταξη\) — λείπουν 40 θέσεις\./);
+
+  // Last year: only Α mandatory → no error
+  p = checkReadiness(students, clubs, { mandatoryGrades: ["Α"] });
+  assert.deepEqual(p.filter((x) => x.level === "error"), []);
+
+  // All three mandatory: Γ alone fails, and every group containing it
+  p = checkReadiness(students, clubs, { mandatoryGrades: ["Α", "Β", "Γ"] });
+  const failing = new Set(p.filter((x) => x.level === "error").map((x) => x.grades.join("+")));
+  assert.ok(failing.has("Γ") && failing.has("Α+Β") && failing.has("Α+Β+Γ"));
+  assert.ok(!failing.has("Α") && !failing.has("Β"));
+});
+
+test("readiness: a day without any club for a mandatory grade is an error; days without clubs are skipped", () => {
+  const students = [{ am: "1", grade: "Α" }, { am: "2", grade: "Β" }];
+  const clubs = [{ code: 1, days: ["mon"], grades: ["Α"], capacity: 5 }, { code: 2, days: ["tue"], grades: ["Α", "Β"], capacity: 5 }];
+  const p = checkReadiness(students, clubs, { mandatoryGrades: ["Α", "Β"] });
+  assert.deepEqual(p.map((x) => [x.level, x.day, x.message]), [["error", "mon", "Δευτέρα: δεν υπάρχει όμιλος για την Β τάξη (υποχρεωτική ένταξη)."]]);
+  assert.deepEqual(checkReadiness(students, clubs, { mandatoryGrades: [] }).map((x) => x.level), ["warning"]);
 });

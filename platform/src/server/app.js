@@ -11,6 +11,7 @@
 //   published  parents see the result
 
 import { DAYS, DAY_LABELS } from "../algorithm/days.js";
+import { GRADES } from "../algorithm/validate.js";
 import { drawLottery } from "../algorithm/lottery.js";
 import { allocateWeek } from "../algorithm/allocate.js";
 import { clubsToRank, validateSubmission, validateTeacherList } from "../algorithm/validate.js";
@@ -66,7 +67,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   // ---------- data helpers ----------
 
-  const getSettings = async () => ({ phase: "setup", contact: "", deadline: null, ...(await store.get("settings")) });
+  // mandatoryGrades: grades where every student must get a club (default: all)
+  const getSettings = async () => ({ phase: "setup", contact: "", deadline: null, mandatoryGrades: [...GRADES], ...(await store.get("settings")) });
   const getStudents = async () => (await store.get("students")) ?? [];
   const getTeachers = async () => (await store.get("teachers")) ?? [];
   const getTeacherLists = async () => Object.fromEntries((await store.list("teacherList:")).map(({ key, value }) => [key.slice(12), value]));
@@ -177,7 +179,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       teacherLists: lists,
       submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}) }])),
       uploads: uploads ?? {},
-      readiness: students.length && clubs.length ? checkReadiness(students, clubs) : [],
+      readiness: students.length && clubs.length ? checkReadiness(students, clubs, settings) : [],
       results: results ? { seed: results.seed, at: results.at } : null,
     });
   });
@@ -245,7 +247,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("PUT", "/api/admin/settings", async (req) => {
     session(req, "admin");
-    const { parentPassword, deadline, contact, schoolName } = await body(req);
+    const { parentPassword, deadline, contact, schoolName, mandatoryGrades } = await body(req);
     const patch = {};
     if (parentPassword !== undefined) {
       if (String(parentPassword).length < 6) throw new HttpError(422, "Ο κωδικός γονέων πρέπει να έχει τουλάχιστον 6 χαρακτήρες.");
@@ -257,6 +259,10 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     }
     if (contact !== undefined) patch.contact = String(contact).slice(0, 300);
     if (schoolName !== undefined) patch.schoolName = String(schoolName).slice(0, 120);
+    if (mandatoryGrades !== undefined) {
+      if (!Array.isArray(mandatoryGrades) || mandatoryGrades.some((g) => !GRADES.includes(g))) throw new HttpError(422, "Άγνωστη τάξη.");
+      patch.mandatoryGrades = GRADES.filter((g) => mandatoryGrades.includes(g));
+    }
     await store.update("settings", (s = {}) => ({ phase: "setup", ...s, ...patch }));
     await logEvent("admin", "settings", { fields: Object.keys(patch) });
     return json(200, { ok: true });
@@ -276,6 +282,13 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     }
     if (phaseAtLeast(phase, "allocated") && !results) missing.push("εκτέλεση κατανομής");
     if (missing.length) throw new HttpError(409, `Για αυτή τη φάση χρειάζονται: ${missing.join(", ")}.`);
+    if (phase === "parents") {
+      // Enough seats for the mandatory grades, or declarations do not open.
+      const errors = checkReadiness(students, clubs, settings).filter((p) => p.level === "error");
+      if (errors.length) {
+        throw new HttpError(409, "Οι δηλώσεις δεν μπορούν να ανοίξουν: δεν υπάρχουν αρκετές θέσεις για τις τάξεις με υποχρεωτική ένταξη. Αυξήστε χωρητικότητες ή προσθέστε ομίλους.", { problems: errors.map((p) => p.message) });
+      }
+    }
     await store.update("settings", (s = {}) => ({ ...s, phase }));
     await logEvent("admin", "phase", { from: settings.phase, to: phase });
     return json(200, { phase });
@@ -688,8 +701,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   // ---------- helpers using the routes' data ----------
 
   async function allocationInput(seed) {
-    const [students, clubs, lists, submissions] = await Promise.all([getStudents(), getClubs(), getTeacherLists(), getSubmissions()]);
+    const [students, clubs, lists, submissions, settings] = await Promise.all([getStudents(), getClubs(), getTeacherLists(), getSubmissions(), getSettings()]);
     return {
+      mandatoryGrades: settings.mandatoryGrades,
       students: students.map(({ am, grade, surname, name }) => ({ am, grade, surname, name })),
       clubs,
       preferences: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, s.preferences])),
@@ -739,6 +753,13 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       unassigned: Object.fromEntries(DAYS.map((d) => [d, results.days[d].unassigned])),
       enrolled: byDayClub,
       submitted: Object.keys(input.preferences).length,
+      mandatoryGrades: input.mandatoryGrades,
+      // Students of mandatory grades left without a club (per day)
+      mandatoryGaps: Object.entries(gaps).flatMap(([am, byDay]) => {
+        const grade = input.students.find((s) => s.am === am)?.grade;
+        if (!input.mandatoryGrades.includes(grade)) return [];
+        return Object.entries(byDay).filter(([, r]) => r !== "not_offered").map(([day, reason]) => ({ am, day, reason }));
+      }),
     };
   }
 

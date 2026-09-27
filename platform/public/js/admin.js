@@ -115,11 +115,15 @@ function overview() {
     schoolName: el("input", { id: "school", type: "text", value: s.schoolName ?? "" }),
     contact: el("input", { id: "contact", type: "text", value: s.contact ?? "", placeholder: "π.χ. Γραμματεία: 2310 000000, mail@sch.gr" }),
     deadline: el("input", { id: "deadline", type: "datetime-local", value: toLocal(s.deadline) }),
+    mandatory: ["Α", "Β", "Γ"].map((g) => el("input", { type: "checkbox", value: g, checked: (s.mandatoryGrades ?? []).includes(g), "aria-label": `Υποχρεωτική ένταξη ${g} τάξης` })),
     parentPassword: el("input", { id: "ppw", type: "text", autocomplete: "off", placeholder: s.parentPasswordSet ? "Έχει οριστεί — γράψτε νέο για αλλαγή" : "Τουλάχιστον 6 χαρακτήρες" }),
   };
   const save = el("button.primary", { type: "button" }, "Αποθήκευση ρυθμίσεων");
   save.addEventListener("click", () => busy(save, out, async () => {
-    const body = { schoolName: f.schoolName.value, contact: f.contact.value, deadline: f.deadline.value ? new Date(f.deadline.value).toISOString() : null };
+    const body = {
+      schoolName: f.schoolName.value, contact: f.contact.value, deadline: f.deadline.value ? new Date(f.deadline.value).toISOString() : null,
+      mandatoryGrades: f.mandatory.filter((c) => c.checked).map((c) => c.value),
+    };
     if (f.parentPassword.value) body.parentPassword = f.parentPassword.value;
     await api("PUT", "/api/admin/settings", body);
     await refresh();
@@ -139,7 +143,7 @@ function overview() {
         el("li", {}, `Όμιλοι: ${state.clubs.length} · Εκπαιδευτικοί: ${state.teachers.length}`),
         el("li", {}, `Δηλώσεις: ${submitted} από ${state.students.length} (${byGrade})`),
         state.results ? el("li", {}, `Κατανομή: ${formatDateTime(state.results.at)} (seed «${state.results.seed}»)`) : null)),
-    state.readiness.length ? el("section.card", {}, el("h2", { style: "margin-top:0" }, "Έλεγχοι"), message("warn", "Προσοχή:", state.readiness.map((p) => p.message))) : null,
+    checksCard(),
     el("section.card", {},
       el("h2", { style: "margin-top:0" }, "Ρυθμίσεις"),
       el("div.grid-2", {},
@@ -147,9 +151,28 @@ function overview() {
         el("label", { for: "contact" }, "Επικοινωνία για γονείς", el("span.hint", {}, "Εμφανίζεται όταν αποτυγχάνει η σύνδεση."), f.contact),
         el("label", { for: "deadline" }, "Προθεσμία δηλώσεων", f.deadline),
         el("label", { for: "ppw" }, "Κοινός κωδικός γονέων", el("span.hint", {}, "Ίδιος για όλους· ανακοινώνεται από το σχολείο."), f.parentPassword)),
+      el("fieldset", { style: "border:0;padding:0;margin:12px 0 0" },
+        el("legend", { style: "font-weight:600" }, "Υποχρεωτική ένταξη σε όμιλο"),
+        el("p.small.muted", { style: "margin:2px 0 6px" }, "Για αυτές τις τάξεις κάθε μαθητής πρέπει να πάρει όμιλο κάθε ημέρα: οι δηλώσεις δεν ανοίγουν αν οι θέσεις δεν φτάνουν, και μετά την κατανομή εμφανίζεται όποιος έμεινε εκτός."),
+        el("div.actions", { style: "margin-top:0" }, f.mandatory.map((c) => el("label", { style: "font-weight:400;margin:0" }, c, ` ${c.value} τάξη`)))),
       out,
       el("div.actions", {}, save)),
     dangerZone());
+}
+
+// Seats and other checks for the current files and settings
+function checksCard() {
+  if (!state.students.length || !state.clubs.length) return null;
+  const errors = state.readiness.filter((p) => p.level === "error");
+  const warnings = state.readiness.filter((p) => p.level === "warning");
+  const mandatory = state.settings.mandatoryGrades ?? [];
+  return el("section.card", {},
+    el("h2", { style: "margin-top:0" }, "Έλεγχοι θέσεων"),
+    el("p.small.muted", {}, mandatory.length
+      ? `Υποχρεωτική ένταξη: ${mandatory.map((g) => `${g}`).join(", ")} τάξη. Για κάθε ημέρα ελέγχεται κάθε τάξη μόνη της και κάθε συνδυασμός τους, ώστε οι όμιλοι που είναι κοινοί σε περισσότερες τάξεις να μη μετρώνται δύο φορές.`
+      : "Καμία τάξη με υποχρεωτική ένταξη."),
+    errors.length ? message("err", `Δεν φτάνουν οι θέσεις — οι δηλώσεις δεν μπορούν να ανοίξουν:`, errors.map((p) => p.message)) : message("ok", "Οι θέσεις φτάνουν για όλους τους μαθητές των τάξεων με υποχρεωτική ένταξη."),
+    warnings.length ? message("warn", "Προσοχή:", warnings.map((p) => p.message)) : null);
 }
 
 function dangerZone() {
@@ -490,6 +513,7 @@ function resultsView(results) {
   const who = (s) => (s ? `${s.surname} ${s.name}` : "");
   return el("section.card", {},
     el("h2", { style: "margin-top:0" }, "Αποτελέσματα"),
+    mandatoryGapsView(results, byAm, who),
     el("p", {}, `Seed «${results.seed}» · ${formatDateTime(results.at)} · δηλώσεις: ${results.submitted} · τοποθετήσεις (μαθητής × ημέρα): ${placed}`),
     el("h3", {}, "Πληρότητα ανά ημέρα"),
     el("div.table-wrap", {}, el("table", {},
@@ -523,6 +547,32 @@ function resultsView(results) {
         el("p.small.muted", {}, "Δεν τοποθετήθηκαν σε κανέναν όμιλο."),
         el("ul", {}, noSubmission.map((s) => el("li", {}, `${who(s)} · ${s.grade} · ΑΜ ${s.am}`))))
       : el("p.muted", {}, "Όλοι υπέβαλαν δήλωση."));
+}
+
+// Students of mandatory grades without a club, one row per student
+function mandatoryGapsView(results, byAm, who) {
+  if (!results.mandatoryGrades?.length) return null;
+  const gaps = results.mandatoryGaps ?? [];
+  if (!gaps.length) return message("ok", `Υποχρεωτική ένταξη (${results.mandatoryGrades.join(", ")} τάξη): όλοι οι μαθητές πήραν όμιλο κάθε ημέρα.`);
+  const perStudent = new Map();
+  for (const g of gaps) (perStudent.get(g.am) ?? perStudent.set(g.am, []).get(g.am)).push(g);
+  const rows = [...perStudent].map(([am, list]) => {
+    const rejected = list.filter((g) => g.reason === "all_rejected");
+    const reason = !state.submissions[am]
+      ? "δεν υπέβαλε δήλωση"
+      : [rejected.length ? `δεν χώρεσε: ${rejected.map((g) => DAY_LABELS[g.day]).join(", ")}` : "",
+        list.length > rejected.length ? `χωρίς προτιμήσεις: ${list.filter((g) => g.reason !== "all_rejected").map((g) => DAY_LABELS[g.day]).join(", ")}` : ""].filter(Boolean).join(" · ");
+    return { am, s: byAm.get(am), days: list.map((g) => DAY_LABELS[g.day]).join(", "), reason, fixable: rejected.length > 0 };
+  }).sort((a, b) => Number(b.fixable) - Number(a.fixable) || (a.s?.surname ?? "").localeCompare(b.s?.surname ?? "", "el"));
+  const fixable = rows.filter((r) => r.fixable).length;
+  return el("div.msg.err", { role: "alert" },
+    el("strong", {}, `Υποχρεωτική ένταξη (${results.mandatoryGrades.join(", ")} τάξη): ${rows.length} μαθητές χωρίς όμιλο κάποια ημέρα`),
+    el("p.small", { style: "margin:4px 0" }, `${fixable} δήλωσαν αλλά δεν χώρεσαν (αυξήστε τη χωρητικότητα κάποιου ομίλου της λίστας τους και ξανατρέξτε την κατανομή)· ${rows.length - fixable} δεν έχουν προτιμήσεις (χρειάζεται δήλωση).`),
+    el("details", { open: rows.length <= 20 }, el("summary", {}, "Λίστα μαθητών"),
+      el("div.table-wrap", {}, el("table", {},
+        el("thead", {}, el("tr", {}, el("th.num", {}, "ΑΜ"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"), el("th", {}, "Αιτία"))),
+        el("tbody", {}, rows.map((r) => el("tr", {},
+          el("td.num", {}, r.am), el("td", {}, who(r.s)), el("td", {}, r.s?.grade ?? ""), el("td", {}, r.reason))))))));
 }
 
 // Students with a submission but nothing to rank on a given day

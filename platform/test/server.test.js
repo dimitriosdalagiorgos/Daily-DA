@@ -390,3 +390,35 @@ test("reports: reasons, audit log, club summary, student story, uploads, events"
   assert.deepEqual(state.uploads, {});
   assert.deepEqual(await store.list("story:"), []);
 });
+
+test("mandatory grades: declarations do not open without enough seats; gaps listed after the allocation", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  // Monday: only Αντιγόνη (1 seat, grade Β) for the three Β students
+  const clubs = [CLUB_ROWS[0], [100, "Αντιγόνη", "Δευτέρα", "", "", "Β", 1, "", ""], [101, "Ρομποτική", "Δευτέρα", "", "", "Α", 5, "", ""]];
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs, teachers: [TEACHER_ROWS[0], TEACHER_ROWS[1], TEACHER_ROWS[3]] } });
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z" } });
+  let state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual(state.settings.mandatoryGrades, ["Α", "Β", "Γ"], "default: all grades");
+  assert.deepEqual(state.readiness.filter((p) => p.level === "error").map((p) => p.message), ["Δευτέρα: οι όμιλοι για την Β τάξη έχουν 1 θέση για 3 μαθητές (υποχρεωτική ένταξη) — λείπουν 2 θέσεις."]);
+
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
+  let r = await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } });
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /υποχρεωτική ένταξη/);
+  assert.equal(r.data.problems.length, 1);
+
+  // Only Α mandatory (as last year): opens, and the Β shortfall is a warning
+  assert.equal((await call("PUT", "/api/admin/settings", { token: admin, body: { mandatoryGrades: ["Δ"] } })).status, 422);
+  await call("PUT", "/api/admin/settings", { token: admin, body: { mandatoryGrades: ["Α"] } });
+  state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual(state.readiness.map((p) => p.level), ["warning"]);
+  assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } })).status, 200);
+
+  // 9003 (Α) submits nothing → a mandatory gap; Β students are not listed
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
+  r = await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "s" } });
+  assert.deepEqual(r.data.results.mandatoryGrades, ["Α"]);
+  assert.deepEqual(r.data.results.mandatoryGaps, [{ am: "9003", day: "mon", reason: "no_preferences" }]);
+});

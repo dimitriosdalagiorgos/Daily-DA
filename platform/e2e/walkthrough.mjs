@@ -76,12 +76,12 @@ try {
   await teacher.goto(link);
   await teacher.waitForSelector("h2:has-text('Αντιγόνη')");
   step("teacher: logged in with the magic link");
-  await teacher.fill("input[type=number]", "3");
+  await teacher.fill("input[type=number]", "18");
   await teacher.fill("input[type=search]", "γεωργ");
   await teacher.click(".pick-list button >> nth=0");
   await teacher.click("text=Αποθήκευση");
   await teacher.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
-  step("teacher: capacity 3 and one preferred student saved");
+  step("teacher: capacity 18 and one preferred student saved");
   await shot(teacher, "03-teacher");
 
   // ---------- Admin: settings, open declarations ----------
