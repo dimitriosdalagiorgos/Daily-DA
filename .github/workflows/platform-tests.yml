@@ -2,9 +2,9 @@ name: Platform tests
 
 on:
   push:
-    paths: ["platform/**", "R/**", ".github/workflows/platform-tests.yml"]
+    paths: ["platform/**", "R/**", "archive/*.csv", ".github/workflows/platform-tests.yml"]
   pull_request:
-    paths: ["platform/**", "R/**", ".github/workflows/platform-tests.yml"]
+    paths: ["platform/**", "R/**", "archive/*.csv", ".github/workflows/platform-tests.yml"]
 
 jobs:
   test:

@@ -54,7 +54,7 @@ test("clubs not for the student's grade are dropped with a warning", () => {
 });
 
 test("the repository's dailyresponses.csv reads as CSV, UTF-8 and Windows-1253", () => {
-  const bytes = readFileSync(new URL("../../dailyresponses.csv", import.meta.url));
+  const bytes = readFileSync(new URL("../../archive/dailyresponses.csv", import.meta.url));
   const rows = parseCsv(decodeCsv(new Uint8Array(bytes)));
   assert.deepEqual(rows[0].slice(0, 4), ["RegistryNr", "Surname", "Name", "Tallinn"]);
   assert.equal(rows[1][1], "ΑΓΕΛΟΠΟΥΛΟΣ");

@@ -4,7 +4,7 @@
 //   node reference/compare.mjs [--random N] [--seed S]
 //
 // Scenarios:
-//   sample   the repository's dailyclubs.csv + dailyresponses.csv (one day),
+//   sample   archive/dailyclubs.csv + archive/dailyresponses.csv (one day),
 //            with teacher lists for two clubs
 //   random   N random weeks with single, double and triple clubs, grade
 //            restrictions, teacher lists, and some students skipping a day
@@ -84,8 +84,8 @@ function compare(scenario, rRows) {
 // ---------- Scenarios ----------
 
 function sampleScenario() {
-  const clubsCsv = parseCsv(readFileSync(join(repoRoot, "dailyclubs.csv"), "utf8"));
-  const responses = parseCsv(readFileSync(join(repoRoot, "dailyresponses.csv"), "utf8"));
+  const clubsCsv = parseCsv(readFileSync(join(repoRoot, "archive", "dailyclubs.csv"), "utf8"));
+  const responses = parseCsv(readFileSync(join(repoRoot, "archive", "dailyresponses.csv"), "utf8"));
   const codeOf = new Map(clubsCsv.map((c, i) => [c.club_name.trim().toLowerCase(), 101 + i]));
   const clubs = clubsCsv.map((c) => ({
     code: codeOf.get(c.club_name.trim().toLowerCase()), name: c.club_name, days: ["mon"],

@@ -1,8 +1,8 @@
 # ----------------------------------------------------------
 # daily_da.R
 # ----------------------------------------------------------
-# Maintained version of daily_da_with_teacherpreferences_unified.R (repo
-# root), used by run_week.R for each day and checked in CI to give the same
+# Maintained version of daily_da_with_teacherpreferences_unified.R (archive/
+# folder), used by run_week.R for each day and checked in CI to give the same
 # allocation as the platform.
 # Changes from the original (search for "REFERENCE:"):
 #   1. Settings can be overridden by command-line arguments.

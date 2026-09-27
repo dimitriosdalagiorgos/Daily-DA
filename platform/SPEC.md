@@ -5,7 +5,7 @@
 ## Αποθετήρια
 - `github.com/dimitriosdalagiorgos/Daily-DA` — κύριο (ημερήσιο DA, teacherpreferences, remove_club, prepare_dailyresponses). Εδώ θα μπει η πλατφόρμα (φάκελος `platform/`).
 - `github.com/dimitriosdalagiorgos/DA_onassis` — παλιό Workflow A (εβδομαδιαίο, 10 ώρες, 59 όμιλοι, εργαλεία χρονοπρογραμματισμού). Χρήσιμα: οδηγοί γονέων (docx ΕΛ/EN), interactive teacher selection (`interactive_claude.R`), `students.xlsx` (στήλη Τμήμα).
-- Τα `students.csv` / `dailyresponses.csv` είναι υποθετικά (για προσομοίωση).
+- Τα `archive/students.csv` / `archive/dailyresponses.csv` είναι υποθετικά (για προσομοίωση)· τα παλιά scripts βρίσκονται στο `archive/`.
 
 ## Υποδομή
 - Netlify (δωρεάν), auto-deploy από το GitHub. Netlify Functions για backend.
