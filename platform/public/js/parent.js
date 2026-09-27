@@ -1,5 +1,5 @@
 import { $, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
-import { createRanker } from "./ranker.js";
+import { createRanker, layoutPinned } from "./ranker.js";
 import { reportView } from "./report.js";
 
 const api = createApi("parent");
@@ -157,12 +157,11 @@ function mainView(me, { justSubmitted = false } = {}) {
   }
 
   // One tab per day. Multi-day clubs are ranked on their first day; on
-  // their later days they sit locked at the top of the list, since a seat
-  // won on the first day holds for those days too.
+  // their later days they are locked in the same list, at the number they
+  // have on their first day (the free clubs take the other numbers).
   const kind = (c) => (c.days.length === 3 ? "Τριπλός όμιλος" : "Διπλός όμιλος");
   const daysText = (c) => c.days.map((x) => DAY_NAMES[x]).join(" + ");
   const rankers = {};
-  const lockedBoxes = {};
   const visited = new Set(submission ? days.map((d) => d.day) : []);
 
   // Multi-day clubs of the student's grade, for clashes between them
@@ -171,21 +170,26 @@ function mainView(me, { justSubmitted = false } = {}) {
     DAY_KEYS.indexOf(o.days[0]) < DAY_KEYS.indexOf(c.days[0]) && o.days.some((x) => c.days.includes(x)));
   const shared = (a, b) => a.days.filter((x) => b.days.includes(x)).map((x) => DAY_ACC[x]).join(" και ");
 
-  // Locked rows: first in the day's list, numbered 1..k, ordered as they are
-  // decided (by first day, then by the rank given there).
-  const lockedRows = (d) => {
+  // Locked rows of a later day: position = rank on the first day; equal
+  // positions ordered by first day.
+  const pinsFor = (d) => {
     const rows = d.locked.map((c) => ({ c, rank: (rankers[c.firstDay]?.order() ?? []).indexOf(c.code) + 1 }))
-      .sort((a, b) => DAY_KEYS.indexOf(a.c.firstDay) - DAY_KEYS.indexOf(b.c.firstDay) || a.rank - b.rank);
-    return rows.map(({ c, rank }, i) => el("li.locked", {},
-      el("span.handle", { "aria-hidden": "true" }, "🔒"),
-      el("span.lockpos", { "aria-label": `Θέση ${i + 1}, κλειδωμένη` }, String(i + 1)),
-      el("span.name", {}, c.name, el("span.tag", {}, `${kind(c)}: ${daysText(c)}`),
-        el("span.desc", {}, `${rank}η επιλογή ${DAY_GEN[c.firstDay]}. Αν το παιδί μπει σε αυτόν ${DAY_ACC[c.firstDay]}, ${DAY_ACC[d.day]} πηγαίνει αυτόματα εδώ.`),
-        i > 0 ? el("span.note", {}, `Μετράει μόνο αν δεν μπει ${rows.length > 2 ? "σε κανέναν από τους παραπάνω" : `στον όμιλο «${rows[0].c.name}»`}.`) : null)));
+      .sort((a, b) => a.rank - b.rank || DAY_KEYS.indexOf(a.c.firstDay) - DAY_KEYS.indexOf(b.c.firstDay));
+    return rows.map(({ c, rank }) => {
+      // Decided earlier on a clashing day: this one counts only without it
+      const before = rows.filter((o) => DAY_KEYS.indexOf(o.c.firstDay) < DAY_KEYS.indexOf(c.firstDay)).map((o) => `«${o.c.name}»`);
+      return {
+        position: rank,
+        node: (number, clamped) => el("li.locked", {},
+          el("span.handle", { "aria-hidden": "true" }, "🔒"),
+          el("span.lockpos", { "aria-label": `Θέση ${number}, κλειδωμένη` }, String(number)),
+          el("span.name", {}, c.name, el("span.tag", {}, `${kind(c)}: ${daysText(c)}`),
+            el("span.desc", {}, `Κλειδωμένος: ${rank}η επιλογή ${DAY_GEN[c.firstDay]}${clamped ? " (εδώ στο τέλος, γιατί η ημέρα έχει λιγότερους ομίλους)" : ", ίδια θέση και εδώ"}. Αν το παιδί μπει σε αυτόν ${DAY_ACC[c.firstDay]}, ${DAY_ACC[d.day]} πηγαίνει αυτόματα εδώ.`),
+            before.length ? el("span.note", {}, `Μετράει μόνο αν δεν μπει ${before.length > 1 ? `σε κανέναν από τους ${before.join(", ")}` : `στον όμιλο ${before[0]}`}.`) : null)),
+      };
+    });
   };
-  const drawLocked = () => {
-    for (const d of days) if (lockedBoxes[d.day]) lockedBoxes[d.day].replaceChildren(...lockedRows(d));
-  };
+  const refreshAll = () => { for (const r of Object.values(rankers)) r.refresh(); };
 
   const panels = {};
   for (const d of days) {
@@ -194,11 +198,7 @@ function mainView(me, { justSubmitted = false } = {}) {
       panel.append(el("p.day-intro", {},
         `Βάλτε σε σειρά `, el("strong", {}, `όλους τους ομίλους ${DAY_GEN[d.day]}`),
         `: 1ος αυτός που θέλετε περισσότερο.${submission?.preferences?.[d.day] ? "" : " Στην αρχή η σειρά είναι τυχαία."} Μετακινήστε τους σύροντας τη λαβή ⠿, γράφοντας τον αριθμό της θέσης ή με τα κουμπιά ↑ ↓.`,
-        d.locked.length ? el("span.block", {}, `Οι όμιλοι με 🔒 στην αρχή είναι διπλοί/τριπλοί όμιλοι που μπήκαν σε σειρά σε προηγούμενη ημέρα. Δεν αλλάζουν εδώ: η σειρά σας για τους υπόλοιπους μετράει μόνο αν το παιδί δεν μπει σε αυτούς.`) : null));
-    }
-    if (d.locked.length) {
-      lockedBoxes[d.day] = el("ol.ranker.locked-rows", { "aria-label": `Κλειδωμένοι όμιλοι ${d.label}` });
-      panel.append(lockedBoxes[d.day]);
+        d.locked.length ? el("span.block", {}, `Οι όμιλοι με 🔒 είναι διπλοί/τριπλοί όμιλοι που βάλατε σε σειρά σε προηγούμενη ημέρα. Μπαίνουν αυτόματα στην ίδια θέση και δεν μετακινούνται από εδώ· αν αλλάξετε τη θέση τους εκείνη την ημέρα, αλλάζει και εδώ.`) : null));
     }
     if (d.clubs.length) {
       const saved = submission?.preferences?.[d.day];
@@ -213,14 +213,25 @@ function mainView(me, { justSubmitted = false } = {}) {
             : null,
         };
       });
-      rankers[d.day] = createRanker({ items, order, disabled: !canEdit, label: `Σειρά ομίλων ${d.label}`, onChange: drawLocked, offset: d.locked.length });
+      rankers[d.day] = createRanker({
+        items, order, disabled: !canEdit, label: `Σειρά ομίλων ${d.label}`,
+        pinned: d.locked.length ? () => pinsFor(d) : undefined,
+        onChange: refreshAll,
+      });
       panel.append(rankers[d.day].node);
     } else {
-      panel.append(el("p.muted", {}, `${DAY_ACC[d.day][0].toUpperCase()}${DAY_ACC[d.day].slice(1)} δεν υπάρχει άλλος όμιλος για την τάξη του παιδιού.`));
+      // Only locked clubs today: the same rows, numbered from 1
+      const locked = el("ol.ranker", { "aria-label": `Κλειδωμένοι όμιλοι ${d.label}` });
+      rankers[d.day] = { order: () => [], refresh: () => {
+        const pins = pinsFor(d);
+        const { pinnedNumbers } = layoutPinned(0, pins.map((p) => p.position));
+        locked.replaceChildren(...pins.map((p, k) => p.node(pinnedNumbers[k], pinnedNumbers[k] !== p.position)));
+      } };
+      rankers[d.day].refresh();
+      panel.append(el("p.day-intro", {}, `${DAY_ACC[d.day][0].toUpperCase()}${DAY_ACC[d.day].slice(1)} δεν υπάρχει άλλος όμιλος για την τάξη του παιδιού.`), locked);
     }
     panels[d.day] = panel;
   }
-  drawLocked();
 
   let current = days[0].day;
   const nav = el("nav.tabs.day-tabs", { role: "tablist", "aria-label": "Ημέρες" });
@@ -254,7 +265,7 @@ function mainView(me, { justSubmitted = false } = {}) {
     submit.addEventListener("click", () => busy(submit, out, async () => {
       const unseen = days.filter((d) => !visited.has(d.day) && d.clubs.length).map((d) => d.label);
       if (unseen.length && !confirm(`Δεν έχετε δει τη σειρά για: ${unseen.join(", ")}. Εκεί θα μείνει η τυχαία σειρά. Υποβολή παρ' όλα αυτά;`)) return;
-      const preferences = Object.fromEntries(Object.entries(rankers).map(([day, r]) => [day, r.order()]));
+      const preferences = Object.fromEntries(days.filter((d) => d.clubs.length).map((d) => [d.day, rankers[d.day].order()]));
       await api("PUT", "/api/parent/submission", { parent: { name: parentName.value, email: parentEmail.value }, preferences });
       const me2 = await api("GET", "/api/parent/me");
       mainView(me2, { justSubmitted: true });
@@ -291,11 +302,26 @@ function receiptView(me, open) {
     el("p", {}, el("strong", {}, `${student.surname} ${student.name}`), ` · Τάξη ${student.grade} · ΑΜ ${student.am}`),
     el("p", {}, "Υποβλήθηκε: ", el("strong", {}, formatDateTime(submission.submittedAt)), el("br"),
       "Κωδικός απόδειξης: ", el("strong", { style: "font-size:1.2em;letter-spacing:0.05em" }, submission.receipt)),
-    days.filter((d) => submission.preferences[d.day]?.length).map((d) => el("div.summary-day", {},
+    days.filter((d) => submission.preferences[d.day]?.length || d.locked.length).map((d) => el("div.summary-day", {},
       el("strong", {}, d.label),
-      el("ol", {}, submission.preferences[d.day].map((code) => el("li", {}, nameOf.get(code) ?? code))))),
+      el("ul.receipt-list", {}, receiptRows(d, submission.preferences, nameOf).map(([n, name, locked]) =>
+        el("li", {}, `${n}. ${name}`, locked ? ` 🔒 (${locked})` : ""))))),
     el("p.small.muted", {}, "Ο κωδικός αλλάζει σε κάθε αλλαγή της δήλωσης. Αν συνδεθείτε ξανά και δείτε άλλον κωδικό από αυτόν της απόδειξής σας, η δήλωση έχει αλλάξει."),
     el("div.actions.no-print", {}, print));
+}
+
+// A day's list as on the form: locked multi-day clubs at their first-day
+// number, the ranked clubs in the other numbers.
+function receiptRows(d, preferences, nameOf) {
+  const free = preferences[d.day] ?? [];
+  const pins = d.locked.map((c) => ({ c, rank: (preferences[c.firstDay] ?? []).indexOf(c.code) + 1 }))
+    .filter((p) => p.rank > 0)
+    .sort((a, b) => a.rank - b.rank || DAY_KEYS.indexOf(a.c.firstDay) - DAY_KEYS.indexOf(b.c.firstDay));
+  const { pinnedNumbers, freeNumbers } = layoutPinned(free.length, pins.map((p) => p.rank));
+  return [
+    ...pins.map((p, k) => [pinnedNumbers[k], p.c.name, `από ${DAY_ACC[p.c.firstDay]}`]),
+    ...free.map((code, i) => [freeNumbers[i], nameOf.get(code) ?? code, null]),
+  ].sort((a, b) => a[0] - b[0]);
 }
 
 function historyView(me) {

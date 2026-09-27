@@ -144,28 +144,29 @@ try {
   if (await parent.locator(".receipt").count()) throw new Error("submitted although the reminder was dismissed");
   step("parent: reminder for days not opened yet");
 
-  // Thursday: «Αντιγόνη» (Monday + Thursday) is locked at the top with its Monday rank
+  // Tuesday: «Ποδόσφαιρο» (Tuesday + Thursday) to position 1; it clashes
+  // with «Αντιγόνη» (Monday + Thursday), which is decided first.
   const antigoneRank = afterDrag.findIndex((n) => n.includes("Αντιγόνη")) + 1;
-  await parent.click("role=tab[name='Πέμπτη']");
-  const locked = parent.locator("li.locked:has-text('Αντιγόνη')").first();
-  await locked.waitFor();
-  const lockedText = await locked.textContent();
-  if (!lockedText.includes(`${antigoneRank}η επιλογή της Δευτέρας`)) throw new Error(`locked club text: ${lockedText}`);
-  // Locked rows come first and the list continues their numbering:
-  // «Αντιγόνη» (decided Monday) 1, «Ποδόσφαιρο» (Tuesday) 2, then 3, 4 …
-  const lockedNames = await parent.locator("ol.locked-rows li .name").evaluateAll((ns) => ns.map((n) => n.firstChild.textContent));
-  const lockedPos = await parent.locator("ol.locked-rows li .lockpos").allTextContents();
-  const firstFree = await parent.locator("ol.ranker[aria-label='Σειρά ομίλων Πέμπτη'] li >> nth=0").locator("input.pos").inputValue();
-  if (lockedNames.join("|") !== "Θεατρική παράσταση «Αντιγόνη»|Ποδόσφαιρο" || lockedPos.join("|") !== "1|2" || firstFree !== "3") {
-    throw new Error(`Thursday numbering: ${lockedNames} ${lockedPos} then ${firstFree}`);
-  }
-  if (!(await parent.locator("ol.locked-rows li:has-text('Ποδόσφαιρο')").textContent()).includes("Μετράει μόνο αν δεν μπει")) throw new Error("no note on the second locked club");
-  step(`parent: Thursday list starts with the locked double clubs (1, 2) and goes on with 3`);
   await parent.click("nav.day-tabs button:has-text('Τρίτη')");
-  const football = await parent.locator("ol.ranker[aria-label='Σειρά ομίλων Τρίτη'] li:has-text('Ποδόσφαιρο')").textContent();
+  const tue = parent.locator("ol.ranker[aria-label='Σειρά ομίλων Τρίτη']");
+  await tue.locator("li:has-text('Ποδόσφαιρο') input.pos").fill("1");
+  await tue.locator("li:has-text('Ποδόσφαιρο') input.pos").press("Enter");
+  const football = await tue.locator("li:has-text('Ποδόσφαιρο')").textContent();
   if (!football.includes("Αν το παιδί μπει στον όμιλο «Θεατρική παράσταση «Αντιγόνη»» τη Δευτέρα, αυτός παραλείπεται")) throw new Error(`clash note: ${football}`);
   step("parent: clash note on Tuesday's double club");
+
+  // Thursday: one list; the locked clubs keep their first-day numbers
+  // («Ποδόσφαιρο» 1, «Αντιγόνη» 3) and the free clubs take 2 and 4.
   await parent.click("nav.day-tabs button:has-text('Πέμπτη')");
+  const thu = parent.locator("ol.ranker[aria-label='Σειρά ομίλων Πέμπτη']");
+  await thu.waitFor();
+  const rows = await thu.locator("li").evaluateAll((lis) => lis.map((li) =>
+    `${li.querySelector(".lockpos")?.textContent ?? li.querySelector("input.pos").value}${li.classList.contains("locked") ? "🔒" : ""} ${li.querySelector(".name").firstChild.textContent}`));
+  const expected = antigoneRank === 3 ? ["1🔒 Ποδόσφαιρο", "2 ", "3🔒 Θεατρική παράσταση «Αντιγόνη»", "4 "] : null;
+  if (!expected || rows.length !== 4 || rows.some((r, i) => !r.startsWith(expected[i]))) throw new Error(`Thursday list: ${rows.join(" | ")}`);
+  const lockedText = await thu.locator("li.locked:has-text('Ποδόσφαιρο')").textContent();
+  if (!lockedText.includes("1η επιλογή της Τρίτης") || !lockedText.includes("Μετράει μόνο αν δεν μπει στον όμιλο «Θεατρική παράσταση «Αντιγόνη»»")) throw new Error(`locked text: ${lockedText}`);
+  step(`parent: Thursday is one list — ${rows.join(" · ")}`);
   await shot(parent, "05-parent-ranking");
 
   // Visit every day with «next», then submit on the last one

@@ -6,11 +6,14 @@ import { el } from "./ui.js";
 /**
  * @param {{items: {code: string, name: string, description?: string}[],
  *          order?: string[], disabled?: boolean, label: string,
- *          onChange?: (order: string[]) => void, offset?: number}} opts
- * offset: positions shown start at offset + 1 (rows locked above the list)
- * @returns {{node: HTMLElement, order: () => string[]}}
+ *          onChange?: (order: string[]) => void,
+ *          pinned?: () => {position: number, node: (number: number, clamped: boolean) => HTMLElement}[]}} opts
+ * pinned: rows locked at a given position (multi-day clubs on their later
+ * days), in display order for equal positions. The free items take the
+ * other numbers. Only the free items' order is returned.
+ * @returns {{node: HTMLElement, order: () => string[], refresh: () => void}}
  */
-export function createRanker({ items, order, disabled = false, label, onChange, offset = 0 }) {
+export function createRanker({ items, order, disabled = false, label, onChange, pinned }) {
   const byCode = new Map(items.map((i) => [i.code, i]));
   let current = order && order.length === items.length && order.every((c) => byCode.has(c)) ? [...order] : items.map((i) => i.code);
   const list = el("ol.ranker", { "aria-label": label });
@@ -25,16 +28,19 @@ export function createRanker({ items, order, disabled = false, label, onChange, 
   };
 
   function render(focus) {
-    list.replaceChildren(...current.map((code, i) => {
+    const pins = pinned?.() ?? [];
+    const { pinnedNumbers, freeNumbers, total } = layoutPinned(current.length, pins.map((p) => p.position));
+    const freeRows = current.map((code, i) => {
       const item = byCode.get(code);
       const pos = el("input.pos", {
-        type: "number", min: offset + 1, max: offset + current.length, value: offset + i + 1, disabled, inputmode: "numeric",
+        type: "number", min: 1, max: total, value: freeNumbers[i], disabled, inputmode: "numeric",
         "aria-label": `Θέση για «${item.name}»`,
         onchange: (e) => {
           if (!e.target.isConnected) return; // list already redrawn
           const n = Number.parseInt(e.target.value, 10);
-          if (Number.isInteger(n)) move(i, n - 1 - offset, `${code}:pos`);
-          else e.target.value = offset + i + 1;
+          // Typed number → the free slot with that number, or the first one after it
+          if (Number.isInteger(n)) move(i, freeNumbers.filter((x) => x < n).length, `${code}:pos`);
+          else e.target.value = freeNumbers[i];
         },
         // Enter applies the new position (the change event fires on blur).
         onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } },
@@ -55,7 +61,16 @@ export function createRanker({ items, order, disabled = false, label, onChange, 
           el("button.small", { type: "button", disabled: disabled || i === 0, "aria-label": `«${item.name}» μία θέση πάνω`, onclick: () => move(i, i - 1, `${code}:up`) }, "↑"),
           el("button.small", { type: "button", disabled: disabled || i === current.length - 1, "aria-label": `«${item.name}» μία θέση κάτω`, onclick: () => move(i, i + 1, `${code}:down`) }, "↓")));
       return li;
-    }));
+    });
+    // Merge: numbers 1..total, pinned rows at their numbers, free rows in the rest
+    const rows = [];
+    let next = 0;
+    for (let n = 1; n <= total; n++) {
+      const here = pins.map((p, k) => [p, k]).filter(([, k]) => pinnedNumbers[k] === n);
+      if (here.length) for (const [p, k] of here) rows.push(Object.assign(p.node(n, n !== p.position), { className: "locked pinned" }));
+      else rows.push(freeRows[next++]);
+    }
+    list.replaceChildren(...rows);
     if (focus) {
       const [code, part] = focus.split(":");
       const li = list.querySelector(`li[data-code="${CSS.escape(code)}"]`);
@@ -93,7 +108,7 @@ export function createRanker({ items, order, disabled = false, label, onChange, 
       lastY = ev.clientY;
       li.style.transform = `translateY(${ev.clientY + window.scrollY - startY}px)`;
       // Position among siblings by their vertical midpoints.
-      const others = [...list.children].filter((n) => n !== li);
+      const others = [...list.children].filter((n) => n !== li && !n.classList.contains("pinned"));
       let target = others.length;
       for (let k = 0; k < others.length; k++) {
         const r = others[k].getBoundingClientRect();
@@ -122,5 +137,22 @@ export function createRanker({ items, order, disabled = false, label, onChange, 
   }
 
   render();
-  return { node: list, order: () => [...current] };
+  return { node: list, order: () => [...current], refresh: () => render() };
+}
+
+/**
+ * Numbers for a day's list with pinned rows. A pinned row keeps its
+ * number (its rank on its first day); pinned rows with the same number
+ * share it. Free rows take the other numbers 1, 2, …. A number beyond the
+ * end of the list is moved to the end.
+ * @returns {{pinnedNumbers: number[], freeNumbers: number[], total: number}}
+ */
+export function layoutPinned(freeCount, positions) {
+  const distinct = [...new Set(positions)].sort((a, b) => a - b);
+  const final = new Map(distinct.map((d, k) => [d, Math.min(d, freeCount + k + 1)]));
+  const total = freeCount + distinct.length;
+  const taken = new Set(final.values());
+  const freeNumbers = [];
+  for (let n = 1; n <= total; n++) if (!taken.has(n)) freeNumbers.push(n);
+  return { pinnedNumbers: positions.map((p) => final.get(p)), freeNumbers, total };
 }

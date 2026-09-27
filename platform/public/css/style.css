@@ -260,8 +260,6 @@ nav.day-tabs { margin-top: 4px; }
 .day-intro { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
 ol.ranker .tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 0.8rem; font-weight: 600; }
 /* Locked rows sit right above the day's list and continue its numbering */
-ol.ranker.locked-rows { margin-bottom: 0; }
-ol.ranker.locked-rows + ol.ranker { margin-top: 0; }
 ol.ranker li.locked { grid-template-columns: 34px 64px 1fr; background: var(--locked-bg, #fff4d6); border-color: var(--locked-border, #e8c66a); color: inherit; }
 ol.ranker li.locked .handle { cursor: default; }
 ol.ranker li.locked .lockpos { min-height: 40px; display: grid; place-items: center; font-weight: 700; border: 1px dashed var(--locked-border, #e8c66a); border-radius: 6px; }
@@ -274,3 +272,4 @@ details.receipt[open] > summary { margin-bottom: 8px; }
 @media (prefers-color-scheme: dark) {
   :root { --locked-bg: #3a3218; --locked-border: #8a7433; }
 }
+.summary-day ul.receipt-list { list-style: none; margin: 4px 0; padding-left: 1em; }
