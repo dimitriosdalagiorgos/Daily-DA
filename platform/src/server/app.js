@@ -67,13 +67,20 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   };
   const getSubmissions = async () => Object.fromEntries((await store.list("submission:")).map(({ key, value }) => [key.slice(11), value]));
 
-  const logEvent = (who, what, detail = {}) =>
-    store.update("events", (events = []) => [...events, { at: new Date(now()).toISOString(), who, what, ...detail }]);
+  const logEvent = (who, what, detail = {}) => store.append("events", { at: new Date(now()).toISOString(), who, what, ...detail });
 
   const mail = async (to, subject, text) => {
     const message = { to, subject, text, at: new Date(now()).toISOString() };
-    await store.update("outbox", (box = []) => [...box, message].slice(-200));
-    if (sendMail) await sendMail(message);
+    await store.append("outbox", message);
+    if (sendMail) {
+      try {
+        await sendMail(message);
+      } catch (err) {
+        // The action itself succeeded; the mail stays in the outbox.
+        console.error("mail failed", err);
+        await store.append("events", { at: message.at, who: "system", what: "mail_failed", to, error: String(err.message ?? err) });
+      }
+    }
   };
 
   const deadlinePassed = (settings) => settings.deadline && now() > Date.parse(settings.deadline);
@@ -306,8 +313,10 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/admin/outbox", async (req) => {
     session(req, "admin");
-    if (!env.DEV) throw new HttpError(404, "Δεν υπάρχει.");
-    return json(200, { outbox: (await store.get("outbox")) ?? [] });
+    // Locally, and in production until an e-mail service is configured
+    // (then teachers' login links can only be passed on by the admin).
+    if (!env.DEV && !env.SHOW_OUTBOX) throw new HttpError(404, "Δεν υπάρχει.");
+    return json(200, { outbox: await store.readLog("outbox", 200) });
   });
 
   // --- teacher ---

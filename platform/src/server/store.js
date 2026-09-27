@@ -1,15 +1,19 @@
-// Storage behind a small key-value interface, so the backend can change
-// (local JSON file now; Supabase later — one table kv(key, value jsonb)).
+// Storage behind a small interface, so the backend can change: memory /
+// JSON file locally, Supabase in production (store-supabase.js).
 //
-//   get(key)            → value or undefined
+//   get(key)              → value or undefined
 //   set(key, value)
-//   update(key, fn)     → fn(current) returns the new value; serialized per store
-//   list(prefix)        → [{key, value}] for keys starting with prefix
+//   update(key, fn)       → fn(current) returns the new value; atomic per key
+//   list(prefix)          → [{key, value}] for keys starting with prefix
 //   delete(key)
+//   append(kind, item)    → add to an append-only log (no lost writes when
+//                           many people act at once)
+//   readLog(kind, limit)  → the last `limit` items, oldest first
 //
 // Values are JSON-serializable. Keys used by the app:
 //   settings, students, clubs, teachers, teacherList:<code>,
-//   submission:<am>, results, outbox, events
+//   submission:<am>, results, resultsLog, sessionSecret
+// Logs: events, outbox
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -44,6 +48,16 @@ export function createMemoryStore(initial = {}) {
         data.delete(key);
       });
     },
+    append(kind, item) {
+      return serialize(() => {
+        const log = data.get(`log:${kind}`) ?? [];
+        log.push(clone(item));
+        data.set(`log:${kind}`, log);
+      });
+    },
+    async readLog(kind, limit = 200) {
+      return clone((data.get(`log:${kind}`) ?? []).slice(-limit));
+    },
     snapshot: () => Object.fromEntries([...data].map(([k, v]) => [k, clone(v)])),
   };
 }
@@ -63,5 +77,6 @@ export function createFileStore(path) {
     set: (key, value) => after(mem.set(key, value)),
     update: (key, fn) => after(mem.update(key, fn)),
     delete: (key) => after(mem.delete(key)),
+    append: (kind, item) => after(mem.append(kind, item)),
   };
 }

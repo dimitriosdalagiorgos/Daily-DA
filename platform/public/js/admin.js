@@ -66,7 +66,7 @@ async function refresh() {
 
 function render() {
   logout.classList.remove("hidden");
-  const tabs = [["overview", "Πορεία & ρυθμίσεις"], ["data", "Αρχεία"], ["students", "Μαθητές"], ["clubs", "Όμιλοι"], ["allocation", "Κατανομή"], ...(devOutbox ? [["outbox", "Εξερχόμενα (τοπικά)"]] : [])];
+  const tabs = [["overview", "Πορεία & ρυθμίσεις"], ["data", "Αρχεία"], ["students", "Μαθητές"], ["clubs", "Όμιλοι"], ["allocation", "Κατανομή"], ...(devOutbox ? [["outbox", "Εξερχόμενα email"]] : [])];
   const nav = el("nav.tabs", { role: "tablist" }, tabs.map(([id, label]) =>
     el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), onclick: () => { tab = id; render(); } }, label)));
   const views = { overview, data, students, clubs, allocation, outbox };
@@ -369,7 +369,7 @@ function resultsView(results) {
 function outbox() {
   const box = el("div", {}, el("p.muted", {}, "Φόρτωση…"));
   api("GET", "/api/admin/outbox").then(({ outbox: mails }) => box.replaceChildren(
-    el("p.small.muted", {}, "Τοπικά τα email δεν στέλνονται· εμφανίζονται εδώ (και στην κονσόλα του server)."),
+    el("p.small.muted", {}, "Όσο δεν έχει ρυθμιστεί υπηρεσία email, τα μηνύματα δεν στέλνονται: εμφανίζονται εδώ. Τους συνδέσμους εισόδου των εκπαιδευτικών τους προωθείτε εσείς."),
     ...[...mails].reverse().map((m) => el("section.card", {},
       el("p.small.muted", {}, `${formatDateTime(m.at)} → ${m.to}`),
       el("strong", {}, m.subject),

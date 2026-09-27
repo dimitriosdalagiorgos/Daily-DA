@@ -4,11 +4,20 @@ import { createApp } from "../src/server/app.js";
 import { createMemoryStore } from "../src/server/store.js";
 import { signToken, verifyToken, hashPassword, verifyPassword } from "../src/server/auth.js";
 import { makeZip, crc32 } from "../src/server/zip.js";
+import { createSupabaseStore } from "../src/server/store-supabase.js";
+import { createFakePostgrest } from "./fake-postgrest.js";
+
+const STORES = {
+  memory: () => createMemoryStore(),
+  supabase: () => {
+    const fake = createFakePostgrest();
+    return createSupabaseStore({ url: "https://proj.supabase.co", key: fake.key, fetch: fake.fetch });
+  },
+};
 
 const env = { SESSION_SECRET: "test-secret-0123456789", ADMIN_PASSWORD: "admin-pass", BASE_URL: "http://localhost", DEV: true };
 
-function setup({ now = Date.parse("2026-10-01T09:00:00Z") } = {}) {
-  const store = createMemoryStore();
+function setup({ now = Date.parse("2026-10-01T09:00:00Z"), store = createMemoryStore() } = {}) {
   const clock = { now };
   const handle = createApp({ store, env, now: () => clock.now });
   const call = async (method, path, { token, body, ip = "1.2.3.4" } = {}) => {
@@ -53,8 +62,8 @@ async function adminLogin(call) {
   return r.data.token;
 }
 
-test("the whole year: upload → teachers → parents → allocation → results", async () => {
-  const { call, store, clock } = setup();
+for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole year (${storeName} store): upload → teachers → parents → allocation → results`, async () => {
+  const { call, store, clock } = setup({ store: makeStore() });
   assert.equal((await call("POST", "/api/admin/login", { body: { password: "wrong" } })).status, 401);
   let admin = await adminLogin(call);
 
@@ -77,7 +86,7 @@ test("the whole year: upload → teachers → parents → allocation → results
   assert.equal(r.status, 200);
   const unknown = await call("POST", "/api/teacher/login", { body: { email: "nobody@sch.gr" } });
   assert.equal(unknown.data.message, r.data.message, "same answer for unknown addresses");
-  const link = (await store.get("outbox")).at(-1);
+  const link = (await store.readLog("outbox")).at(-1);
   assert.equal(link.to, "etheatr@sch.gr");
   const magic = link.text.match(/#token=(\S+)/)[1];
   r = await call("POST", "/api/teacher/session", { body: { token: magic } });
@@ -91,7 +100,7 @@ test("the whole year: upload → teachers → parents → allocation → results
   assert.equal(r.status, 422, "grade Α student refused");
   r = await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { capacity: 1, ams: ["9001"] } });
   assert.equal(r.status, 200);
-  assert.equal((await store.get("outbox")).at(-1).to, "nskin@sch.gr", "co-teacher notified");
+  assert.equal((await store.readLog("outbox")).at(-1).to, "nskin@sch.gr", "co-teacher notified");
   assert.equal((await call("PUT", "/api/teacher/clubs/101", { token: teacher, body: { capacity: 1, ams: [] } })).status, 403);
 
   // Open declarations
@@ -135,7 +144,7 @@ test("the whole year: upload → teachers → parents → allocation → results
   r = await submit(christoforidis, { mon: ["100", "101"], thu: ["102"] }, "first@example.com");
   assert.equal(r.status, 200);
   r = await submit(christoforidis, { mon: ["100", "101"], thu: ["102"] }, "second@example.com");
-  const mails = (await store.get("outbox")).slice(-2).map((m) => m.to);
+  const mails = (await store.readLog("outbox")).slice(-2).map((m) => m.to);
   assert.deepEqual(mails, ["second@example.com", "first@example.com"], "previous address told about the change");
   assert.equal((await submit(ntoka, { mon: ["101", "100"], thu: ["102"] })).status, 200);
   const pap = (await login({ am: "9001", surname: "ΠΑΠΑΔΟΠΟΥΛΟΣ", name: "ΝΙΚΟΛΑΟΣ", father: "ΓΕΩΡΓΙΟΣ", mother: "ΜΑΡΙΑ" })).data.token;

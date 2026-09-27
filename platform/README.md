@@ -24,7 +24,7 @@ npm run dev               # κρατά τα δεδομένα στο .data/dev-st
 | `public/` | Σελίδες: `index.html`, `parent.html`, `teacher.html`, `admin.html` (απλή HTML/JS, χωρίς build) |
 | `src/server/` | API (`app.js`), αποθήκευση (`store.js`), sessions/κωδικοί (`auth.js`) |
 | `dev/` | Τοπικός server και δοκιμαστικά δεδομένα |
-| `netlify/functions/api.mjs` | Το ίδιο API στο Netlify (αποθήκευση Supabase: βήμα 4) |
+| `netlify/functions/api.mjs` | Το ίδιο API στο Netlify, με αποθήκευση Supabase (`src/server/store-supabase.js`, πίνακες: `supabase/schema.sql`) |
 
 ## Αλγόριθμος (`src/algorithm/`)
 
