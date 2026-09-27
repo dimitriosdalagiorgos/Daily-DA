@@ -19,17 +19,31 @@ test("equal rank: the better lottery number wins", () => {
   assert.equal(seatOf(r, "mon", "1"), "11");
 });
 
-test("student's rank beats the lottery", () => {
+test("the student's rank gives no priority: the lottery decides (pure Gale–Shapley)", () => {
   // Student 1 ranks club 10 second but has the better lottery number;
-  // student 2 ranks it first and gets it.
+  // student 2 ranks it first, holds it in round 1 and loses it in round 2.
   const r = allocateWeek({
     students: [{ am: "1", grade: "Α" }, { am: "2", grade: "Α" }],
     clubs: [club(10, ["mon"], 1), club(11, ["mon"], 0), club(12, ["mon"], 5)],
     preferences: { 1: { mon: [11, 10, 12] }, 2: { mon: [10, 11, 12] } },
     lottery: lotteryOf("1", "2"),
   });
-  assert.equal(seatOf(r, "mon", "2"), "10");
-  assert.equal(seatOf(r, "mon", "1"), "12");
+  assert.equal(seatOf(r, "mon", "1"), "10");
+  assert.equal(seatOf(r, "mon", "2"), "12");
+  assert.deepEqual(events(r, "mon", "2"), [EVENTS.PROPOSAL, EVENTS.ACCEPTED, EVENTS.DISPLACED, EVENTS.PROPOSAL, EVENTS.REJECTED, EVENTS.PROPOSAL, EVENTS.ACCEPTED]);
+});
+
+test("Γιώργος, Σοφία and Νίκος: the best lottery number chooses first", () => {
+  // The example of docs/algorithm.md: one seat in each club.
+  const r = allocateWeek({
+    students: [{ am: "Νίκος", grade: "Α" }, { am: "Γιώργος", grade: "Α" }, { am: "Σοφία", grade: "Α" }],
+    clubs: [club("Ρομποτική", ["mon"], 1), club("Σκάκι", ["mon"], 1)],
+    preferences: { "Νίκος": { mon: ["Ρομποτική", "Σκάκι"] }, "Γιώργος": { mon: ["Ρομποτική", "Σκάκι"] }, "Σοφία": { mon: ["Σκάκι", "Ρομποτική"] } },
+    lottery: lotteryOf("Νίκος", "Γιώργος", "Σοφία"),
+  });
+  assert.equal(seatOf(r, "mon", "Νίκος"), "Ρομποτική");
+  assert.equal(seatOf(r, "mon", "Γιώργος"), "Σκάκι");
+  assert.equal(seatOf(r, "mon", "Σοφία"), null);
 });
 
 test("teacher's choice beats the student's rank, in the teacher's order", () => {
@@ -240,9 +254,9 @@ test("mandatory grades go before the others, but after the teacher's choice", ()
 function priorityKey(input, am, code, rank) {
   const pos = (input.teacherLists[code] ?? []).indexOf(am);
   const grade = input.students.find((s) => s.am === am).grade;
-  return [pos < 0 ? Infinity : pos + 1, input.mandatoryGrades.includes(grade) ? 0 : 1, rank, input.lottery.get(am)];
+  return [pos < 0 ? Infinity : pos + 1, input.mandatoryGrades.includes(grade) ? 0 : 1, input.lottery.get(am)];
 }
-const better = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3];
+const better = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
 function randomInstance(rng) {
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
@@ -336,6 +350,76 @@ test("random instances: capacities respected, no multi-day clash, and every day'
     for (const day of DAYS) {
       const ams = r.days[day].assignments.map((a) => a.am);
       assert.equal(new Set(ams).size, ams.length, `double seat on ${day}`);
+    }
+  }
+});
+
+// ---------- The order of proposals does not matter ----------
+
+// Every club on its first day only, and the lists cut accordingly.
+function singleDays(input) {
+  input.clubs = input.clubs.map((c) => ({ ...c, days: [c.days[0]] }));
+  const on = new Map(input.clubs.map((c) => [String(c.code), c.days[0]]));
+  for (const days of Object.values(input.preferences)) {
+    for (const day of Object.keys(days)) days[day] = days[day].filter((c) => on.get(String(c)) === day);
+  }
+}
+//
+// The same result whatever the order in which applications are handled
+// (McVitie & Wilson, 1970): here one application at a time, in a random
+// order, against allocateWeek's simultaneous rounds.
+function oneAtATime(input, day, rng) {
+  const code = (c) => String(c);
+  const cap = new Map(input.clubs.filter((c) => c.days.length === 1 && c.days[0] === day).map((c) => [code(c.code), c.capacity]));
+  const key = (am, c) => priorityKey(input, am, c, 0);
+  const lists = new Map(input.students.map((s) => [s.am, (input.preferences[s.am]?.[day] ?? []).map(code).filter((c) => cap.has(c))]));
+  const next = new Map([...lists.keys()].map((am) => [am, 0]));
+  const held = new Map([...cap.keys()].map((c) => [c, []]));
+  const free = [...lists.keys()];
+  while (true) {
+    const ready = free.filter((am) => next.get(am) < lists.get(am).length);
+    if (!ready.length) break;
+    const am = ready[Math.floor(rng() * ready.length)];
+    free.splice(free.indexOf(am), 1);
+    const c = lists.get(am)[next.get(am)];
+    next.set(am, next.get(am) + 1);
+    const h = held.get(c);
+    h.push(am);
+    h.sort((x, y) => better(key(x, c), key(y, c)));
+    if (h.length > cap.get(c)) free.push(h.pop());
+  }
+  return Object.fromEntries([...held].flatMap(([c, ams]) => ams.map((am) => [am, c])));
+}
+
+test("random instances: handling applications one at a time, in any order, gives the same result", () => {
+  const rng = seededRandom("order-independence");
+  for (let n = 0; n < 200; n++) {
+    const input = randomInstance(rng);
+    singleDays(input); // no carry-over between days
+    const r = allocateWeek(input);
+    for (const day of DAYS) {
+      const rounds = Object.fromEntries(r.days[day].assignments.map((a) => [a.am, a.club]));
+      for (let k = 0; k < 3; k++) assert.deepEqual(oneAtATime(input, day, rng), rounds, `instance ${n}, ${day}`);
+    }
+  }
+});
+
+test("without teacher lists and mandatory grades, DA = choosing in lottery order", () => {
+  // Random serial dictatorship: by lottery number, each student takes the
+  // best club on their list that still has a seat.
+  const rng = seededRandom("serial-dictatorship");
+  for (let n = 0; n < 200; n++) {
+    const input = { ...randomInstance(rng), teacherLists: {}, mandatoryGrades: [] };
+    singleDays(input);
+    const r = allocateWeek(input);
+    for (const day of DAYS) {
+      const left = new Map(input.clubs.filter((c) => c.days[0] === day).map((c) => [String(c.code), c.capacity]));
+      const got = {};
+      for (const s of [...input.students].sort((a, b) => input.lottery.get(a.am) - input.lottery.get(b.am))) {
+        const c = (input.preferences[s.am]?.[day] ?? []).map(String).find((x) => left.get(x) > 0);
+        if (c) { left.set(c, left.get(c) - 1); got[s.am] = c; }
+      }
+      assert.deepEqual(Object.fromEntries(r.days[day].assignments.map((a) => [a.am, a.club])), got, `instance ${n}, ${day}`);
     }
   }
 });

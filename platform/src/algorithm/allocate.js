@@ -5,8 +5,13 @@
 //   1. position in the teacher's list for the club (not listed = ∞)
 //   2. students of grades with mandatory placement before the others
 //      (only when mandatoryGrades is given)
-//   3. the student's rank for the club on that day (after renumbering)
-//   4. the student's lottery number
+//   3. the student's lottery number
+// The student's own ranking decides only where and in which order they
+// apply — not their priority at a club (pure Gale–Shapley, decided
+// 27/9/2026). Priorities that do not depend on what students declare keep
+// DA strategy-proof: ranking clubs truthfully is always best.
+// The result does not depend on the order in which proposals are handled;
+// rounds are just one way of computing it (tested in allocate.test.js).
 //
 // Multi-day clubs (2 or 3 days) take part only in the allocation of their
 // first day. Students placed there keep the seat on the club's later days
@@ -64,7 +69,7 @@ function indexClubs(clubs) {
 }
 
 function comparePriority(a, b) {
-  return a.teacherPos - b.teacherPos || a.group - b.group || a.rank - b.rank || a.lottery - b.lottery;
+  return a.teacherPos - b.teacherPos || a.group - b.group || a.lottery - b.lottery;
 }
 
 /**

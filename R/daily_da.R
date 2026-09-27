@@ -13,7 +13,10 @@
 #      pair instead of the two columns separately.
 #   4. Optional grade_priority_file (RegistryNr, grade_priority): students
 #      of grades with mandatory placement (0) go before the others (1),
-#      after the teacher's list and before the student's rank.
+#      after the teacher's list.
+#   5. Pure Gale–Shapley (decided 27/9/2026): a club's priority is teacher
+#      list → grade priority → lottery. The student's preference rank decides
+#      only where and in which order the student applies, not who stays.
 # Everything else is unchanged.
 #
 # Usage (normally called by run_week.R):
@@ -389,12 +392,13 @@ while (round <= max_rounds) {
           mutate(teacher_priority = Inf)
       }
       
-      # Sort by: teacher priority, student preference rank, then random
+      # Sort by: teacher priority, grade priority, then the lottery
+      # REFERENCE: the preference rank is no longer a priority criterion
       club_data <- club_data %>%
         left_join(lottery, by = "student_id") %>%  # REFERENCE: fixed lottery
         left_join(grade_priority, by = "student_id") %>%  # REFERENCE: grade priority
         mutate(grade_priority = coalesce(grade_priority, 0L)) %>%
-        arrange(teacher_priority, grade_priority, preference_rank, lottery_number)
+        arrange(teacher_priority, grade_priority, lottery_number)
       
       accepted <- club_data %>% 
         slice_head(n = capacity) %>% 
