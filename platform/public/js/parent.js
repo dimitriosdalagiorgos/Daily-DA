@@ -201,10 +201,10 @@ function mainView(me) {
 function doneView() {
   return el("section.card.no-print", {},
     el("h2", { style: "margin-top:0" }, "Τελειώσατε;"),
-    el("p", {}, "Αν έχετε κι άλλο παιδί στο σχολείο, κάντε δήλωση και για εκείνο. Αν τη συσκευή θα τη χρησιμοποιήσει άλλος γονέας, αποσυνδεθείτε."),
+    el("p", {}, "Αν έχετε κι άλλο παιδί στο σχολείο, κάντε δήλωση και για εκείνο. Αν τη συσκευή θα τη χρησιμοποιήσει άλλος γονέας, πατήστε «Αποσύνδεση γονέα»."),
     el("div.actions", {},
       el("button", { type: "button", onclick: nextChild }, "Δήλωση για άλλο παιδί"),
-      el("button.primary", { type: "button", onclick: signOut }, "Αποσύνδεση")));
+      el("button.primary", { type: "button", onclick: signOut }, "Αποσύνδεση γονέα")));
 }
 
 // ---------- Receipt & history ----------
