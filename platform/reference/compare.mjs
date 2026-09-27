@@ -153,7 +153,9 @@ function randomScenario(rng, name) {
   }
   const seed = `${name} Κλήρωση ${rng()}`;
   const lottery = drawLottery(students.map((s) => s.am), seed);
-  return { name, students, clubs, preferences, teacherLists, lottery, seed };
+  // Grades with mandatory placement go first (after the teacher's list).
+  const mandatoryGrades = grades.filter(() => rng() < 0.4);
+  return { name, students, clubs, preferences, teacherLists, lottery, seed, mandatoryGrades };
 }
 
 // ---------- Main ----------
@@ -169,7 +171,7 @@ for (const scenario of scenarios) {
   const dir = mkdtempSync(join(tmpdir(), `compare-${scenario.name}-`));
   const { diffs, seats, carried, conflicts } = compare(scenario, runR(dir, scenario));
   const multi = scenario.clubs.filter((c) => c.days.length > 1).length;
-  const summary = `${scenario.name}: ${scenario.students.length} μαθητές, ${scenario.clubs.length} όμιλοι (${multi} πολυήμεροι), ${seats} θέσεις, ${carried} μεταφορές, ${conflicts} συγκρούσεις ημερών`;
+  const summary = `${scenario.name}: ${scenario.students.length} μαθητές, ${scenario.clubs.length} όμιλοι (${multi} πολυήμεροι), ${seats} θέσεις, ${carried} μεταφορές, ${conflicts} συγκρούσεις ημερών, υποχρεωτικές τάξεις: ${scenario.mandatoryGrades?.join("+") || "καμία"}`;
   if (diffs.length === 0) {
     console.log(`✓ ${summary} — ίδια αποτελέσματα`);
   } else {

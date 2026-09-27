@@ -209,13 +209,40 @@ test("bad input is refused, not silently fixed", () => {
   assert.throws(() => allocateWeek({ ...base, clubs: [club(10, ["mon"], 1)], preferences: {}, lottery: new Map() }), /κλήρωσης/);
 });
 
+test("mandatory grades go before the others, but after the teacher's choice", () => {
+  // Student 2 (Α, mandatory) ranks club 10 second, student 3 (Γ) ranks it
+  // first with the better lottery number: the mandatory grade wins.
+  const r = allocateWeek({
+    students: [{ am: "2", grade: "Α" }, { am: "3", grade: "Γ" }],
+    clubs: [club(10, ["mon"], 1), club(11, ["mon"], 0), club(12, ["mon"], 5)],
+    preferences: { 2: { mon: [11, 10, 12] }, 3: { mon: [10, 11, 12] } },
+    lottery: lotteryOf("3", "2"),
+    mandatoryGrades: ["Α"],
+  });
+  assert.equal(seatOf(r, "mon", "2"), "10");
+  assert.equal(seatOf(r, "mon", "3"), "12");
+
+  // The teacher's pick (Γ) still goes before the mandatory grade.
+  const t = allocateWeek({
+    students: [{ am: "1", grade: "Γ" }, { am: "2", grade: "Α" }],
+    clubs: [club(10, ["mon"], 1), club(12, ["mon"], 5)],
+    preferences: { 1: { mon: [10, 12] }, 2: { mon: [10, 12] } },
+    teacherLists: { 10: ["1"] },
+    lottery: lotteryOf("2", "1"),
+    mandatoryGrades: ["Α"],
+  });
+  assert.equal(seatOf(t, "mon", "1"), "10");
+  assert.equal(seatOf(t, "mon", "2"), "12");
+});
+
 // ---------- Property test: stability on random instances ----------
 
-function priorityKey(teacherLists, lottery, am, code, rank) {
-  const pos = (teacherLists[code] ?? []).indexOf(am);
-  return [pos < 0 ? Infinity : pos + 1, rank, lottery.get(am)];
+function priorityKey(input, am, code, rank) {
+  const pos = (input.teacherLists[code] ?? []).indexOf(am);
+  const grade = input.students.find((s) => s.am === am).grade;
+  return [pos < 0 ? Infinity : pos + 1, input.mandatoryGrades.includes(grade) ? 0 : 1, rank, input.lottery.get(am)];
 }
-const better = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+const better = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3];
 
 function randomInstance(rng) {
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
@@ -253,7 +280,8 @@ function randomInstance(rng) {
     }
   }
   const lottery = drawLottery(students.map((s) => s.am), String(rng()));
-  return { students, clubs, preferences, teacherLists, lottery };
+  const mandatoryGrades = grades.filter(() => rng() < 0.4);
+  return { students, clubs, preferences, teacherLists, lottery, mandatoryGrades };
 }
 
 test("random instances: capacities respected, no multi-day clash, and every day's result is stable", () => {
@@ -294,9 +322,9 @@ test("random instances: capacities respected, no multi-day clash, and every day'
           const cap = byCode.get(code).capacity;
           const inClub = members.get(code) ?? [];
           if (inClub.length < cap) assert.fail(`${s.am} would take a free seat in ${code} on ${day}`);
-          const myKey = priorityKey(input.teacherLists, input.lottery, s.am, code, i + 1);
+          const myKey = priorityKey(input, s.am, code, i + 1);
           for (const m of inClub) {
-            const theirKey = priorityKey(input.teacherLists, input.lottery, m.am, code, m.rank);
+            const theirKey = priorityKey(input, m.am, code, m.rank);
             assert.ok(better(theirKey, myKey) < 0, `blocking pair ${s.am}–${code} on ${day}`);
           }
         }

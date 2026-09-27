@@ -11,11 +11,14 @@
 #      every round.
 #   3. ACCEPTED vs RETAINED in the audit log checks the (student, club)
 #      pair instead of the two columns separately.
+#   4. Optional grade_priority_file (RegistryNr, grade_priority): students
+#      of grades with mandatory placement (0) go before the others (1),
+#      after the teacher's list and before the student's rank.
 # Everything else is unchanged.
 #
 # Usage (normally called by run_week.R):
 #   Rscript R/daily_da.R <day_name> <clubs_file> <responses_file> \
-#           <prefs_dir> <lottery_file> [output_dir]
+#           <prefs_dir> <lottery_file> [output_dir] [grade_priority_file]
 # ----------------------------------------------------------
 # Student-proposing Gale-Shapley with optional teacher preferences
 # Matches audit script logic when no teacher preferences present
@@ -134,6 +137,12 @@ if (anyDuplicated(responses$student_id) > 0) {
 # REFERENCE: load the lottery (one fixed number per student)
 lottery <- read_csv(lottery_file, show_col_types = FALSE, col_types = cols(.default = "c")) %>%
   transmute(student_id = as.character(RegistryNr), lottery_number = as.integer(lottery_number))
+# REFERENCE: grade priority (0 = mandatory grade, 1 = other; all 0 if absent)
+grade_priority <- tibble(student_id = character(0), grade_priority = integer(0))
+if (length(args) >= 7 && file.exists(args[7])) {
+  grade_priority <- read_csv(args[7], show_col_types = FALSE, col_types = cols(.default = "c")) %>%
+    transmute(student_id = as.character(RegistryNr), grade_priority = as.integer(grade_priority))
+}
 missing_lottery <- setdiff(responses$student_id, lottery$student_id)
 if (length(missing_lottery) > 0) {
   stop(sprintf("Error: no lottery number for: %s", paste(missing_lottery, collapse = ", ")))
@@ -383,7 +392,9 @@ while (round <= max_rounds) {
       # Sort by: teacher priority, student preference rank, then random
       club_data <- club_data %>%
         left_join(lottery, by = "student_id") %>%  # REFERENCE: fixed lottery
-        arrange(teacher_priority, preference_rank, lottery_number)
+        left_join(grade_priority, by = "student_id") %>%  # REFERENCE: grade priority
+        mutate(grade_priority = coalesce(grade_priority, 0L)) %>%
+        arrange(teacher_priority, grade_priority, preference_rank, lottery_number)
       
       accepted <- club_data %>% 
         slice_head(n = capacity) %>% 

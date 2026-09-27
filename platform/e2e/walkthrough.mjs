@@ -136,6 +136,10 @@ try {
   if (locked < 1) throw new Error("multi-day club not shown locked on its later day");
   await parent.fill("#pname", "Γιάννης Γεωργίου");
   await parent.fill("#pemail", "parent@example.com");
+  await parent.click("text=Υποβολή δήλωσης");
+  await parent.waitForSelector(".msg.err:has-text('Έλεγξα τη σειρά της ημέρας')");
+  step("parent: submit refused until every day is checked");
+  for (const box of await parent.locator(".day-check input").all()) await box.check();
   await shot(parent, "05-parent-ranking");
   await parent.click("text=Υποβολή δήλωσης");
   await parent.waitForSelector(".msg.ok:has-text('καταχωρίστηκε')");

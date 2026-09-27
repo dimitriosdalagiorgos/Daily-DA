@@ -3,8 +3,10 @@
 //
 // Club priority over students (lower tuple wins):
 //   1. position in the teacher's list for the club (not listed = ∞)
-//   2. the student's rank for the club on that day (after renumbering)
-//   3. the student's lottery number
+//   2. students of grades with mandatory placement before the others
+//      (only when mandatoryGrades is given)
+//   3. the student's rank for the club on that day (after renumbering)
+//   4. the student's lottery number
 //
 // Multi-day clubs (2 or 3 days) take part only in the allocation of their
 // first day. Students placed there keep the seat on the club's later days
@@ -17,6 +19,7 @@
 //   preferences:  { [am]: { [day]: [clubCode, ...] } }   best first
 //   teacherLists: { [clubCode]: [am, ...] }              teacher's order
 //   lottery:      Map<am, number>                        from drawLottery()
+//   mandatoryGrades: ["Α", ...]                          grades placed first
 
 import { DAYS, dayIndex } from "./days.js";
 
@@ -61,7 +64,7 @@ function indexClubs(clubs) {
 }
 
 function comparePriority(a, b) {
-  return a.teacherPos - b.teacherPos || a.rank - b.rank || a.lottery - b.lottery;
+  return a.teacherPos - b.teacherPos || a.group - b.group || a.rank - b.rank || a.lottery - b.lottery;
 }
 
 /**
@@ -136,7 +139,7 @@ function deferredAcceptance(dayClubs, lists, priorityOf, log) {
  *   byStudent: Record<string, Record<string, string|null>>,
  * }}
  */
-export function allocateWeek({ students, clubs, preferences, teacherLists = {}, lottery }) {
+export function allocateWeek({ students, clubs, preferences, teacherLists = {}, lottery, mandatoryGrades = [] }) {
   const clubsByCode = indexClubs(clubs);
   const studentsByAm = new Map();
   for (const s of students) {
@@ -209,6 +212,7 @@ export function allocateWeek({ students, clubs, preferences, teacherLists = {}, 
     const priorityOf = (am, code, rank) => ({
       am,
       rank,
+      group: mandatoryGrades.includes(studentsByAm.get(am).grade) ? 0 : 1,
       teacherPos: teacherPos.get(code)?.get(am) ?? Infinity,
       lottery: lottery.get(am),
     });

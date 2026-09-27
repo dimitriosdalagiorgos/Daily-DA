@@ -243,3 +243,6 @@ footer.site { max-width: 960px; margin: 0 auto; padding: 0 16px 32px; color: var
   main > *:not(.receipt) { display: none !important; }
   .receipt { border: 1px solid #999; box-shadow: none; }
 }
+
+.day-check { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-weight: 600; }
+.day-check input { width: 20px; height: 20px; }

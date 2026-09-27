@@ -21,6 +21,8 @@
 #   clubs.csv          code, name, days ("mon;thu"), grades ("Α;Β"), capacity
 #   preferences.csv    RegistryNr, day, rank, club_code
 #   teacher_lists.csv  club_code, position, RegistryNr
+#   mandatory_grades.csv grade — grades with mandatory placement; their
+#                      students go before the others (after the teacher's list)
 #   seed.txt           published seed        } at least one of the two;
 #   lottery.csv        RegistryNr, lottery_number } if both, they must agree
 #
@@ -73,6 +75,9 @@ prefs <- read_input("preferences.csv") %>% mutate(rank = as.integer(rank))
 teacher_lists <- read_input("teacher_lists.csv", required = FALSE)
 if (is.null(teacher_lists)) teacher_lists <- tibble(club_code = character(0), position = character(0), RegistryNr = character(0))
 
+mandatory <- read_input("mandatory_grades.csv", required = FALSE)
+mandatory_grades <- if (is.null(mandatory)) character(0) else trimws(mandatory$grade)
+
 cat(sprintf("Μαθητές: %d, όμιλοι: %d, προτιμήσεις: %d\n", nrow(students), nrow(clubs), nrow(prefs)))
 
 # ---------- Lottery ----------
@@ -99,6 +104,13 @@ if (file.exists(seed_file)) {
 }
 write_csv(lottery, file.path(output_dir, "lottery.csv"))
 lottery_file <- file.path(output_dir, "lottery.csv")
+
+# ---------- Mandatory grades first ----------
+grade_priority_file <- file.path(output_dir, "grade_priority.csv")
+write_csv(students %>% transmute(RegistryNr, grade_priority = ifelse(grade %in% mandatory_grades, 0L, 1L)),
+          grade_priority_file)
+cat(sprintf("Τάξεις με προτεραιότητα (υποχρεωτική ένταξη): %s\n",
+            ifelse(length(mandatory_grades) == 0, "καμία", paste(mandatory_grades, collapse = ", "))))
 
 # ---------- Clubs ----------
 # daily_da.R identifies clubs by name and finds teacher lists by file name,
@@ -160,7 +172,7 @@ for (day in DAY_KEYS) {
   old_wd <- setwd(work)
   status <- system2("Rscript",
                     c(shQuote(da_script), day_labels[[day]], "dailyclubs.csv", "dailyresponses.csv",
-                      shQuote(prefs_dir), shQuote(lottery_file), "reports"),
+                      shQuote(prefs_dir), shQuote(lottery_file), "reports", shQuote(grade_priority_file)),
                     stdout = "run.log", stderr = "run.log")
   setwd(old_wd)
   if (status != 0) stop(sprintf("Το daily_da.R απέτυχε για %s — δείτε %s", day_labels[[day]], file.path(work, "run.log")))

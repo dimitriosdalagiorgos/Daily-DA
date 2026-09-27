@@ -7,6 +7,20 @@ let pub = {};
 const app = $("#app");
 const logout = $("#logout");
 
+// First-time order of a day's clubs: shuffled per student (same ΑΜ → same
+// order), so no club gains from its place in the clubs template.
+function initialOrder(codes, key) {
+  let h = 2166136261;
+  for (const ch of key) h = Math.imul(h ^ ch.codePointAt(0), 16777619) >>> 0;
+  const rnd = () => { h = (Math.imul(h, 1664525) + 1013904223) >>> 0; return h / 2 ** 32; };
+  const a = [...codes];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 api.onExpired = () => { api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
 logout.addEventListener("click", () => { api.setToken(null); loginView(); });
 
@@ -101,9 +115,10 @@ function mainView(me) {
     el("summary", {}, el("strong", {}, "Πώς γίνεται η κατανομή")),
     el("ul", {},
       el("li", {}, "Για κάθε ημέρα βάζετε σε σειρά ", el("strong", {}, "όλους"), " τους ομίλους που αφορούν την τάξη του παιδιού."),
-      el("li", {}, "Όταν ένας όμιλος έχει περισσότερες αιτήσεις από θέσεις, προηγούνται: (1) οι μαθητές που επέλεξε ο/η εκπαιδευτικός του ομίλου, (2) όσοι τον έβαλαν ψηλότερα στη λίστα τους, (3) κλήρωση."),
+      el("li", {}, "Όταν ένας όμιλος έχει περισσότερες αιτήσεις από θέσεις, προηγούνται: (1) οι μαθητές που επέλεξε ο/η εκπαιδευτικός του ομίλου, (2) οι μαθητές των τάξεων όπου η συμμετοχή σε όμιλο είναι υποχρεωτική, (3) όσοι τον έβαλαν ψηλότερα στη λίστα τους, (4) κλήρωση."),
       el("li", {}, "Άρα η θέση που δίνετε σε έναν όμιλο μετράει: ο όμιλος που βάζετε 1ο σας δίνει προβάδισμα έναντι όσων τον έβαλαν χαμηλότερα."),
       el("li", {}, "Αν το παιδί δεν χωρέσει στην 1η επιλογή, δοκιμάζει τη 2η, και ούτω καθεξής."),
+      el("li", {}, "Στην αρχή οι όμιλοι εμφανίζονται σε τυχαία σειρά. Βάλτε τους στη σειρά που θέλετε και τσεκάρετε «Έλεγξα τη σειρά» σε κάθε ημέρα."),
       el("li", {}, "Όμιλοι που γίνονται δύο ή τρεις ημέρες μπαίνουν στη σειρά μόνο την πρώτη τους ημέρα· τις άλλες ημέρες εμφανίζονται κλειδωμένοι."))));
 
   const parentName = el("input", { id: "pname", type: "text", required: true, autocomplete: "name", value: submission?.parent?.name ?? "", disabled: !canEdit });
@@ -115,13 +130,22 @@ function mainView(me) {
       el("label", { for: "pemail" }, "Email", el("span.hint", {}, pub.mailEnabled ? "Εδώ θα έρθει η επιβεβαίωση της δήλωσης." : "Για επικοινωνία από το σχολείο. Επιβεβαίωση με email δεν στέλνεται: κρατήστε την απόδειξη που εμφανίζεται μετά την υποβολή."), parentEmail))));
 
   const rankers = {};
+  const checks = {};
   const daysCard = el("section.card", {}, el("h2", { style: "margin-top:0" }, "Σειρά προτίμησης ανά ημέρα"));
   for (const d of days) {
     const section = el("div.day", {}, el("h3", {}, d.label, d.clubs.length ? el("span.badge", {}, `${d.clubs.length} όμιλοι`) : null));
     if (d.clubs.length) {
-      const r = createRanker({ items: d.clubs, order: submission?.preferences?.[d.day], disabled: !canEdit, label: `Σειρά ομίλων ${d.label}` });
+      const saved = submission?.preferences?.[d.day];
+      const order = saved ?? initialOrder(d.clubs.map((c) => c.code), `${student.am}:${d.day}`);
+      // Changing the order asks for a new check of that day.
+      const check = el("input", { type: "checkbox", checked: Boolean(saved), disabled: !canEdit });
+      const r = createRanker({ items: d.clubs, order, disabled: !canEdit, label: `Σειρά ομίλων ${d.label}`, onChange: () => { check.checked = false; } });
       rankers[d.day] = r;
       section.append(r.node);
+      if (canEdit) {
+        checks[d.day] = { check, label: d.label };
+        section.append(el("label.day-check", {}, check, ` Έλεγξα τη σειρά της ημέρας (${d.label})`));
+      }
     }
     if (d.locked.length) {
       section.append(el("ol.ranker", { "aria-label": `Κλειδωμένοι όμιλοι ${d.label}` }, d.locked.map((c) =>
@@ -135,6 +159,10 @@ function mainView(me) {
   if (canEdit) {
     const submit = el("button.primary", { type: "button" }, submission ? "Αποθήκευση αλλαγών" : "Υποβολή δήλωσης");
     submit.addEventListener("click", () => busy(submit, out, async () => {
+      const unchecked = Object.values(checks).filter((c) => !c.check.checked).map((c) => c.label);
+      if (unchecked.length) {
+        throw new Error(`Τσεκάρετε «Έλεγξα τη σειρά της ημέρας» για: ${unchecked.join(", ")}.`);
+      }
       const preferences = Object.fromEntries(Object.entries(rankers).map(([day, r]) => [day, r.order()]));
       await api("PUT", "/api/parent/submission", { parent: { name: parentName.value, email: parentEmail.value }, preferences });
       const me2 = await api("GET", "/api/parent/me");
