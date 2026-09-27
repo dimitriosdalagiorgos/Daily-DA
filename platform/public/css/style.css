@@ -246,3 +246,8 @@ footer.site { max-width: 960px; margin: 0 auto; padding: 0 16px 32px; color: var
 
 .day-check { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-weight: 600; }
 .day-check input { width: 20px; height: 20px; }
+
+.phase-actions .spacer { flex: 1; }
+nav.tabs.subtabs { margin-top: 12px; }
+nav.tabs.subtabs button { font-size: 0.95rem; }
+ul.help li { margin: 6px 0; }

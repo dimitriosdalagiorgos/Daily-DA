@@ -3,6 +3,7 @@ import { readWorkbook } from "/lib/import/workbook.js";
 import { headerKey } from "/lib/import/table.js";
 import { decodeCsv, parseCsv } from "/lib/import/csv.js";
 import { reportView as studentReportView } from "./report.js";
+import { helpTabs } from "./help.js";
 
 const api = createApi("admin");
 const app = $("#app");
@@ -29,6 +30,7 @@ const PHASE_HELP = {
 
 let state = null;
 let tab = "overview";
+let resultsTab = "fill"; // sub-tab of the allocation results
 let devOutbox = false;
 
 api.onExpired = () => { api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
@@ -68,10 +70,10 @@ async function refresh() {
 
 function render() {
   logout.classList.remove("hidden");
-  const tabs = [["overview", "Πορεία & ρυθμίσεις"], ["data", "Αρχεία"], ["students", "Μαθητές"], ["clubs", "Όμιλοι"], ["allocation", "Κατανομή"], ["history", "Ιστορικό"], ...(devOutbox ? [["outbox", "Εξερχόμενα email"]] : [])];
+  const tabs = [["overview", "Πορεία & ρυθμίσεις"], ["data", "Αρχεία"], ["students", "Μαθητές"], ["clubs", "Όμιλοι"], ["allocation", "Κατανομή"], ["history", "Ιστορικό"], ...(devOutbox ? [["outbox", "Εξερχόμενα email"]] : []), ["help", "Βοήθεια"]];
   const nav = el("nav.tabs", { role: "tablist" }, tabs.map(([id, label]) =>
     el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), onclick: () => { tab = id; render(); } }, label)));
-  const views = { overview, data, students, clubs, allocation, history, outbox };
+  const views = { overview, data, students, clubs, allocation, history, outbox, help: () => helpTabs(["admin", "teacher", "parent"]) };
   show(app, el("h1", {}, "Διαχείριση"), phaseBar(), nav, el("div", { role: "tabpanel" }, views[tab]()));
 }
 
@@ -99,10 +101,12 @@ function phaseBar() {
     el("ol.steps", {}, PHASES.map(([p, label], i) => el(`li${i < idx ? ".done" : i === idx ? ".current" : ""}`, {}, label))),
     el("p", {}, PHASE_HELP[phase]),
     out,
-    el("div.actions", {},
-      next && next[0] !== "allocated" ? el("button.primary", { type: "button", onclick: go(next[0], confirmNext[next[0]]) }, `Επόμενη φάση: ${next[1]}`) : null,
-      next && next[0] === "allocated" ? el("span.muted.small", {}, "Επόμενο βήμα: καρτέλα «Κατανομή».") : null,
-      prev ? el("button", { type: "button", onclick: go(prev[0], `Επιστροφή στη φάση «${prev[1]}»;`) }, `Επιστροφή: ${prev[1]}`) : null));
+    // Previous phase on the left, next phase on the right.
+    el("div.actions.phase-actions", {},
+      prev ? el("button", { type: "button", onclick: go(prev[0], `Επιστροφή στη φάση «${prev[1]}»;`) }, `← Επιστροφή: ${prev[1]}`) : null,
+      el("span.spacer"),
+      next && next[0] !== "allocated" ? el("button.primary", { type: "button", onclick: go(next[0], confirmNext[next[0]]) }, `Επόμενη φάση: ${next[1]} →`) : null,
+      next && next[0] === "allocated" ? el("span.muted.small", {}, "Επόμενο βήμα: καρτέλα «Κατανομή».") : null));
 }
 
 // ---------- Overview & settings ----------
@@ -511,42 +515,53 @@ function resultsView(results) {
   const noSubmission = state.students.filter((s) => !state.submissions[s.am]);
   const placed = DAYS.reduce((n, d) => n + Object.values(results.enrolled[d]).reduce((a, b) => a + b, 0), 0);
   const who = (s) => (s ? `${s.surname} ${s.name}` : "");
+  const panels = [
+    ["fill", "Πληρότητα ανά ημέρα", () => el("div", {},
+      el("div.table-wrap", {}, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th", {}, "Όμιλος"), el("th.num", {}, "Τοποθετήθηκαν"), el("th.num", {}, "Θέσεις"))),
+        el("tbody", {}, clubsByDay.flatMap(([d, cs]) => cs.map((c) =>
+          el("tr", {}, el("td", {}, DAY_LABELS[d]), el("td", {}, c.name), el("td.num", {}, results.enrolled[d][String(c.code)] ?? 0), el("td.num", {}, c.capacity))))))))],
+    ["gaps", "Κενά ανά ημέρα", () => el("div", {},
+      el("div.table-wrap", {}, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th.num", {}, "Τοποθετήθηκαν"), el("th.num", {}, "Δεν χώρεσαν"), el("th.num", {}, "Χωρίς προτιμήσεις"), el("th.num", {}, "Χωρίς όμιλο για την τάξη τους"))),
+        el("tbody", {}, DAYS.map((d) => el("tr", {},
+          el("td", {}, DAY_LABELS[d]),
+          el("td.num", {}, Object.values(results.enrolled[d]).reduce((a, b) => a + b, 0)),
+          el("td.num", {}, results.gapCounts[d].all_rejected),
+          el("td.num", {}, results.gapCounts[d].no_preferences),
+          el("td.num", {}, results.gapCounts[d].not_offered)))))),
+      el("p.small.muted", {}, "«Χωρίς προτιμήσεις»: ο μαθητής δεν δήλωσε κανέναν όμιλο εκείνης της ημέρας (ή δεν υπέβαλε δήλωση). «Δεν χώρεσε»: όλοι οι όμιλοι που δήλωσε γέμισαν."),
+      noPrefsByDay(results, byAm, who))],
+    ["rejected", `Δεν χώρεσαν (${rejected.length})`, () => rejected.length
+      ? el("div", {}, el("p.small.muted", {}, "Μαθητές που δήλωσαν, αλλά όλοι οι όμιλοι της λίστας τους γέμισαν εκείνη την ημέρα."),
+        el("div.table-wrap", {}, el("table", {},
+          el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th.num", {}, "ΑΜ"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"))),
+          el("tbody", {}, rejected.map((u) => {
+            const s = byAm.get(u.am);
+            return el("tr", {}, el("td", {}, DAY_LABELS[u.day]), el("td.num", {}, u.am), el("td", {}, who(s)), el("td", {}, s?.grade ?? ""));
+          })))))
+      : el("p.muted", {}, "Όσοι δήλωσαν πήραν όμιλο κάθε ημέρα.")],
+    ["nosub", `Χωρίς δήλωση (${noSubmission.length})`, () => noSubmission.length
+      ? el("div", {}, el("p.small.muted", {}, "Δεν υπέβαλαν δήλωση, άρα δεν τοποθετήθηκαν σε κανέναν όμιλο."),
+        el("ul", {}, noSubmission.map((s) => el("li", {}, `${who(s)} · ${s.grade} · ΑΜ ${s.am}`))))
+      : el("p.muted", {}, "Όλοι υπέβαλαν δήλωση.")],
+    ["report", "Αναφορά μαθητή", reportSearch],
+  ];
+  if (!panels.some(([id]) => id === resultsTab)) resultsTab = "fill";
+  const nav = el("nav.tabs.subtabs", { role: "tablist", "aria-label": "Αποτελέσματα" });
+  const panel = el("div", { role: "tabpanel" });
+  const draw = () => {
+    nav.replaceChildren(...panels.map(([id, label]) => el("button", {
+      type: "button", role: "tab", "aria-selected": String(id === resultsTab), onclick: () => { resultsTab = id; draw(); },
+    }, label)));
+    panel.replaceChildren(panels.find(([id]) => id === resultsTab)[2]());
+  };
+  draw();
   return el("section.card", {},
     el("h2", { style: "margin-top:0" }, "Αποτελέσματα"),
     mandatoryGapsView(results, byAm, who),
     el("p", {}, `Seed «${results.seed}» · ${formatDateTime(results.at)} · δηλώσεις: ${results.submitted} · τοποθετήσεις (μαθητής × ημέρα): ${placed}`),
-    el("h3", {}, "Πληρότητα ανά ημέρα"),
-    el("div.table-wrap", {}, el("table", {},
-      el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th", {}, "Όμιλος"), el("th.num", {}, "Τοποθετήθηκαν"), el("th.num", {}, "Θέσεις"))),
-      el("tbody", {}, clubsByDay.flatMap(([d, cs]) => cs.map((c) =>
-        el("tr", {}, el("td", {}, DAY_LABELS[d]), el("td", {}, c.name), el("td.num", {}, results.enrolled[d][String(c.code)] ?? 0), el("td.num", {}, c.capacity))))))),
-    el("h3", {}, "Κενά ανά ημέρα"),
-    el("div.table-wrap", {}, el("table", {},
-      el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th.num", {}, "Τοποθετήθηκαν"), el("th.num", {}, "Δεν χώρεσαν"), el("th.num", {}, "Χωρίς προτιμήσεις"), el("th.num", {}, "Χωρίς όμιλο για την τάξη τους"))),
-      el("tbody", {}, DAYS.map((d) => el("tr", {},
-        el("td", {}, DAY_LABELS[d]),
-        el("td.num", {}, Object.values(results.enrolled[d]).reduce((a, b) => a + b, 0)),
-        el("td.num", {}, results.gapCounts[d].all_rejected),
-        el("td.num", {}, results.gapCounts[d].no_preferences),
-        el("td.num", {}, results.gapCounts[d].not_offered)))))),
-    el("p.small.muted", {}, "«Χωρίς προτιμήσεις»: ο μαθητής δεν δήλωσε κανέναν όμιλο εκείνης της ημέρας (ή δεν υπέβαλε δήλωση). «Δεν χώρεσε»: όλοι οι όμιλοι που δήλωσε γέμισαν."),
-    noPrefsByDay(results, byAm, who),
-    reportSearch(),
-    el("h3", {}, `Δήλωσαν αλλά δεν χώρεσαν (${rejected.length})`),
-    rejected.length
-      ? el("div.table-wrap", {}, el("table", {},
-        el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th.num", {}, "ΑΜ"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"))),
-        el("tbody", {}, rejected.map((u) => {
-          const s = byAm.get(u.am);
-          return el("tr", {}, el("td", {}, DAY_LABELS[u.day]), el("td.num", {}, u.am), el("td", {}, who(s)), el("td", {}, s?.grade ?? ""));
-        }))))
-      : el("p.muted", {}, "Όσοι δήλωσαν πήραν όμιλο κάθε ημέρα."),
-    el("h3", {}, `Χωρίς δήλωση (${noSubmission.length})`),
-    noSubmission.length
-      ? el("details", {}, el("summary", {}, "Εμφάνιση λίστας"),
-        el("p.small.muted", {}, "Δεν τοποθετήθηκαν σε κανέναν όμιλο."),
-        el("ul", {}, noSubmission.map((s) => el("li", {}, `${who(s)} · ${s.grade} · ΑΜ ${s.am}`))))
-      : el("p.muted", {}, "Όλοι υπέβαλαν δήλωση."));
+    nav, panel);
 }
 
 // Students of mandatory grades without a club, one row per student
@@ -601,7 +616,7 @@ function reportSearch() {
   });
   go.addEventListener("click", run);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
-  return el("div", {}, el("h3", {}, "Αναφορά μαθητή"), el("p.small.muted", {}, "Βήμα προς βήμα πώς προέκυψε η θέση του μαθητή κάθε ημέρα (αιτήσεις, απορρίψεις, αποδοχές). Την ίδια βλέπει ο γονέας μετά την ανακοίνωση."),
+  return el("div", {}, el("p.small.muted", {}, "Βήμα προς βήμα πώς προέκυψε η θέση του μαθητή κάθε ημέρα (αιτήσεις, απορρίψεις, αποδοχές). Την ίδια βλέπει ο γονέας μετά την ανακοίνωση."),
     el("div.actions", {}, input, list, go), out);
 }
 

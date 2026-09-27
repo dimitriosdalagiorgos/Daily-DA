@@ -166,7 +166,9 @@ try {
   await admin.click("text=Εκτέλεση κατανομής");
   await admin.waitForSelector("h2:has-text('Αποτελέσματα')");
   step("admin: allocation run");
-  await admin.waitForSelector("h3:has-text('Κενά ανά ημέρα')");
+  await admin.click("role=tab[name='Κενά ανά ημέρα']");
+  await admin.waitForSelector("th:has-text('Χωρίς προτιμήσεις')");
+  await admin.click("role=tab[name='Αναφορά μαθητή']");
   await admin.fill("input[aria-label='Αναζήτηση μαθητή για αναφορά']", "9022");
   await admin.click("button:has-text('Εμφάνιση αναφοράς')");
   await admin.waitForSelector(".report:has-text('Αριθμός κλήρωσης')");
@@ -195,6 +197,16 @@ try {
   await admin.waitForSelector("h2:has-text('Τι υπάρχει ήδη στη βάση')");
   step("admin: history and database status");
   await shot(admin, "08b-admin-status");
+
+  await admin.click("role=tab[name='Βοήθεια']");
+  await admin.waitForSelector("h2:has-text('1. Προετοιμασία')");
+  await admin.click("role=tab[name='Εκπαιδευτικοί']");
+  await admin.waitForSelector("h2:has-text('Τι σημαίνει «προτιμώμενος μαθητής»')");
+  await parent.click("header a:has-text('Βοήθεια')");
+  await parent.waitForSelector("role=tab[name='Γονείς / κηδεμόνες'][selected=true]");
+  await parent.waitForSelector("h2:has-text('Η δήλωση')");
+  step("help: admin tab and the public help page");
+  await shot(parent, "08c-help");
 
   // ---------- Admin: reset after the trial ----------
   await admin.click("role=tab[name='Πορεία & ρυθμίσεις']");
