@@ -30,17 +30,32 @@ export function importLegacyResponses(rows, { day, clubs, students, addMissingGr
   const surnameCol = col(["SURNAME", "ΕΠΩΝΥΜΟ"]);
   const nameCol = col(["NAME", "ΟΝΟΜΑ"]);
 
-  // Club columns → clubs of the template (by code or by name)
-  const byName = new Map(clubs.map((c) => [normalizeName(c.name), c]));
+  // Club columns → clubs of the template, by code or by name. The same name
+  // may belong to different clubs on different days (e.g. «Άλγεβρα» on
+  // Monday and on Friday), so names are matched among the clubs running on
+  // this day first.
   const byCode = new Map(clubs.map((c) => [String(c.code), c]));
   const clubCols = [];
   const unknown = [];
+  const ambiguous = [];
   header.forEach((h, i) => {
     if (i === amCol || h === "" || NAME_HEADERS.has(normalizeName(h))) return;
-    const club = byCode.get(h.trim()) ?? byName.get(normalizeName(h));
+    let club = byCode.get(h.trim());
+    if (!club) {
+      const named = clubs.filter((c) => normalizeName(c.name) === normalizeName(h));
+      const today = named.filter((c) => c.days.includes(day));
+      if (today.length > 1) {
+        ambiguous.push(`«${h}» (κωδικοί ${today.map((c) => c.code).join(", ")})`);
+        return;
+      }
+      club = today[0] ?? named[0];
+    }
     if (club) clubCols.push({ i, club });
     else unknown.push(h);
   });
+  if (ambiguous.length) {
+    problems.push({ level: "error", message: `Περισσότεροι από ένας όμιλοι με το ίδιο όνομα την ίδια ημέρα: ${ambiguous.join(", ")}. Γράψτε ως επικεφαλίδα της στήλης τον κωδικό του ομίλου.` });
+  }
   if (unknown.length) {
     problems.push({ level: "error", message: `Στήλες που δεν αντιστοιχούν σε όμιλο του προτύπου: ${unknown.map((u) => `«${u}»`).join(", ")}. Διορθώστε το όνομα (όπως στο πρότυπο) ή γράψτε τον κωδικό του ομίλου ως επικεφαλίδα.` });
   }

@@ -63,3 +63,28 @@ test("the repository's dailyresponses.csv reads as CSV, UTF-8 and Windows-1253",
   assert.deepEqual(parseCsv(decodeCsv(win)), [["ΑΜ", "Παρίσι"], ["7", "1"]]);
   assert.deepEqual(parseCsv('a,"b ""c"", d"\n1,2'), [["a", 'b "c", d'], ["1", "2"]]);
 });
+
+test("same club name on different days: the club of the file's day", () => {
+  const many = [
+    { code: 101, name: "Άλγεβρα", days: ["mon"], grades: ["Α"], capacity: 10 },
+    { code: 114, name: "Άλγεβρα", days: ["tue"], grades: ["Α"], capacity: 10 },
+    { code: 156, name: "Άλγεβρα", days: ["fri"], grades: ["Α"], capacity: 10 },
+    { code: 100, name: "Γερμανικά", days: ["mon", "thu"], grades: ["Α"], capacity: 10 },
+    { code: 145, name: "Χημεία", days: ["thu"], grades: ["Α"], capacity: 10 },
+    { code: 146, name: "Χημεία", days: ["thu"], grades: ["Α"], capacity: 10 },
+  ];
+  const st = [{ am: "1", grade: "Α" }];
+  let r = importLegacyResponses([["RegistryNr", "Άλγεβρα", "Γερμανικά"], [1, 1, 2]], { day: "mon", clubs: many, students: st });
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.preferences, { 1: ["101", "100"] });
+  r = importLegacyResponses([["RegistryNr", "Άλγεβρα"], [1, 1]], { day: "fri", clubs: many, students: st });
+  assert.deepEqual(r.preferences, { 1: ["156"] });
+  r = importLegacyResponses([["RegistryNr", "Γερμανικά"], [1, 1]], { day: "thu", clubs: many, students: st });
+  assert.deepEqual(r.preferences, { 1: ["100"] }, "a multi-day club on its later day");
+  r = importLegacyResponses([["RegistryNr", "Άλγεβρα"], [1, 1]], { day: "wed", clubs: many, students: st });
+  assert.match(r.problems[0].message, /δεν γίνονται Τετάρτη: «Άλγεβρα»/);
+  r = importLegacyResponses([["RegistryNr", "Χημεία"], [1, 1]], { day: "thu", clubs: many, students: st });
+  assert.match(r.problems[0].message, /«Χημεία» \(κωδικοί 145, 146\).*κωδικό/);
+  r = importLegacyResponses([["RegistryNr", "145", "146"], [1, 2, 1]], { day: "thu", clubs: many, students: st });
+  assert.deepEqual(r.preferences, { 1: ["146", "145"] }, "codes resolve the ambiguity");
+});
