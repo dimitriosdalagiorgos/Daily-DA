@@ -104,7 +104,7 @@ createServer(async (req, res) => {
 }).listen(port, () => {
   console.log(`Πλατφόρμα ομίλων (τοπικά): http://localhost:${port}`);
   console.log(`  Διαχείριση: http://localhost:${port}/admin.html  (κωδικός: ${env.ADMIN_PASSWORD === "admin" ? "admin" : "από ADMIN_PASSWORD"})`);
-  if (demo) console.log("  Φορτώθηκε δοκιμαστικό σχολείο (60 μαθητές, 12 όμιλοι).");
+  if (demo) console.log("  Φορτώθηκε δοκιμαστικό σχολείο (60 μαθητές, 13 όμιλοι).");
   if (noMail) console.log("  Χωρίς email: σύνδεσμοι εκπαιδευτικών από τη διαχείριση (καρτέλα «Όμιλοι»).");
   console.log(`  Δεδομένα: ${storePath}`);
 });

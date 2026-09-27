@@ -165,22 +165,26 @@ function mainView(me, { justSubmitted = false } = {}) {
   const lockedBoxes = {};
   const visited = new Set(submission ? days.map((d) => d.day) : []);
 
+  // Multi-day clubs of the student's grade, for clashes between them
+  const multi = [...new Map(days.flatMap((d) => [...d.clubs, ...d.locked]).filter((c) => c.days.length > 1).map((c) => [c.code, c])).values()];
+  const earlierClashes = (c) => multi.filter((o) => o.code !== c.code &&
+    DAY_KEYS.indexOf(o.days[0]) < DAY_KEYS.indexOf(c.days[0]) && o.days.some((x) => c.days.includes(x)));
+  const shared = (a, b) => a.days.filter((x) => b.days.includes(x)).map((x) => DAY_ACC[x]).join(" και ");
+
+  // Locked rows: first in the day's list, numbered 1..k, ordered as they are
+  // decided (by first day, then by the rank given there).
+  const lockedRows = (d) => {
+    const rows = d.locked.map((c) => ({ c, rank: (rankers[c.firstDay]?.order() ?? []).indexOf(c.code) + 1 }))
+      .sort((a, b) => DAY_KEYS.indexOf(a.c.firstDay) - DAY_KEYS.indexOf(b.c.firstDay) || a.rank - b.rank);
+    return rows.map(({ c, rank }, i) => el("li.locked", {},
+      el("span.handle", { "aria-hidden": "true" }, "🔒"),
+      el("span.lockpos", { "aria-label": `Θέση ${i + 1}, κλειδωμένη` }, String(i + 1)),
+      el("span.name", {}, c.name, el("span.tag", {}, `${kind(c)}: ${daysText(c)}`),
+        el("span.desc", {}, `${rank}η επιλογή ${DAY_GEN[c.firstDay]}. Αν το παιδί μπει σε αυτόν ${DAY_ACC[c.firstDay]}, ${DAY_ACC[d.day]} πηγαίνει αυτόματα εδώ.`),
+        i > 0 ? el("span.note", {}, `Μετράει μόνο αν δεν μπει ${rows.length > 2 ? "σε κανέναν από τους παραπάνω" : `στον όμιλο «${rows[0].c.name}»`}.`) : null)));
+  };
   const drawLocked = () => {
-    for (const d of days) {
-      if (!lockedBoxes[d.day]) continue;
-      const withRank = d.locked.map((c) => ({ c, rank: (rankers[c.firstDay]?.order() ?? []).indexOf(c.code) + 1 }))
-        .sort((a, b) => DAY_KEYS.indexOf(a.c.firstDay) - DAY_KEYS.indexOf(b.c.firstDay) || a.rank - b.rank);
-      lockedBoxes[d.day].replaceChildren(
-        el("ol.ranker", { "aria-label": `Όμιλοι από προηγούμενη ημέρα (${d.label})` }, withRank.map(({ c, rank }) =>
-          el("li.locked", {},
-            el("span.handle", { "aria-hidden": "true" }, "🔒"),
-            el("span.lockpos", {}, rank ? `${rank}η` : ""),
-            el("span.name", {}, c.name, el("span.tag", {}, `${kind(c)}: ${daysText(c)}`),
-              el("span.desc", {}, `Τον βάλατε ${rank}ο στη σειρά ${DAY_GEN[c.firstDay]}. Αν το παιδί μπει σε αυτόν ${DAY_ACC[c.firstDay]}, και ${DAY_ACC[d.day]} πηγαίνει αυτόματα στον ίδιο όμιλο. Εδώ δεν χρειάζεται να κάνετε κάτι.`))))),
-        el("p.small.muted", {}, withRank.length > 1
-          ? `Αν το παιδί δεν μπει σε κανέναν από τους παραπάνω, ισχύει η σειρά σας για τους υπόλοιπους ομίλους της ημέρας:`
-          : `Αν το παιδί δεν μπει σε αυτόν, ισχύει η σειρά σας για τους υπόλοιπους ομίλους της ημέρας:`));
-    }
+    for (const d of days) if (lockedBoxes[d.day]) lockedBoxes[d.day].replaceChildren(...lockedRows(d));
   };
 
   const panels = {};
@@ -189,17 +193,27 @@ function mainView(me, { justSubmitted = false } = {}) {
     if (d.clubs.length) {
       panel.append(el("p.day-intro", {},
         `Βάλτε σε σειρά `, el("strong", {}, `όλους τους ομίλους ${DAY_GEN[d.day]}`),
-        `: 1ος αυτός που θέλετε περισσότερο.${submission?.preferences?.[d.day] ? "" : " Στην αρχή η σειρά είναι τυχαία."} Μετακινήστε τους σύροντας τη λαβή ⠿, γράφοντας τον αριθμό της θέσης ή με τα κουμπιά ↑ ↓.`));
+        `: 1ος αυτός που θέλετε περισσότερο.${submission?.preferences?.[d.day] ? "" : " Στην αρχή η σειρά είναι τυχαία."} Μετακινήστε τους σύροντας τη λαβή ⠿, γράφοντας τον αριθμό της θέσης ή με τα κουμπιά ↑ ↓.`,
+        d.locked.length ? el("span.block", {}, `Οι όμιλοι με 🔒 στην αρχή είναι διπλοί/τριπλοί όμιλοι που μπήκαν σε σειρά σε προηγούμενη ημέρα. Δεν αλλάζουν εδώ: η σειρά σας για τους υπόλοιπους μετράει μόνο αν το παιδί δεν μπει σε αυτούς.`) : null));
     }
     if (d.locked.length) {
-      lockedBoxes[d.day] = el("div.locked-box");
+      lockedBoxes[d.day] = el("ol.ranker.locked-rows", { "aria-label": `Κλειδωμένοι όμιλοι ${d.label}` });
       panel.append(lockedBoxes[d.day]);
     }
     if (d.clubs.length) {
       const saved = submission?.preferences?.[d.day];
       const order = saved ?? initialOrder(d.clubs.map((c) => c.code), `${student.am}:${d.day}`);
-      const items = d.clubs.map((c) => (c.days.length > 1 ? { ...c, tag: `${kind(c)}: ${daysText(c)}` } : c));
-      rankers[d.day] = createRanker({ items, order, disabled: !canEdit, label: `Σειρά ομίλων ${d.label}`, onChange: drawLocked });
+      const items = d.clubs.map((c) => {
+        if (c.days.length === 1) return c;
+        const clashes = earlierClashes(c);
+        return {
+          ...c, tag: `${kind(c)}: ${daysText(c)}`,
+          note: clashes.length
+            ? clashes.map((o) => `Αν το παιδί μπει στον όμιλο «${o.name}» ${DAY_ACC[o.days[0]]}, αυτός παραλείπεται (έχουν και οι δύο ${shared(o, c)}).`).join(" ")
+            : null,
+        };
+      });
+      rankers[d.day] = createRanker({ items, order, disabled: !canEdit, label: `Σειρά ομίλων ${d.label}`, onChange: drawLocked, offset: d.locked.length });
       panel.append(rankers[d.day].node);
     } else {
       panel.append(el("p.muted", {}, `${DAY_ACC[d.day][0].toUpperCase()}${DAY_ACC[d.day].slice(1)} δεν υπάρχει άλλος όμιλος για την τάξη του παιδιού.`));

@@ -147,11 +147,25 @@ try {
   // Thursday: «Αντιγόνη» (Monday + Thursday) is locked at the top with its Monday rank
   const antigoneRank = afterDrag.findIndex((n) => n.includes("Αντιγόνη")) + 1;
   await parent.click("role=tab[name='Πέμπτη']");
-  const locked = parent.locator("li.locked:has-text('Αντιγόνη')");
+  const locked = parent.locator("li.locked:has-text('Αντιγόνη')").first();
   await locked.waitFor();
   const lockedText = await locked.textContent();
-  if (!lockedText.includes(`Τον βάλατε ${antigoneRank}ο στη σειρά της Δευτέρας`)) throw new Error(`locked club text: ${lockedText}`);
-  step(`parent: double club locked on Thursday (${antigoneRank}η on Monday)`);
+  if (!lockedText.includes(`${antigoneRank}η επιλογή της Δευτέρας`)) throw new Error(`locked club text: ${lockedText}`);
+  // Locked rows come first and the list continues their numbering:
+  // «Αντιγόνη» (decided Monday) 1, «Ποδόσφαιρο» (Tuesday) 2, then 3, 4 …
+  const lockedNames = await parent.locator("ol.locked-rows li .name").evaluateAll((ns) => ns.map((n) => n.firstChild.textContent));
+  const lockedPos = await parent.locator("ol.locked-rows li .lockpos").allTextContents();
+  const firstFree = await parent.locator("ol.ranker[aria-label='Σειρά ομίλων Πέμπτη'] li >> nth=0").locator("input.pos").inputValue();
+  if (lockedNames.join("|") !== "Θεατρική παράσταση «Αντιγόνη»|Ποδόσφαιρο" || lockedPos.join("|") !== "1|2" || firstFree !== "3") {
+    throw new Error(`Thursday numbering: ${lockedNames} ${lockedPos} then ${firstFree}`);
+  }
+  if (!(await parent.locator("ol.locked-rows li:has-text('Ποδόσφαιρο')").textContent()).includes("Μετράει μόνο αν δεν μπει")) throw new Error("no note on the second locked club");
+  step(`parent: Thursday list starts with the locked double clubs (1, 2) and goes on with 3`);
+  await parent.click("nav.day-tabs button:has-text('Τρίτη')");
+  const football = await parent.locator("ol.ranker[aria-label='Σειρά ομίλων Τρίτη'] li:has-text('Ποδόσφαιρο')").textContent();
+  if (!football.includes("Αν το παιδί μπει στον όμιλο «Θεατρική παράσταση «Αντιγόνη»» τη Δευτέρα, αυτός παραλείπεται")) throw new Error(`clash note: ${football}`);
+  step("parent: clash note on Tuesday's double club");
+  await parent.click("nav.day-tabs button:has-text('Πέμπτη')");
   await shot(parent, "05-parent-ranking");
 
   // Visit every day with «next», then submit on the last one

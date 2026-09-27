@@ -259,10 +259,16 @@ label .hint.after { margin-top: 4px; }
 nav.day-tabs { margin-top: 4px; }
 .day-intro { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
 ol.ranker .tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 0.8rem; font-weight: 600; }
-ol.ranker li.locked { grid-template-columns: 30px 54px 1fr; background: var(--locked-bg, #fff4d6); border-color: var(--locked-border, #e8c66a); color: inherit; }
-ol.ranker li.locked .lockpos { font-weight: 700; text-align: center; color: var(--muted); }
+/* Locked rows sit right above the day's list and continue its numbering */
+ol.ranker.locked-rows { margin-bottom: 0; }
+ol.ranker.locked-rows + ol.ranker { margin-top: 0; }
+ol.ranker li.locked { grid-template-columns: 34px 64px 1fr; background: var(--locked-bg, #fff4d6); border-color: var(--locked-border, #e8c66a); color: inherit; }
+ol.ranker li.locked .handle { cursor: default; }
+ol.ranker li.locked .lockpos { min-height: 40px; display: grid; place-items: center; font-weight: 700; border: 1px dashed var(--locked-border, #e8c66a); border-radius: 6px; }
 ol.ranker li.locked .tag { background: rgb(0 0 0 / 0.06); }
-.locked-box > p { margin: 4px 0 8px; }
+ol.ranker .note { display: block; font-weight: 600; font-size: 0.88rem; color: var(--warn, #8a5a00); margin-top: 2px; }
+.day-intro .block { display: block; margin-top: 6px; }
+@media (max-width: 480px) { ol.ranker li.locked { grid-template-columns: 30px 54px 1fr; } }
 details.receipt > summary { cursor: pointer; font-weight: 700; }
 details.receipt[open] > summary { margin-bottom: 8px; }
 @media (prefers-color-scheme: dark) {

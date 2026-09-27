@@ -6,10 +6,11 @@ import { el } from "./ui.js";
 /**
  * @param {{items: {code: string, name: string, description?: string}[],
  *          order?: string[], disabled?: boolean, label: string,
- *          onChange?: (order: string[]) => void}} opts
+ *          onChange?: (order: string[]) => void, offset?: number}} opts
+ * offset: positions shown start at offset + 1 (rows locked above the list)
  * @returns {{node: HTMLElement, order: () => string[]}}
  */
-export function createRanker({ items, order, disabled = false, label, onChange }) {
+export function createRanker({ items, order, disabled = false, label, onChange, offset = 0 }) {
   const byCode = new Map(items.map((i) => [i.code, i]));
   let current = order && order.length === items.length && order.every((c) => byCode.has(c)) ? [...order] : items.map((i) => i.code);
   const list = el("ol.ranker", { "aria-label": label });
@@ -27,13 +28,13 @@ export function createRanker({ items, order, disabled = false, label, onChange }
     list.replaceChildren(...current.map((code, i) => {
       const item = byCode.get(code);
       const pos = el("input.pos", {
-        type: "number", min: 1, max: current.length, value: i + 1, disabled, inputmode: "numeric",
+        type: "number", min: offset + 1, max: offset + current.length, value: offset + i + 1, disabled, inputmode: "numeric",
         "aria-label": `Θέση για «${item.name}»`,
         onchange: (e) => {
           if (!e.target.isConnected) return; // list already redrawn
           const n = Number.parseInt(e.target.value, 10);
-          if (Number.isInteger(n)) move(i, n - 1, `${code}:pos`);
-          else e.target.value = i + 1;
+          if (Number.isInteger(n)) move(i, n - 1 - offset, `${code}:pos`);
+          else e.target.value = offset + i + 1;
         },
         // Enter applies the new position (the change event fires on blur).
         onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } },
@@ -49,7 +50,7 @@ export function createRanker({ items, order, disabled = false, label, onChange }
       const li = el("li", { dataset: { code } },
         handle,
         pos,
-        el("span.name", {}, item.name, item.tag ? el("span.tag", {}, item.tag) : null, item.description ? el("span.desc", {}, item.description) : null),
+        el("span.name", {}, item.name, item.tag ? el("span.tag", {}, item.tag) : null, item.description ? el("span.desc", {}, item.description) : null, item.note ? el("span.note", {}, item.note) : null),
         el("span.moves", {},
           el("button.small", { type: "button", disabled: disabled || i === 0, "aria-label": `«${item.name}» μία θέση πάνω`, onclick: () => move(i, i - 1, `${code}:up`) }, "↑"),
           el("button.small", { type: "button", disabled: disabled || i === current.length - 1, "aria-label": `«${item.name}» μία θέση κάτω`, onclick: () => move(i, i + 1, `${code}:down`) }, "↓")));
