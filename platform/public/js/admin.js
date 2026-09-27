@@ -146,7 +146,33 @@ function overview() {
         el("label", { for: "deadline" }, "Προθεσμία δηλώσεων", f.deadline),
         el("label", { for: "ppw" }, "Κοινός κωδικός γονέων", el("span.hint", {}, "Ίδιος για όλους· ανακοινώνεται από το σχολείο."), f.parentPassword)),
       out,
-      el("div.actions", {}, save)));
+      el("div.actions", {}, save)),
+    dangerZone());
+}
+
+function dangerZone() {
+  const out = el("div");
+  const word = el("input", { id: "resetword", type: "text", autocomplete: "off", placeholder: "ΔΙΑΓΡΑΦΗ" });
+  const keep = el("input", { type: "checkbox", checked: true });
+  const go = el("button.danger", { type: "button" }, "Διαγραφή όλων των δεδομένων");
+  go.addEventListener("click", () => {
+    if (!confirm("Θα διαγραφούν οριστικά μαθητές, όμιλοι, εκπαιδευτικοί, δηλώσεις και αποτελέσματα. Συνέχεια;")) return;
+    busy(go, out, async () => {
+      await api("POST", "/api/admin/reset", { confirm: word.value.trim(), keepSchoolInfo: keep.checked });
+      tab = "overview";
+      await refresh();
+      $("#app [role=tabpanel]").prepend(message("ok", "Η πλατφόρμα άδειασε. Είναι ξανά στη φάση «Προετοιμασία»."));
+    });
+  });
+  return el("details.card", {},
+    el("summary", {}, el("strong", { style: "color:var(--err)" }, "Επαναφορά πλατφόρμας (διαγραφή δεδομένων)")),
+    el("p", {}, "Χρήσιμο μετά από δοκιμή, π.χ. με τα περσινά δεδομένα. Διαγράφονται ", el("strong", {}, "οριστικά"),
+      ": μαθητές, όμιλοι, εκπαιδευτικοί και λίστες τους, δηλώσεις γονέων, αποτελέσματα κατανομής, ιστορικό ενεργειών και εξερχόμενα. Ο κωδικός γονέων και η προθεσμία σβήνονται· η φάση γίνεται «Προετοιμασία». Ο κωδικός διαχείρισης δεν αλλάζει."),
+    el("p.small.muted", {}, "Αν θέλετε να κρατήσετε αντίγραφο, κατεβάστε πρώτα από την καρτέλα «Κατανομή» τα δεδομένα για R και τα αποτελέσματα."),
+    el("label", { style: "font-weight:400" }, keep, " Να κρατηθούν το όνομα του σχολείου και τα στοιχεία επικοινωνίας"),
+    el("label", { for: "resetword" }, "Για επιβεβαίωση γράψτε ΔΙΑΓΡΑΦΗ", word),
+    out,
+    el("div.actions", {}, go));
 }
 
 // ---------- Files ----------

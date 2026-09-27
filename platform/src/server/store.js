@@ -9,6 +9,7 @@
 //   append(kind, item)    → add to an append-only log (no lost writes when
 //                           many people act at once)
 //   readLog(kind, limit)  → the last `limit` items, oldest first
+//   deleteLog(kind)       → remove a whole log (platform reset)
 //
 // Values are JSON-serializable. Keys used by the app:
 //   settings, students, clubs, teachers, teacherList:<code>,
@@ -58,6 +59,11 @@ export function createMemoryStore(initial = {}) {
     async readLog(kind, limit = 200) {
       return clone((data.get(`log:${kind}`) ?? []).slice(-limit));
     },
+    deleteLog(kind) {
+      return serialize(() => {
+        data.delete(`log:${kind}`);
+      });
+    },
     snapshot: () => Object.fromEntries([...data].map(([k, v]) => [k, clone(v)])),
   };
 }
@@ -78,5 +84,6 @@ export function createFileStore(path) {
     update: (key, fn) => after(mem.update(key, fn)),
     delete: (key) => after(mem.delete(key)),
     append: (kind, item) => after(mem.append(kind, item)),
+    deleteLog: (kind) => after(mem.deleteLog(kind)),
   };
 }

@@ -271,3 +271,32 @@ test("zip: standard CRC and structure", () => {
   assert.equal(view.getUint32(zip.length - 22, true), 0x06054b50);
   assert.equal(view.getUint16(zip.length - 22 + 10, true), 2);
 });
+
+for (const [storeName, makeStore] of Object.entries(STORES)) test(`reset deletes all school data (${storeName} store)`, async () => {
+  const store = makeStore();
+  const { call } = setup({ store });
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z", schoolName: "Γυμνάσιο", contact: "2310" } });
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
+  await call("PUT", "/api/admin/teacher-lists/100", { token: admin, body: { capacity: 1, ams: ["9001"] } });
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } });
+  const parent = (await call("POST", "/api/parent/login", { body: { password: "omiloi2026", am: "9001", surname: "ΠΑΠΑΔΟΠΟΥΛΟΣ", name: "ΝΙΚΟΛΑΟΣ", father: "ΓΕΩΡΓΙΟΣ", mother: "ΜΑΡΙΑ" } })).data.token;
+  await call("PUT", "/api/parent/submission", { token: parent, body: { parent: { name: "Γ", email: "g@example.com" }, preferences: { mon: ["100", "101"], thu: ["102"] } } });
+
+  assert.equal((await call("POST", "/api/admin/reset", { token: admin, body: { confirm: "διαγραφη" } })).status, 422, "exact word needed");
+  assert.equal((await call("POST", "/api/admin/reset", { body: { confirm: "ΔΙΑΓΡΑΦΗ" } })).status, 401, "admin only");
+  const r = await call("POST", "/api/admin/reset", { token: admin, body: { confirm: "ΔΙΑΓΡΑΦΗ", keepSchoolInfo: true } });
+  assert.equal(r.status, 200);
+
+  const state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual([state.students.length, state.clubs.length, state.teachers.length, Object.keys(state.submissions).length, Object.keys(state.teacherLists).length], [0, 0, 0, 0, 0]);
+  assert.equal(state.settings.phase, "setup");
+  assert.equal(state.settings.parentPasswordSet, false);
+  assert.equal(state.settings.deadline, null);
+  assert.deepEqual([state.settings.schoolName, state.settings.contact], ["Γυμνάσιο", "2310"]);
+  assert.deepEqual(await store.readLog("outbox"), []);
+  assert.deepEqual((await store.readLog("events")).map((e) => e.what), ["reset"], "only the reset itself is logged");
+  assert.equal((await call("GET", "/api/parent/me", { token: parent })).status, 401, "old parent sessions stop working");
+});

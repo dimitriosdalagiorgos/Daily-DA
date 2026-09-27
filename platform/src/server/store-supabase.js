@@ -77,6 +77,9 @@ export function createSupabaseStore({ url, key, fetch: fetchImpl = globalThis.fe
     async append(kind, item) {
       await call("POST", "/log", { body: { kind, data: item }, prefer: "return=minimal" });
     },
+    async deleteLog(kind) {
+      await call("DELETE", `/log?kind=${eq(kind)}`);
+    },
     async readLog(kind, limit = 200) {
       const { rows } = await call("GET", `/log?kind=${eq(kind)}&select=data&order=id.desc&limit=${Number(limit)}`);
       return rows.map((r) => r.data).reverse();

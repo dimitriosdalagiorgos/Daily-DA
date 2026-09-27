@@ -271,6 +271,27 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return saveTeacherList(req, code, "admin");
   });
 
+  // Delete all school data (e.g. after a trial with last year's data).
+  // Keeps only the session secret and, if asked, the school's name/contact.
+  route("POST", "/api/admin/reset", async (req) => {
+    session(req, "admin");
+    const { confirm, keepSchoolInfo = true } = await body(req);
+    if (confirm !== "ΔΙΑΓΡΑΦΗ") throw new HttpError(422, "Για επιβεβαίωση γράψτε ΔΙΑΓΡΑΦΗ (κεφαλαία).");
+    const settings = await getSettings();
+    for (const key of ["students", "clubs", "teachers", "results", "resultsLog"]) await store.delete(key);
+    for (const prefix of ["teacherList:", "submission:"]) {
+      for (const { key } of await store.list(prefix)) await store.delete(key);
+    }
+    await store.deleteLog("outbox");
+    await store.deleteLog("events");
+    await store.set("settings", {
+      phase: "setup",
+      ...(keepSchoolInfo ? { schoolName: settings.schoolName ?? "", contact: settings.contact ?? "" } : {}),
+    });
+    await logEvent("admin", "reset", { keepSchoolInfo: Boolean(keepSchoolInfo) });
+    return json(200, { ok: true });
+  });
+
   route("POST", "/api/admin/allocate", async (req) => {
     session(req, "admin");
     const settings = await getSettings();

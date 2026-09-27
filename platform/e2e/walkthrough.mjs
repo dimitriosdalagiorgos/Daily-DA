@@ -174,6 +174,16 @@ try {
   step("parent: sees the result");
   await shot(parent, "08-parent-result");
 
+  // ---------- Admin: reset after the trial ----------
+  await admin.click("role=tab[name='Πορεία & ρυθμίσεις']");
+  await admin.click("summary:has-text('Επαναφορά πλατφόρμας')");
+  await admin.fill("#resetword", "ΔΙΑΓΡΑΦΗ");
+  await admin.click("button:has-text('Διαγραφή όλων των δεδομένων')");
+  await admin.waitForSelector(".msg.ok:has-text('άδειασε')");
+  await admin.waitForSelector("li:has-text('Μαθητές: 0')");
+  step("admin: platform reset (0 students, back to setup)");
+  await shot(admin, "09-admin-reset");
+
   if (errors.length) throw new Error(`browser errors:\n${errors.join("\n")}`);
   console.log("\n✓ Walk-through completed without browser errors.");
 } catch (err) {
