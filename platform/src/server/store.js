@@ -10,6 +10,8 @@
 //                           many people act at once)
 //   readLog(kind, limit)  → the last `limit` items, oldest first
 //   deleteLog(kind)       → remove a whole log (platform reset)
+//   setMany(entries)      → write many keys at once ([{key, value}]); for
+//                           admin bulk operations (few requests to Supabase)
 //
 // Values are JSON-serializable. Keys used by the app:
 //   settings, students, clubs, teachers, teacherList:<code>,
@@ -64,6 +66,11 @@ export function createMemoryStore(initial = {}) {
         data.delete(`log:${kind}`);
       });
     },
+    setMany(entries) {
+      return serialize(() => {
+        for (const { key, value } of entries) data.set(key, clone(value));
+      });
+    },
     snapshot: () => Object.fromEntries([...data].map(([k, v]) => [k, clone(v)])),
   };
 }
@@ -85,5 +92,6 @@ export function createFileStore(path) {
     delete: (key) => after(mem.delete(key)),
     append: (kind, item) => after(mem.append(kind, item)),
     deleteLog: (kind) => after(mem.deleteLog(kind)),
+    setMany: (entries) => after(mem.setMany(entries)),
   };
 }

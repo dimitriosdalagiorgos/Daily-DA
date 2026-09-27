@@ -300,3 +300,34 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`reset deletes
   assert.deepEqual((await store.readLog("events")).map((e) => e.what), ["reset"], "only the reset itself is logged");
   assert.equal((await call("GET", "/api/parent/me", { token: parent })).status, 401, "old parent sessions stop working");
 });
+
+test("trial import of last year's responses → allocation", async () => {
+  const { call, store } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  const mon = [["RegistryNr", "Surname", "Name", "Αντιγόνη", "Ρομποτική"], [9001, "", "", 1, 2], [9002, "", "", 2, 1], [8000, "ΠΕΡΣΙΝΟΣ", "ΜΑΘΗΤΗΣ", 1, ""]];
+  let r = await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "mon", rows: mon } });
+  assert.equal(r.status, 422, "unknown ΑΜ without the option");
+  r = await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "mon", rows: mon, addMissingGrade: "Β" } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.report.summary, { rows: 3, newStudents: 1, clubs: 2 });
+  r = await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "thu", rows: [["RegistryNr", "Άλγεβρα"], [9001, 1], [8000, 1]] } });
+  assert.equal(r.status, 200);
+  const sub = await store.get("submission:9001");
+  assert.deepEqual(sub.preferences, { mon: ["100", "101"], thu: ["102"] }, "days merge");
+  assert.equal(sub.parent.name, "Εισαγωγή δοκιμής");
+
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z" } });
+  for (const phase of ["teachers", "parents", "closed"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+  r = await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "δοκιμή" } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.results.submitted, 3);
+  // Αντιγόνη has one seat: 9001 and 8000 ranked it 1st (the lottery decides),
+  // 9002 ranked it 2nd and gets Ρομποτική; 8000 ranked nothing else.
+  assert.equal(r.data.results.byStudent["9002"].mon, "101");
+  const winner = ["9001", "8000"].find((am) => r.data.results.byStudent[am].mon === "100");
+  assert.ok(winner, "one of the two first-choice students gets Αντιγόνη");
+  assert.equal(r.data.results.byStudent["8000"].mon, winner === "8000" ? "100" : null);
+  assert.equal((await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "mon", rows: mon } })).status, 409, "not after the allocation");
+});

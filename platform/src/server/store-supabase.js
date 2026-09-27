@@ -77,6 +77,19 @@ export function createSupabaseStore({ url, key, fetch: fetchImpl = globalThis.fe
     async append(kind, item) {
       await call("POST", "/log", { body: { kind, data: item }, prefer: "return=minimal" });
     },
+    // Bulk upsert, bumping each row's version so concurrent update()s retry.
+    async setMany(entries) {
+      for (let i = 0; i < entries.length; i += 200) {
+        const chunk = entries.slice(i, i + 200);
+        const list = chunk.map(({ key }) => `"${key.replace(/["\\]/g, (c) => `\\${c}`)}"`).join(",");
+        const { rows } = await call("GET", `/kv?key=in.(${encodeURIComponent(list)})&select=key,version`);
+        const version = new Map(rows.map((r) => [r.key, r.version]));
+        await call("POST", "/kv?on_conflict=key", {
+          body: chunk.map(({ key, value }) => ({ key, value: value ?? null, version: (version.get(key) ?? 0) + 1, updated_at: new Date().toISOString() })),
+          prefer: "resolution=merge-duplicates,return=minimal",
+        });
+      }
+    },
     async deleteLog(kind) {
       await call("DELETE", `/log?kind=${eq(kind)}`);
     },

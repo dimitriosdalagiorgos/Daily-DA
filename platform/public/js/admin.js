@@ -1,6 +1,7 @@
 import { $, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
 import { readWorkbook } from "/lib/import/workbook.js";
 import { headerKey } from "/lib/import/table.js";
+import { decodeCsv, parseCsv } from "/lib/import/csv.js";
 
 const api = createApi("admin");
 const app = $("#app");
@@ -235,7 +236,50 @@ function data() {
       return (await api("PUT", "/api/admin/clubs", { clubs, teachers })).report;
     }, locked),
     el("p", {}, el("a.button", { href: "/templates/omiloi_protypo.xlsx", download: "omiloi_protypo.xlsx" }, "Λήψη κενού προτύπου ομίλων")),
+    legacyImport(),
     el("p.small.muted", {}, "Τα αρχεία διαβάζονται στον υπολογιστή σας· στον διακομιστή στέλνονται μόνο τα στοιχεία των πινάκων και ελέγχονται ξανά."));
+}
+
+// Trial: last year's per-day responses
+function legacyImport() {
+  const out = el("div");
+  const day = el("select", { id: "legacyday" }, el("option", { value: "" }, "— επιλέξτε —"), DAYS.map((d) => el("option", { value: d }, DAY_LABELS[d])));
+  const addMissing = el("input", { type: "checkbox" });
+  const grade = el("select", { "aria-label": "Τάξη για τους δοκιμαστικούς μαθητές" }, ["Α", "Β", "Γ"].map((g) => el("option", { value: g }, g)));
+  const input = el("input", { type: "file", accept: ".csv,.xls,.xlsx", "aria-label": "Αρχείο περσινών δηλώσεων" });
+  input.addEventListener("change", async () => {
+    const file = input.files[0];
+    if (!file) return;
+    if (!day.value) {
+      show(out, message("err", "Επιλέξτε πρώτα την ημέρα του αρχείου."));
+      input.value = "";
+      return;
+    }
+    show(out, message("info", `Ανάγνωση «${file.name}»…`));
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const rows = /\.csv$/i.test(file.name) ? parseCsv(decodeCsv(bytes)) : Object.values(readWorkbook(await loadXlsx(), bytes))[0] ?? [];
+      const { report } = await api("POST", "/api/admin/import-legacy", { day: day.value, rows, addMissingGrade: addMissing.checked ? grade.value : null });
+      await refresh();
+      tab = "data";
+      render();
+      $("#legacy-out")?.closest("details")?.setAttribute("open", "");
+      $("#legacy-out")?.replaceChildren(message("ok", `${DAY_LABELS[day.value]}: εισήχθησαν ${report.summary.rows} δηλώσεις${report.summary.newStudents ? `, προστέθηκαν ${report.summary.newStudents} δοκιμαστικοί μαθητές` : ""}.`), reportView({ problems: report.problems.filter((p) => p.level !== "error") }));
+    } catch (err) {
+      show(out, err.data?.report ? reportView(err.data.report) : message("err", err.message));
+    } finally {
+      input.value = "";
+    }
+  });
+  return el("details.card", {},
+    el("summary", {}, el("strong", {}, "Δοκιμή: εισαγωγή περσινών δηλώσεων")),
+    el("p", {}, "Για δοκιμή της κατανομής με τα περσινά δεδομένα. Ένα αρχείο ανά ημέρα, όπως το περσινό ", el("code", {}, "dailyresponses.csv"),
+      ": στήλες ΑΜ (RegistryNr), επώνυμο, όνομα και μία στήλη ανά όμιλο με τη θέση προτίμησης. Οι στήλες ομίλων πρέπει να έχουν το ίδιο όνομα με το πρότυπο ομίλων (ή τον κωδικό του ομίλου)."),
+    message("warn", "Μόνο για δοκιμή. Οι εισαγόμενες δηλώσεις φαίνονται ως «Εισαγωγή δοκιμής». Μετά τη δοκιμή κάντε «Επαναφορά πλατφόρμας» (καρτέλα «Πορεία & ρυθμίσεις»)."),
+    el("label", { for: "legacyday" }, "Ημέρα του αρχείου", day),
+    el("label", { style: "font-weight:400" }, addMissing, " Όσοι ΑΜ δεν υπάρχουν στον κατάλογο να προστεθούν ως δοκιμαστικοί μαθητές της τάξης ", grade),
+    el("label", {}, "Αρχείο (.csv, .xls, .xlsx)", input),
+    el("div", { id: "legacy-out" }, out));
 }
 
 // ---------- Students ----------

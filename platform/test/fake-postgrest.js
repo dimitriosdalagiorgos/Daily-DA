@@ -12,6 +12,10 @@ export function createFakePostgrest({ key = "sb_secret_test" } = {}) {
   const matches = (row, filters) => filters.every(([col, op, val]) => {
     const v = row[col];
     if (op === "eq") return String(v) === val;
+    if (op === "in") {
+      const items = [...val.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"|([^,]+)/g)].map((m) => (m[1] !== undefined ? m[1].replace(/\\(.)/g, "$1") : m[2]));
+      return items.includes(String(v));
+    }
     if (op === "like") {
       let re = "";
       for (let i = 0; i < val.length; i++) {
@@ -40,6 +44,7 @@ export function createFakePostgrest({ key = "sb_secret_test" } = {}) {
       if (k === "select") select = v.split(",");
       else if (k === "order") order = v.split(".");
       else if (k === "limit") limit = Number(v);
+      else if (k === "on_conflict") continue;
       else {
         const dot = v.indexOf(".");
         filters.push([k, v.slice(0, dot), v.slice(dot + 1)]);
@@ -55,6 +60,15 @@ export function createFakePostgrest({ key = "sb_secret_test" } = {}) {
     }
     if (method === "POST") {
       const data = JSON.parse(body);
+      if (table === "kv" && Array.isArray(data)) {
+        if (!prefer.includes("resolution=merge-duplicates")) return new Response("bulk insert without upsert", { status: 400 });
+        for (const item of data) {
+          const existing = rows.find((r) => r.key === item.key);
+          if (existing) Object.assign(existing, item);
+          else rows.push({ version: 1, updated_at: new Date().toISOString(), ...item });
+        }
+        return new Response("", { status: 201 });
+      }
       if (table === "kv") {
         if (rows.some((r) => r.key === data.key)) return new Response('{"code":"23505"}', { status: 409 });
         rows.push({ version: 1, updated_at: new Date().toISOString(), ...data });

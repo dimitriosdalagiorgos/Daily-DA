@@ -17,6 +17,7 @@ import { clubsToRank, validateSubmission, validateTeacherList } from "../algorit
 import { importStudents } from "../import/students.js";
 import { importClubs } from "../import/clubs.js";
 import { checkReadiness } from "../import/readiness.js";
+import { importLegacyResponses } from "../import/legacy.js";
 import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
 import { createHash } from "node:crypto";
@@ -269,6 +270,41 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   route("PUT", "/api/admin/teacher-lists/:code", async (req, { code }) => {
     session(req, "admin");
     return saveTeacherList(req, code, "admin");
+  });
+
+  // Trial only: last year's per-day responses (Google Form export) as
+  // submissions, to try the allocation with real-looking data.
+  route("POST", "/api/admin/import-legacy", async (req) => {
+    session(req, "admin");
+    const settings = await getSettings();
+    if (phaseAtLeast(settings.phase, "allocated")) throw new HttpError(409, "Η εισαγωγή δοκιμής γίνεται πριν από την κατανομή.");
+    const { day, rows, addMissingGrade } = await body(req);
+    if (!DAYS.includes(day)) throw new HttpError(422, "Επιλέξτε ημέρα.");
+    if (addMissingGrade && !["Α", "Β", "Γ"].includes(addMissingGrade)) throw new HttpError(422, "Άγνωστη τάξη.");
+    const [clubs, students] = await Promise.all([getClubs(), getStudents()]);
+    if (clubs.length === 0) throw new HttpError(409, "Ανεβάστε πρώτα το αρχείο ομίλων.");
+    const report = importLegacyResponses(Array.isArray(rows) ? rows : [], { day, clubs, students, addMissingGrade: addMissingGrade || null });
+    if (report.problems.some((p) => p.level === "error")) throw new HttpError(422, "Το αρχείο έχει σφάλματα.", { report });
+
+    if (report.newStudents.length) await store.set("students", [...students, ...report.newStudents]);
+    const at = new Date(now()).toISOString();
+    const existing = await getSubmissions();
+    await store.setMany(Object.entries(report.preferences).map(([am, list]) => {
+      const old = existing[am];
+      const preferences = { ...(old?.preferences ?? {}), [day]: list };
+      return {
+        key: `submission:${am}`,
+        value: {
+          preferences,
+          parent: old?.parent ?? { name: "Εισαγωγή δοκιμής", email: "" },
+          submittedAt: at,
+          imported: true,
+          history: [...(old?.history ?? []), { at, email: "(εισαγωγή δοκιμής)", preferences }],
+        },
+      };
+    }));
+    await logEvent("admin", "import_legacy", { day, rows: report.summary.rows, newStudents: report.newStudents.length });
+    return json(200, { report });
   });
 
   // Delete all school data (e.g. after a trial with last year's data).

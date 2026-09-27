@@ -28,6 +28,12 @@ for (const [name, factory] of [["memory", () => ({ store: createMemoryStore() })
     for (let i = 1; i <= 5; i++) await store.append("events", { i });
     assert.deepEqual(await store.readLog("events", 3), [{ i: 3 }, { i: 4 }, { i: 5 }]);
     assert.deepEqual(await store.readLog("outbox"), []);
+    await store.deleteLog("events");
+    assert.deepEqual(await store.readLog("events"), []);
+    await store.setMany([{ key: "submission:9002", value: { a: 20 } }, { key: "submission:9100", value: { a: 100 } }, { key: 'we"ird\\key', value: 1 }]);
+    assert.deepEqual((await store.list("submission:")).map((r) => [r.key, r.value.a]).sort(), [["submission:9002", 20], ["submission:9100", 100]]);
+    assert.equal(await store.get('we"ird\\key'), 1);
+    assert.equal(await store.update("submission:9002", (v) => ({ a: v.a + 1 })).then((v) => v.a), 21, "update works after setMany");
     // Values come back as copies
     const s = await store.get("settings");
     s.phase = "changed";
