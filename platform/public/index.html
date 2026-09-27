@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Δήλωση ομίλων</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site"><div class="inner"><a href="/">Δήλωση ομίλων</a><span class="school" id="school"></span></div></header>
+  <main>
+    <h1>Δήλωση και κατανομή ομίλων</h1>
+    <div id="status"></div>
+    <div class="roles">
+      <a class="card" href="/parent.html">
+        <h2>Γονείς / κηδεμόνες</h2>
+        <p>Δήλωση προτιμήσεων για τους ομίλους του παιδιού σας και, μετά την κατανομή, τα αποτελέσματα.</p>
+      </a>
+      <a class="card" href="/teacher.html">
+        <h2>Εκπαιδευτικοί</h2>
+        <p>Χωρητικότητα του ομίλου σας και (προαιρετικά) μαθητές που προτιμάτε. Σύνδεση με το email @sch.gr.</p>
+      </a>
+      <a class="card" href="/admin.html">
+        <h2>Διαχείριση</h2>
+        <p>Κατάλογοι, προθεσμίες, κατανομή και αποτελέσματα.</p>
+      </a>
+    </div>
+  </main>
+  <script type="module">
+    import { el, formatDateTime, message, show } from "/js/ui.js";
+    const PHASE_TEXT = {
+      setup: "Γίνεται προετοιμασία. Οι δηλώσεις δεν έχουν ανοίξει ακόμα.",
+      teachers: "Οι εκπαιδευτικοί ορίζουν τους ομίλους τους. Οι δηλώσεις γονέων δεν έχουν ανοίξει ακόμα.",
+      parents: "Οι δηλώσεις είναι ανοιχτές.",
+      closed: "Οι δηλώσεις έκλεισαν. Η κατανομή θα γίνει σύντομα.",
+      allocated: "Οι δηλώσεις έκλεισαν. Η κατανομή θα ανακοινωθεί σύντομα.",
+      published: "Τα αποτελέσματα της κατανομής ανακοινώθηκαν.",
+    };
+    const s = await fetch("/api/public").then((r) => r.json()).catch(() => null);
+    if (s) {
+      document.getElementById("school").textContent = s.schoolName;
+      const extra = s.phase === "parents" && s.deadline ? ` Προθεσμία: ${formatDateTime(s.deadline)}.` : "";
+      show(document.getElementById("status"), message("info", PHASE_TEXT[s.phase] + extra));
+    }
+  </script>
+</body>
+</html>

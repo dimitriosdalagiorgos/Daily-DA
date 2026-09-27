@@ -2,6 +2,30 @@
 
 Προδιαγραφές: [`SPEC.md`](SPEC.md). Πρότυπο ομίλων/εκπαιδευτικών: [`templates/omiloi_protypo.xlsx`](templates/omiloi_protypo.xlsx).
 
+## Τοπική εκτέλεση
+
+Χρειάζεται μόνο Node.js ≥ 20 (χωρίς εγκατάσταση πακέτων):
+
+```sh
+cd platform
+npm run dev -- --demo     # δοκιμαστικό σχολείο: 60 μαθητές, 12 όμιλοι
+# ή
+npm run dev               # κρατά τα δεδομένα στο .data/dev-store.json
+```
+
+Ανοίξτε http://localhost:8888 — διαχείριση: `/admin.html`, κωδικός `admin` (αλλάζει με `ADMIN_PASSWORD=…`).
+Τα email δεν στέλνονται τοπικά: εμφανίζονται στην κονσόλα και στην καρτέλα «Εξερχόμενα» της διαχείρισης (εκεί είναι και οι σύνδεσμοι εισόδου των εκπαιδευτικών).
+Για ανέβασμα αρχείων Excel ο browser φορτώνει το SheetJS από το cdn.sheetjs.com (χρειάζεται internet).
+
+Δοκιμαστικοί λογαριασμοί στο `--demo`: εκπαιδευτικός `etheatr@sch.gr`· γονέας π.χ. ΑΜ 9022, ΓΕΩΡΓΙΟΥ ΕΛΕΝΗ, πατέρας ΙΩΑΝΝΗΣ, μητέρα ΔΕΣΠΟΙΝΑ (ο κωδικός γονέων ορίζεται από τη διαχείριση).
+
+| Φάκελος | Περιεχόμενο |
+|---|---|
+| `public/` | Σελίδες: `index.html`, `parent.html`, `teacher.html`, `admin.html` (απλή HTML/JS, χωρίς build) |
+| `src/server/` | API (`app.js`), αποθήκευση (`store.js`), sessions/κωδικοί (`auth.js`) |
+| `dev/` | Τοπικός server και δοκιμαστικά δεδομένα |
+| `netlify/functions/api.mjs` | Το ίδιο API στο Netlify (αποθήκευση Supabase: βήμα 4) |
+
 ## Αλγόριθμος (`src/algorithm/`)
 
 Καθαρή JavaScript, χωρίς εξαρτήσεις — τρέχει ίδια σε Netlify Functions και στον browser.
@@ -34,6 +58,13 @@ npm test
 ```
 
 Τα tests με πραγματικά αρχεία Excel (`test/workbook.test.js`, εικονικά δεδομένα στο `test/fixtures/`) χρειάζονται το SheetJS: τοπικά παραλείπονται αν λείπει, στο CI εγκαθίσταται η επίσημη έκδοση και είναι υποχρεωτικά.
+
+Διαδρομή σε browser (Playwright + Chromium) όλης της χρονιάς στο δοκιμαστικό σχολείο:
+
+```sh
+npm run dev -- --demo &
+node e2e/walkthrough.mjs --shots /tmp/shots
+```
 
 Τρέχουν αυτόματα σε κάθε αλλαγή στο `platform/` (GitHub Actions, `.github/workflows/platform-tests.yml`).
 

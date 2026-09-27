@@ -6,6 +6,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "dev": "node dev/server.mjs",
+    "build": "node scripts/build.mjs"
   }
 }
