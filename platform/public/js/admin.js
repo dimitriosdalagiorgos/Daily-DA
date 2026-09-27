@@ -368,13 +368,42 @@ function resultsView(results) {
 
 function outbox() {
   const box = el("div", {}, el("p.muted", {}, "Φόρτωση…"));
-  api("GET", "/api/admin/outbox").then(({ outbox: mails }) => box.replaceChildren(
-    el("p.small.muted", {}, "Όσο δεν έχει ρυθμιστεί υπηρεσία email, τα μηνύματα δεν στέλνονται: εμφανίζονται εδώ. Τους συνδέσμους εισόδου των εκπαιδευτικών τους προωθείτε εσείς."),
-    ...[...mails].reverse().map((m) => el("section.card", {},
-      el("p.small.muted", {}, `${formatDateTime(m.at)} → ${m.to}`),
-      el("strong", {}, m.subject),
-      el("pre", { style: "white-space:pre-wrap;font:inherit" }, ...linkify(m.text))))));
-  return box;
+  const out = el("div");
+  const to = el("input", { id: "testto", type: "email", placeholder: "π.χ. το δικό σας email", autocomplete: "email" });
+  const send = el("button", { type: "button" }, "Αποστολή δοκιμαστικού email");
+  send.addEventListener("click", () => busy(send, out, async () => {
+    const r = await api("POST", "/api/admin/test-email", { to: to.value });
+    show(out, r.status === "sent"
+      ? message("ok", `Στάλθηκε στο ${to.value}. Ελέγξτε ότι έφτασε — και ότι δεν μπήκε στα ανεπιθύμητα (spam).`)
+      : message("warn", "Δεν έχει ρυθμιστεί υπηρεσία email: το μήνυμα καταγράφηκε μόνο εδώ."));
+    load();
+  }));
+  const STATUS = {
+    sent: ["ok", "στάλθηκε"],
+    failed: ["warn", "απέτυχε"],
+    not_sent: ["", "δεν στάλθηκε"],
+  };
+  const load = () => api("GET", "/api/admin/outbox").then(({ outbox: mails, mailConfigured }) => box.replaceChildren(
+    mailConfigured
+      ? message("info", "Τα email στέλνονται κανονικά. Εδώ φαίνεται τι στάλθηκε· οι σύνδεσμοι εισόδου των εκπαιδευτικών είναι κρυφοί.")
+      : message("warn", "Δεν έχει ρυθμιστεί υπηρεσία email: τα μηνύματα ΔΕΝ στέλνονται, εμφανίζονται μόνο εδώ. Τους συνδέσμους εισόδου των εκπαιδευτικών τους προωθείτε εσείς."),
+    mails.length === 0 ? el("p.muted", {}, "Δεν υπάρχουν μηνύματα ακόμα.") : null,
+    ...[...mails].reverse().map((m) => {
+      const [kind, label] = STATUS[m.status] ?? ["", ""];
+      return el("section.card", {},
+        el("p.small.muted", {}, `${formatDateTime(m.at)} → ${m.to} `, label ? el(`span.badge${kind ? `.${kind}` : ""}`, {}, label) : null),
+        m.error ? el("p.small", { style: "color:var(--err)" }, m.error) : null,
+        el("strong", {}, m.subject),
+        el("pre", { style: "white-space:pre-wrap;font:inherit" }, ...linkify(m.text)));
+    })));
+  load();
+  return el("div", {},
+    el("section.card", {},
+      el("h2", { style: "margin-top:0" }, "Δοκιμή αποστολής"),
+      el("label", { for: "testto" }, "Email παραλήπτη", to),
+      out,
+      el("div.actions", {}, send)),
+    box);
 }
 
 function linkify(text) {

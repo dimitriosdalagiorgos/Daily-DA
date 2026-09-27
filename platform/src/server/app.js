@@ -69,18 +69,30 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   const logEvent = (who, what, detail = {}) => store.append("events", { at: new Date(now()).toISOString(), who, what, ...detail });
 
+  /**
+   * Send (if a mail service is configured) and record in the outbox with the
+   * outcome. A failed mail never fails the action that caused it. With
+   * REDACT_OUTBOX the stored copy hides login links, so whoever reads the
+   * outbox cannot use them.
+   */
   const mail = async (to, subject, text) => {
     const message = { to, subject, text, at: new Date(now()).toISOString() };
-    await store.append("outbox", message);
+    let status = "not_sent";
+    let error;
     if (sendMail) {
       try {
         await sendMail(message);
+        status = "sent";
       } catch (err) {
-        // The action itself succeeded; the mail stays in the outbox.
+        status = "failed";
+        error = String(err.message ?? err).slice(0, 300);
         console.error("mail failed", err);
-        await store.append("events", { at: message.at, who: "system", what: "mail_failed", to, error: String(err.message ?? err) });
+        await store.append("events", { at: message.at, who: "system", what: "mail_failed", to, error });
       }
     }
+    const stored = env.REDACT_OUTBOX ? { ...message, text: text.replace(/#token=\S+/g, "#token=[κρυφό]") } : message;
+    await store.append("outbox", { ...stored, status, ...(error ? { error } : {}) });
+    return { status, error };
   };
 
   const deadlinePassed = (settings) => settings.deadline && now() > Date.parse(settings.deadline);
@@ -313,10 +325,19 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/admin/outbox", async (req) => {
     session(req, "admin");
-    // Locally, and in production until an e-mail service is configured
-    // (then teachers' login links can only be passed on by the admin).
     if (!env.DEV && !env.SHOW_OUTBOX) throw new HttpError(404, "Δεν υπάρχει.");
-    return json(200, { outbox: await store.readLog("outbox", 200) });
+    return json(200, { outbox: await store.readLog("outbox", 200), mailConfigured: Boolean(sendMail) && !env.DEV });
+  });
+
+  route("POST", "/api/admin/test-email", async (req) => {
+    session(req, "admin");
+    const { to } = await body(req);
+    const address = String(to ?? "").trim();
+    if (!EMAIL.test(address)) throw new HttpError(422, "Μη έγκυρο email.");
+    const result = await mail(address, "Δοκιμαστικό μήνυμα — πλατφόρμα ομίλων",
+      "Αυτό είναι δοκιμαστικό μήνυμα από την πλατφόρμα δήλωσης ομίλων.\nΑν το λάβατε (και όχι στα ανεπιθύμητα), η αποστολή email λειτουργεί.");
+    if (result.status === "failed") throw new HttpError(502, `Η αποστολή απέτυχε: ${result.error}`);
+    return json(200, result);
   });
 
   // --- teacher ---
