@@ -18,7 +18,7 @@ const PHASES = [
 ];
 const PHASE_HELP = {
   setup: "Ανεβάστε τον κατάλογο μαθητών και το αρχείο ομίλων.",
-  teachers: "Οι εκπαιδευτικοί συνδέονται με το email τους και ορίζουν χωρητικότητα και προτιμώμενους μαθητές.",
+  teachers: "Οι εκπαιδευτικοί συνδέονται (με τον σύνδεσμο που τους στέλνετε από την καρτέλα «Όμιλοι») και ορίζουν χωρητικότητα και προτιμώμενους μαθητές.",
   parents: "Οι γονείς υποβάλλουν δηλώσεις μέχρι την προθεσμία. Όμιλοι και λίστες εκπαιδευτικών είναι κλειδωμένα· μαθητές μόνο προστίθενται.",
   closed: "Δεν γίνονται δεκτές δηλώσεις. Εκτελέστε την κατανομή.",
   allocated: "Η κατανομή έγινε. Ελέγξτε τα αποτελέσματα (μπορείτε να την ξανατρέξετε) και ανακοινώστε τα.",
@@ -255,6 +255,47 @@ function students() {
 // ---------- Clubs ----------
 
 function clubs() {
+  return el("div", {}, clubsTable(), teacherLinks());
+}
+
+// Login links for teachers, passed on by the admin (no e-mail service).
+function teacherLinks() {
+  const out = el("div");
+  const rows = state.teachers.map((t) => {
+    const cell = el("td");
+    const make = el("button.small", { type: "button" }, "Σύνδεσμος εισόδου");
+    make.addEventListener("click", () => busy(make, out, async () => {
+      const { link, expiresAt } = await api("POST", "/api/admin/teacher-link", { email: t.email });
+      const clubNames = state.clubs.filter((c) => t.clubs.includes(c.code)).map((c) => `«${c.name}»`).join(", ");
+      const text = `Καλημέρα ${t.name} ${t.surname},\n\nΓια την πλατφόρμα ομίλων (${clubNames}) ο προσωπικός σας σύνδεσμος εισόδου είναι:\n${link}\n\nΙσχύει έως ${formatDateTime(expiresAt)}. Μην τον προωθήσετε σε άλλους.`;
+      const area = el("textarea", { readonly: true, rows: 6, "aria-label": `Μήνυμα για ${t.email}` }, text);
+      const copy = el("button.small.primary", { type: "button" }, "Αντιγραφή μηνύματος");
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          copy.textContent = "Αντιγράφηκε ✓";
+        } catch {
+          area.select();
+          document.execCommand?.("copy");
+          copy.textContent = "Επιλέχθηκε — Ctrl+C";
+        }
+      });
+      cell.replaceChildren(area, el("div.actions", {}, copy, el("a.button.small", { href: `mailto:${t.email}?subject=${encodeURIComponent("Πλατφόρμα ομίλων: σύνδεσμος εισόδου")}&body=${encodeURIComponent(text)}` }, "Άνοιγμα στο email")));
+    }));
+    cell.append(make);
+    return el("tr", {}, el("td", {}, `${t.name} ${t.surname}`, el("br"), el("span.small.muted", {}, t.email)),
+      el("td.small", {}, state.clubs.filter((c) => t.clubs.includes(c.code)).map((c) => c.name).join(", ")), cell);
+  });
+  return el("section.card", {},
+    el("h2", { style: "margin-top:0" }, "Σύνδεσμοι εισόδου εκπαιδευτικών"),
+    el("p.small.muted", {}, "Χωρίς υπηρεσία email, στείλτε εσείς σε κάθε εκπαιδευτικό τον προσωπικό του σύνδεσμο (π.χ. από το email του σχολείου). Ισχύει μία εβδομάδα· αν λήξει, φτιάξτε νέο."),
+    out,
+    rows.length ? el("div.table-wrap", {}, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Εκπαιδευτικός"), el("th", {}, "Όμιλοι"), el("th", {}, ""))),
+      el("tbody", {}, rows))) : el("p.muted", {}, "Δεν υπάρχουν εκπαιδευτικοί ακόμα (ανεβάστε το αρχείο ομίλων)."));
+}
+
+function clubsTable() {
   const editable = ["setup", "teachers"].includes(state.settings.phase);
   const byAm = new Map(state.students.map((s) => [s.am, s]));
   return el("section.card", {},

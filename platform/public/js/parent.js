@@ -2,6 +2,7 @@ import { $, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
 import { createRanker } from "./ranker.js";
 
 const api = createApi("parent");
+let pub = {};
 const app = $("#app");
 const logout = $("#logout");
 
@@ -9,6 +10,7 @@ api.onExpired = () => { api.setToken(null); loginView(message("warn", "Η σύν
 logout.addEventListener("click", () => { api.setToken(null); loginView(); });
 
 async function start() {
+  pub = await fetch("/api/public").then((r) => r.json()).catch(() => ({}));
   if (api.hasToken()) {
     try {
       return mainView(await api("GET", "/api/parent/me"));
@@ -21,7 +23,6 @@ async function start() {
 
 async function loginView(notice) {
   logout.classList.add("hidden");
-  const pub = await fetch("/api/public").then((r) => r.json()).catch(() => ({}));
   const out = el("div");
   const field = (name, label, hint, type = "text", extra = {}) =>
     el("label", { for: name }, label, hint ? el("span.hint", {}, hint) : null, el("input", { id: name, name, type, required: true, autocomplete: "off", ...extra }));
@@ -81,6 +82,7 @@ function mainView(me) {
 
   if (submission) {
     nodes.push(message("ok", `Υπάρχει δήλωση από ${formatDateTime(submission.submittedAt)}${canEdit ? ". Μπορείτε να την αλλάξετε μέχρι την προθεσμία." : "."}`));
+    nodes.push(receiptView(me), historyView(me));
   }
   if (!canEdit && !result) {
     nodes.push(message("info", me.phase === "parents" ? "Η προθεσμία έληξε· η δήλωση δεν αλλάζει πια." : "Οι δηλώσεις δεν δέχονται αλλαγές αυτή τη στιγμή."));
@@ -108,7 +110,7 @@ function mainView(me) {
     el("h2", { style: "margin-top:0" }, "Στοιχεία γονέα / κηδεμόνα"),
     el("div.grid-2", {},
       el("label", { for: "pname" }, "Ονοματεπώνυμο", parentName),
-      el("label", { for: "pemail" }, "Email", el("span.hint", {}, "Εδώ θα έρθει η επιβεβαίωση της δήλωσης."), parentEmail))));
+      el("label", { for: "pemail" }, "Email", el("span.hint", {}, pub.mailEnabled ? "Εδώ θα έρθει η επιβεβαίωση της δήλωσης." : "Για επικοινωνία από το σχολείο. Επιβεβαίωση με email δεν στέλνεται: κρατήστε την απόδειξη που εμφανίζεται μετά την υποβολή."), parentEmail))));
 
   const rankers = {};
   const daysCard = el("section.card", {}, el("h2", { style: "margin-top:0" }, "Σειρά προτίμησης ανά ημέρα"));
@@ -135,12 +137,42 @@ function mainView(me) {
       await api("PUT", "/api/parent/submission", { parent: { name: parentName.value, email: parentEmail.value }, preferences });
       const me2 = await api("GET", "/api/parent/me");
       mainView(me2);
-      $("#app").prepend(message("ok", `Η δήλωση καταχωρίστηκε. Στάλθηκε επιβεβαίωση στο ${parentEmail.value}.`));
+      $("#app").prepend(message("ok", pub.mailEnabled
+        ? `Η δήλωση καταχωρίστηκε. Στάλθηκε επιβεβαίωση στο ${parentEmail.value}.`
+        : `Η δήλωση καταχωρίστηκε. Εκτυπώστε ή αποθηκεύστε την απόδειξη (κωδικός ${me2.submission.receipt}).`));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }));
     nodes.push(out, el("div.actions", {}, submit));
   }
   show(app, nodes);
+}
+
+// ---------- Receipt & history ----------
+
+function receiptView(me) {
+  const { student, days, submission } = me;
+  const nameOf = new Map(days.flatMap((d) => d.clubs.map((c) => [c.code, c.name])));
+  const print = el("button", { type: "button", onclick: () => window.print() }, "Εκτύπωση / αποθήκευση ως PDF");
+  return el("section.card.receipt", {},
+    el("h2", { style: "margin-top:0" }, "Απόδειξη δήλωσης ομίλων"),
+    pub.schoolName ? el("p", {}, pub.schoolName) : null,
+    el("p", {}, el("strong", {}, `${student.surname} ${student.name}`), ` · Τάξη ${student.grade} · ΑΜ ${student.am}`),
+    el("p", {}, "Υποβλήθηκε: ", el("strong", {}, formatDateTime(submission.submittedAt)), el("br"),
+      "Κωδικός απόδειξης: ", el("strong", { style: "font-size:1.2em;letter-spacing:0.05em" }, submission.receipt)),
+    days.filter((d) => submission.preferences[d.day]?.length).map((d) => el("div.summary-day", {},
+      el("strong", {}, d.label),
+      el("ol", {}, submission.preferences[d.day].map((code) => el("li", {}, nameOf.get(code) ?? code))))),
+    el("p.small.muted", {}, "Ο κωδικός αλλάζει σε κάθε αλλαγή της δήλωσης. Αν συνδεθείτε ξανά και δείτε άλλον κωδικό από αυτόν της απόδειξής σας, η δήλωση έχει αλλάξει."),
+    el("div.actions.no-print", {}, print));
+}
+
+function historyView(me) {
+  const history = me.submission.history ?? [];
+  if (history.length < 2) return null;
+  return el("details.card", { open: true },
+    el("summary", {}, el("strong", {}, `Η δήλωση έχει αποθηκευτεί ${history.length} φορές`)),
+    el("ul", {}, [...history].reverse().map((h) => el("li", {}, `${formatDateTime(h.at)} — ${h.email}`))),
+    el("p.small", {}, `Αν κάποια από αυτές τις αλλαγές δεν την κάνατε εσείς, επικοινωνήστε αμέσως με το σχολείο${pub.contact ? `: ${pub.contact}` : "."}`));
 }
 
 start();

@@ -55,11 +55,18 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
-      - name: Walk-through
+      - name: Walk-through (with e-mail)
         run: |
           node dev/server.mjs --demo > dev.log 2>&1 &
           for i in $(seq 1 20); do curl -sf http://localhost:8888/api/public > /dev/null && break; sleep 0.5; done
-          node e2e/walkthrough.mjs --shots shots
+          node e2e/walkthrough.mjs --shots shots/mail
+          kill %1
+      - name: Walk-through (without e-mail, as in production now)
+        run: |
+          sleep 1
+          node dev/server.mjs --demo --no-mail > dev-nomail.log 2>&1 &
+          for i in $(seq 1 20); do curl -sf http://localhost:8888/api/public > /dev/null && break; sleep 0.5; done
+          node e2e/walkthrough.mjs --shots shots/no-mail
       - if: always()
         uses: actions/upload-artifact@v4
         with:

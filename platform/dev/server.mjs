@@ -1,6 +1,8 @@
 // Local development server:
 //   npm run dev              → http://localhost:8888
 //   npm run dev -- --demo    → with a fictional school loaded (fresh store)
+//   … --no-mail              → as in production without an e-mail service:
+//                              teachers get their login link from the admin
 //
 // Serves public/ as the site, src/ as /lib/ (the browser uses the same
 // algorithm and import code), and /api/* through the same handler as the
@@ -21,6 +23,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT ?? 8888);
 const storePath = join(root, ".data", "dev-store.json");
 const demo = process.argv.includes("--demo");
+const noMail = process.argv.includes("--no-mail");
 
 if (demo) rmSync(storePath, { force: true });
 const store = createFileStore(storePath);
@@ -42,7 +45,7 @@ const env = {
 const handle = createApp({
   store,
   env,
-  sendMail: async (m) => console.log(`\n✉  Προς: ${m.to}\n   Θέμα: ${m.subject}\n   ${m.text.replace(/\n/g, "\n   ")}\n`),
+  sendMail: noMail ? undefined : async (m) => console.log(`\n✉  Προς: ${m.to}\n   Θέμα: ${m.subject}\n   ${m.text.replace(/\n/g, "\n   ")}\n`),
 });
 
 const TYPES = {
@@ -102,5 +105,6 @@ createServer(async (req, res) => {
   console.log(`Πλατφόρμα ομίλων (τοπικά): http://localhost:${port}`);
   console.log(`  Διαχείριση: http://localhost:${port}/admin.html  (κωδικός: ${env.ADMIN_PASSWORD === "admin" ? "admin" : "από ADMIN_PASSWORD"})`);
   if (demo) console.log("  Φορτώθηκε δοκιμαστικό σχολείο (60 μαθητές, 12 όμιλοι).");
+  if (noMail) console.log("  Χωρίς email: σύνδεσμοι εκπαιδευτικών από τη διαχείριση (καρτέλα «Όμιλοι»).");
   console.log(`  Δεδομένα: ${storePath}`);
 });

@@ -82,13 +82,16 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
 
   // Teachers' phase: magic link → session → list
   assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } })).status, 200);
-  r = await call("POST", "/api/teacher/login", { body: { email: "EThEatr@sch.gr " } });
+  // No e-mail service: the teacher gets the login link from the admin.
+  assert.equal((await call("GET", "/api/public")).data.mailEnabled, false);
+  r = await call("POST", "/api/teacher/login", { body: { email: "etheatr@sch.gr" } });
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /θα σας τον δώσει η διαχείριση/);
+  assert.equal((await call("POST", "/api/admin/teacher-link", { token: admin, body: { email: "nobody@sch.gr" } })).status, 404);
+  r = await call("POST", "/api/admin/teacher-link", { token: admin, body: { email: "EThEatr@sch.gr " } });
   assert.equal(r.status, 200);
-  const unknown = await call("POST", "/api/teacher/login", { body: { email: "nobody@sch.gr" } });
-  assert.equal(unknown.data.message, r.data.message, "same answer for unknown addresses");
-  const link = (await store.readLog("outbox")).at(-1);
-  assert.equal(link.to, "etheatr@sch.gr");
-  const magic = link.text.match(/#token=(\S+)/)[1];
+  assert.equal(Date.parse(r.data.expiresAt) - clock.now, 7 * 24 * 3600 * 1000, "valid a week");
+  const magic = r.data.link.match(/^http:\/\/localhost\/teacher\.html#token=(\S+)$/)[1];
   r = await call("POST", "/api/teacher/session", { body: { token: magic } });
   assert.equal(r.status, 200);
   const teacher = r.data.token;
@@ -145,7 +148,12 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   assert.equal(r.status, 200);
   r = await submit(christoforidis, { mon: ["100", "101"], thu: ["102"] }, "second@example.com");
   const mails = (await store.readLog("outbox")).slice(-2).map((m) => m.to);
-  assert.deepEqual(mails, ["second@example.com", "first@example.com"], "previous address told about the change");
+  assert.deepEqual(mails, ["second@example.com", "first@example.com"], "previous address told about the change (when mail works)");
+  const receipt = r.data.receipt;
+  assert.match(receipt, /^[0-9A-F]{4}-[0-9A-F]{4}$/);
+  const mine = (await call("GET", "/api/parent/me", { token: christoforidis })).data.submission;
+  assert.equal(mine.receipt, receipt, "the page shows the same code as the receipt");
+  assert.deepEqual(mine.history.map((h) => h.email), ["first@example.com", "second@example.com"], "every change is visible to the parent");
   assert.equal((await submit(ntoka, { mon: ["101", "100"], thu: ["102"] })).status, 200);
   const pap = (await login({ am: "9001", surname: "ΠΑΠΑΔΟΠΟΥΛΟΣ", name: "ΝΙΚΟΛΑΟΣ", father: "ΓΕΩΡΓΙΟΣ", mother: "ΜΑΡΙΑ" })).data.token;
   assert.equal((await submit(pap, { mon: ["100", "101"], thu: ["102"] })).status, 200);

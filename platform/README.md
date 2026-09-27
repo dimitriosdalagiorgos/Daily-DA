@@ -11,6 +11,7 @@ cd platform
 npm run dev -- --demo     # δοκιμαστικό σχολείο: 60 μαθητές, 12 όμιλοι
 # ή
 npm run dev               # κρατά τα δεδομένα στο .data/dev-store.json
+npm run dev -- --demo --no-mail   # όπως τώρα στο Netlify: χωρίς email
 ```
 
 Ανοίξτε http://localhost:8888 — διαχείριση: `/admin.html`, κωδικός `admin` (αλλάζει με `ADMIN_PASSWORD=…`).

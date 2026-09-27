@@ -235,3 +235,11 @@ nav.tabs button[aria-selected="true"] { border-bottom-color: var(--primary); col
 .summary-day ol { margin: 4px 0; }
 
 footer.site { max-width: 960px; margin: 0 auto; padding: 0 16px 32px; color: var(--muted); font-size: 0.85rem; }
+
+/* Print: only the receipt */
+@media print {
+  body { background: #fff; color: #000; }
+  header.site, footer.site, .no-print { display: none !important; }
+  main > *:not(.receipt) { display: none !important; }
+  .receipt { border: 1px solid #999; box-shadow: none; }
+}

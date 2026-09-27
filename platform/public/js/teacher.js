@@ -29,8 +29,15 @@ async function start() {
   loginView();
 }
 
-function loginView(notice) {
+async function loginView(notice) {
   logout.classList.add("hidden");
+  const pub = await fetch("/api/public").then((r) => r.json()).catch(() => ({}));
+  if (pub.mailEnabled === false) {
+    show(app, el("h1", {}, "Σύνδεση εκπαιδευτικού"), notice,
+      message("info", "Τον προσωπικό σας σύνδεσμο εισόδου θα σας τον στείλει η διαχείριση της πλατφόρμας. Ανοίξτε τον από τη συσκευή σας· ισχύει μία εβδομάδα."),
+      pub.contact ? el("p.small.muted", {}, `Επικοινωνία: ${pub.contact}`) : null);
+    return;
+  }
   const out = el("div");
   const email = el("input", { id: "email", type: "email", required: true, autocomplete: "email", placeholder: "onoma@sch.gr" });
   const form = el("form.card", {},

@@ -52,15 +52,27 @@ try {
   await admin.waitForSelector("table td:has-text('Ρομποτική')");
   await shot(admin, "02-admin-clubs");
 
-  // ---------- Teacher: magic link, list ----------
+  // ---------- Teacher: login link (by e-mail, or from the admin) ----------
+  const { mailEnabled } = await api("/api/public");
   const teacher = await newPage();
   await teacher.goto(`${BASE}/teacher.html`);
-  await teacher.fill("#email", "EThEatr@sch.gr");
-  await teacher.click("button[type=submit]");
-  await teacher.waitForSelector(".msg.ok");
-  const { token: adminToken } = await api("/api/admin/login", { method: "POST", body: { password: "admin" } });
-  const { outbox } = await api("/api/admin/outbox", { token: adminToken });
-  const link = outbox.at(-1).text.match(/http\S+/)[0];
+  let link;
+  if (mailEnabled) {
+    await teacher.fill("#email", "EThEatr@sch.gr");
+    await teacher.click("button[type=submit]");
+    await teacher.waitForSelector(".msg.ok");
+    const { token: adminToken } = await api("/api/admin/login", { method: "POST", body: { password: "admin" } });
+    const { outbox } = await api("/api/admin/outbox", { token: adminToken });
+    link = outbox.at(-1).text.match(/http\S+/)[0];
+    step("teacher: link requested by e-mail");
+  } else {
+    await teacher.waitForSelector(".msg.info:has-text('διαχείριση')");
+    const row = admin.locator("tr", { hasText: "etheatr@sch.gr" });
+    await row.locator("button:has-text('Σύνδεσμος εισόδου')").click();
+    link = (await row.locator("textarea").inputValue()).match(/http\S+/)[0];
+    await shot(admin, "02b-admin-teacher-link");
+    step("teacher: link created by the admin (no e-mail service)");
+  }
   await teacher.goto(link);
   await teacher.waitForSelector("h2:has-text('Αντιγόνη')");
   step("teacher: logged in with the magic link");
@@ -127,7 +139,9 @@ try {
   await shot(parent, "05-parent-ranking");
   await parent.click("text=Υποβολή δήλωσης");
   await parent.waitForSelector(".msg.ok:has-text('καταχωρίστηκε')");
-  step("parent: submission saved");
+  const code = await parent.locator(".receipt strong").nth(2).textContent();
+  if (!/^[0-9A-F]{4}-[0-9A-F]{4}$/.test(code)) throw new Error(`no receipt code: ${code}`);
+  step(`parent: submission saved, receipt ${code}`);
   await shot(parent, "06-parent-submitted");
 
   // Two more parents via the API, so the allocation has competition

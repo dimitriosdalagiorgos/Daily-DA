@@ -19,6 +19,7 @@ import { importClubs } from "../import/clubs.js";
 import { checkReadiness } from "../import/readiness.js";
 import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
+import { createHash } from "node:crypto";
 import { makeZip } from "./zip.js";
 import { createRateLimiter, hashPassword, safeEqual, signToken, verifyPassword, verifyToken } from "./auth.js";
 
@@ -27,6 +28,14 @@ const phaseAtLeast = (phase, min) => PHASES.indexOf(phase) >= PHASES.indexOf(min
 
 const SESSION_TTL = { admin: 8 * 3600, teacher: 12 * 3600, parent: 2 * 3600 };
 const MAGIC_TTL = 20 * 60;
+// Links the admin passes on by hand (no e-mail service): valid a week.
+const ADMIN_LINK_TTL = 7 * 24 * 3600;
+
+/** Short code printed on the parent's receipt; changes with every change. */
+export function receiptCode(am, submittedAt, preferences) {
+  const h = createHash("sha256").update(JSON.stringify([am, submittedAt, preferences])).digest("hex").toUpperCase();
+  return `${h.slice(0, 4)}-${h.slice(4, 8)}`;
+}
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const GENERIC_LOGIN_ERROR = "Τα στοιχεία δεν ταιριάζουν με τον κατάλογο του σχολείου. Ελέγξτε τα και δοκιμάστε ξανά.";
 
@@ -129,7 +138,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/public", async () => {
     const s = await getSettings();
-    return json(200, { phase: s.phase, deadline: s.deadline, contact: s.contact, schoolName: s.schoolName ?? "" });
+    return json(200, { phase: s.phase, deadline: s.deadline, contact: s.contact, schoolName: s.schoolName ?? "", mailEnabled: Boolean(sendMail) });
   });
 
   // --- admin ---
@@ -342,7 +351,21 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   // --- teacher ---
 
+  route("POST", "/api/admin/teacher-link", async (req) => {
+    session(req, "admin");
+    const { email } = await body(req);
+    const teacher = (await getTeachers()).find((t) => t.email === String(email ?? "").trim().toLowerCase());
+    if (!teacher) throw new HttpError(404, "Άγνωστος εκπαιδευτικός.");
+    const token = signToken(env.SESSION_SECRET, { role: "magic", email: teacher.email }, ADMIN_LINK_TTL, now());
+    await logEvent("admin", "teacher_link", { email: teacher.email });
+    return json(200, {
+      link: `${env.BASE_URL ?? ""}/teacher.html#token=${token}`,
+      expiresAt: new Date(now() + ADMIN_LINK_TTL * 1000).toISOString(),
+    });
+  });
+
   route("POST", "/api/teacher/login", async (req) => {
+    if (!sendMail) throw new HttpError(409, "Η αποστολή email δεν είναι ενεργή. Τον σύνδεσμο εισόδου σας θα σας τον δώσει η διαχείριση της πλατφόρμας.");
     const { email } = await body(req);
     const address = String(email ?? "").trim().toLowerCase();
     if (!loginByIp.hit(`t:${clientIp(req)}`, now())) throw new HttpError(429, "Πολλές προσπάθειες. Δοκιμάστε σε λίγα λεπτά.");
@@ -458,7 +481,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       contact: settings.contact,
       canEdit: settings.phase === "parents" && !deadlinePassed(settings),
       days,
-      submission: submission ? { preferences: submission.preferences, parent: submission.parent, submittedAt: submission.submittedAt } : null,
+      submission: submission
+        ? {
+          preferences: submission.preferences,
+          parent: submission.parent,
+          submittedAt: submission.submittedAt,
+          receipt: receiptCode(am, submission.submittedAt, submission.preferences),
+          // Every save, so a parent can spot a change they did not make.
+          history: (submission.history ?? []).map((h) => ({ at: h.at, email: h.email })),
+        }
+        : null,
       result: published
         ? Object.fromEntries(DAYS.map((d) => [d, results.byStudent[am]?.[d] ? publicClub(byCode.get(results.byStudent[am][d])) : null]))
         : null,
@@ -503,7 +535,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       await mail(previousEmail, "Αλλαγή δήλωσης ομίλων",
         `Η δήλωση ομίλων για τον/την μαθητή/τρια ${student.surname} ${student.name} άλλαξε από άλλη διεύθυνση email (${parentEmail}). Αν δεν το κάνατε εσείς, επικοινωνήστε με το σχολείο.`);
     }
-    return json(200, { submittedAt: at });
+    return json(200, { submittedAt: at, receipt: receiptCode(am, at, clean) });
   });
 
   // ---------- helpers using the routes' data ----------
