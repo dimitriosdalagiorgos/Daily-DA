@@ -22,7 +22,19 @@ function initialOrder(codes, key) {
 }
 
 api.onExpired = () => { api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
-logout.addEventListener("click", () => { api.setToken(null); loginView(); });
+// The parents' password is kept in memory only, so a parent with more
+// children does not type it again. Logging out forgets it (next parent).
+let rememberedPassword = "";
+function signOut() {
+  api.setToken(null);
+  rememberedPassword = "";
+  loginView(message("ok", "Αποσυνδεθήκατε. Ο επόμενος γονέας μπορεί να συνδεθεί με τα δικά του στοιχεία."));
+}
+function nextChild() {
+  api.setToken(null);
+  loginView(message("info", "Συμπληρώστε τα στοιχεία του επόμενου παιδιού. Ο κωδικός γονέων έχει ήδη συμπληρωθεί."));
+}
+logout.addEventListener("click", signOut);
 
 async function start() {
   pub = await fetch("/api/public").then((r) => r.json()).catch(() => ({}));
@@ -42,7 +54,7 @@ async function loginView(notice) {
   const field = (name, label, hint, type = "text", extra = {}) =>
     el("label", { for: name }, label, hint ? el("span.hint", {}, hint) : null, el("input", { id: name, name, type, required: true, autocomplete: "off", ...extra }));
   const form = el("form.card", { novalidate: true },
-    field("password", "Κωδικός γονέων", "Τον έχει ανακοινώσει το σχολείο.", "password", { autocomplete: "current-password" }),
+    field("password", "Κωδικός γονέων", "Τον έχει ανακοινώσει το σχολείο.", "password", { autocomplete: "current-password", value: rememberedPassword }),
     field("am", "Αριθμός μητρώου μαθητή", null, "text", { inputmode: "numeric", pattern: "[0-9]*" }),
     el("div.grid-2", {},
       field("surname", "Επώνυμο μαθητή"),
@@ -58,6 +70,7 @@ async function loginView(notice) {
     busy(form.querySelector("button[type=submit]"), out, async () => {
       const { token } = await api("POST", "/api/parent/login", data);
       api.setToken(token);
+      rememberedPassword = data.password;
       mainView(await api("GET", "/api/parent/me"));
     }).then(() => {
       if (out.querySelector(".msg.err") && pub.contact) out.append(el("p.small", {}, `Αν δεν μπορείτε να συνδεθείτε: ${pub.contact}`));
@@ -98,7 +111,7 @@ function mainView(me) {
 
   if (submission) {
     nodes.push(message("ok", `Υπάρχει δήλωση από ${formatDateTime(submission.submittedAt)}${canEdit ? ". Μπορείτε να την αλλάξετε μέχρι την προθεσμία." : "."}`));
-    nodes.push(receiptView(me), historyView(me));
+    nodes.push(receiptView(me), doneView(), historyView(me));
   }
   if (!canEdit && !result) {
     nodes.push(message("info", me.phase === "parents" ? "Η προθεσμία έληξε· η δήλωση δεν αλλάζει πια." : "Οι δηλώσεις δεν δέχονται αλλαγές αυτή τη στιγμή."));
@@ -182,6 +195,16 @@ function mainView(me) {
     nodes.push(out, el("div.actions", {}, submit));
   }
   show(app, nodes);
+}
+
+// After a submission: another child, or leave the device to the next parent
+function doneView() {
+  return el("section.card.no-print", {},
+    el("h2", { style: "margin-top:0" }, "Τελειώσατε;"),
+    el("p", {}, "Αν έχετε κι άλλο παιδί στο σχολείο, κάντε δήλωση και για εκείνο. Αν τη συσκευή θα τη χρησιμοποιήσει άλλος γονέας, αποσυνδεθείτε."),
+    el("div.actions", {},
+      el("button", { type: "button", onclick: nextChild }, "Δήλωση για άλλο παιδί"),
+      el("button.primary", { type: "button", onclick: signOut }, "Αποσύνδεση")));
 }
 
 // ---------- Receipt & history ----------

@@ -148,6 +148,19 @@ try {
   step(`parent: submission saved, receipt ${code}`);
   await shot(parent, "06-parent-submitted");
 
+  // «Δήλωση για άλλο παιδί» keeps the parents' password, the rest is empty
+  await parent.click("button:has-text('Δήλωση για άλλο παιδί')");
+  await parent.waitForSelector("#am");
+  if (!(await parent.inputValue("#password")) || await parent.inputValue("#am")) throw new Error("next child: form not prepared");
+  await parent.fill("#am", "9022");
+  await parent.fill("#surname", "Γεωργίου");
+  await parent.fill("#name", "Ελένη");
+  await parent.fill("#father", "ιωάννης");
+  await parent.fill("#mother", "Δέσποινα");
+  await parent.click("button[type=submit]");
+  await parent.waitForSelector("h1:has-text('ΓΕΩΡΓΙΟΥ ΕΛΕΝΗ')");
+  step("parent: «another child» keeps only the parents' password");
+
   // Two more parents via the API, so the allocation has competition
   for (const [am, surname, name, father, mother] of [["9021", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "ΕΛΕΝΗ ΜΑΡΙΑ"], ["9041", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "ΕΛΕΝΗ"]]) {
     const { token } = await api("/api/parent/login", { method: "POST", body: { password: "omiloi2026", am, surname, name, father, mother } });
