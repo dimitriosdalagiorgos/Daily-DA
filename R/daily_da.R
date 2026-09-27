@@ -1,8 +1,9 @@
 # ----------------------------------------------------------
-# daily_da_reference.R
+# daily_da.R
 # ----------------------------------------------------------
-# REFERENCE COPY of ../../daily_da_with_teacherpreferences_unified.R,
-# used to check that the platform gives the same allocation.
+# Maintained version of daily_da_with_teacherpreferences_unified.R (repo
+# root), used by run_week.R for each day and checked in CI to give the same
+# allocation as the platform.
 # Changes from the original (search for "REFERENCE:"):
 #   1. Settings can be overridden by command-line arguments.
 #   2. The lottery is read from lottery_file (RegistryNr, lottery_number),
@@ -12,8 +13,8 @@
 #      pair instead of the two columns separately.
 # Everything else is unchanged.
 #
-# Usage:
-#   Rscript daily_da_reference.R <day_name> <clubs_file> <responses_file> \
+# Usage (normally called by run_week.R):
+#   Rscript R/daily_da.R <day_name> <clubs_file> <responses_file> \
 #           <prefs_dir> <lottery_file> [output_dir]
 # ----------------------------------------------------------
 # Student-proposing Gale-Shapley with optional teacher preferences

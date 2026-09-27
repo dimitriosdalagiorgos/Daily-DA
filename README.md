@@ -1,3 +1,7 @@
+# Daily-DA
+
+> **Νέα χρονιά (2026–27):** η πλατφόρμα δήλωσης & κατανομής ομίλων είναι στον φάκελο [`platform/`](platform/README.md) (προδιαγραφές: [`platform/SPEC.md`](platform/SPEC.md)). Η κατανομή τρέχει και **offline σε R** από τον φάκελο [`R/`](R/README.md), με τα ίδια αποτελέσματα. Τα scripts της ρίζας είναι της προηγούμενης χρονιάς.
+
 # Daily-DA Overview
 
 ## Gale-Shapley / Deferred Acceptance in Plain Language

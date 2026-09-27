@@ -8,14 +8,17 @@
 //            with teacher lists for two clubs
 //   random   N random weeks with single, double and triple clubs, grade
 //            restrictions, teacher lists, and some students skipping a day
+// Runs R/run_week.R on the platform's export package (src/export/rPackage.js),
+// so the R side also recomputes the lottery from the seed and checks it.
 // Needs Rscript with dplyr, readr, tidyr, purrr, stringr, writexl.
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allocateWeek, drawLottery, seededRandom, DAYS } from "../src/algorithm/index.js";
+import { buildRPackage } from "../src/export/rPackage.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -43,47 +46,17 @@ function parseCsv(text) {
   return body.map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ""])));
 }
 
-const csvLine = (values) => values.map((v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))).join(",");
-const writeCsv = (path, header, rows) => writeFileSync(path, [csvLine(header), ...rows.map(csvLine)].join("\n") + "\n");
 
-// ---------- R input from a platform scenario ----------
+// ---------- R run on the platform's export package ----------
 
-// R identifies clubs by name; use "c<code>" so names are safe file names.
-const rName = (code) => `c${code}`;
-
-/**
- * Old-form preferences for R: every day lists the clubs the student ranked
- * that day, with rank numbers. Multi-day clubs may appear on later days
- * (as parents filled them last year); both sides must drop them.
- */
-function writeRInput(dir, scenario) {
-  const { students, clubs, preferences, teacherLists, lottery } = scenario;
-  writeCsv(join(dir, "clubs.csv"), ["club_name", "club_capacity", "days"],
-    clubs.map((c) => [rName(c.code), c.capacity, c.days.join(";")]));
-  for (const day of DAYS) {
-    const dayClubs = clubs.filter((c) => c.days.includes(day)).map((c) => String(c.code));
-    if (dayClubs.length === 0) continue;
-    writeCsv(join(dir, `responses_${day}.csv`), ["RegistryNr", "Surname", "Name", ...dayClubs.map(rName)],
-      students.map((s) => {
-        const list = (preferences[s.am]?.[day] ?? []).map(String);
-        return [s.am, `S${s.am}`, `N${s.am}`, ...dayClubs.map((code) => (list.includes(code) ? list.indexOf(code) + 1 : ""))];
-      }));
-  }
-  mkdirSync(join(dir, "teacherpreferences"), { recursive: true });
-  for (const [code, ams] of Object.entries(teacherLists)) {
-    if (ams.length === 0) continue;
-    writeCsv(join(dir, "teacherpreferences", `${rName(code)}.csv`), ["RegistryNr", "teacher_preference_rank"],
-      ams.map((am, i) => [am, i + 1]));
-  }
-  writeCsv(join(dir, "lottery.csv"), ["RegistryNr", "lottery_number"], [...lottery].map(([am, n]) => [am, n]));
-}
-
-function runR(dir) {
-  execFileSync("Rscript", [join(here, "run_week_reference.R"), dir], {
+function runR(dir, scenario) {
+  const files = buildRPackage({ ...scenario, seed: scenario.seed });
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
+  execFileSync("Rscript", [join(repoRoot, "R", "run_week.R"), dir, join(dir, "results")], {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, LANG: "C.UTF-8", LC_ALL: "C.UTF-8" },
   });
-  return parseCsv(readFileSync(join(dir, "week_assignments.csv"), "utf8"));
+  return parseCsv(readFileSync(join(dir, "results", "week_assignments.csv"), "utf8"));
 }
 
 /** Differences between the two allocations, as readable lines. */
@@ -91,7 +64,7 @@ function compare(scenario, rRows) {
   const result = allocateWeek(scenario);
   const platform = result.byStudent;
   const r = Object.fromEntries(scenario.students.map((s) => [s.am, Object.fromEntries(DAYS.map((d) => [d, null]))]));
-  for (const row of rRows) r[row.RegistryNr][row.day] = row.club_name.replace(/^c/, "");
+  for (const row of rRows) r[row.RegistryNr][row.day] = row.club_code;
   const diffs = [];
   let seats = 0;
   for (const s of scenario.students) {
@@ -118,7 +91,7 @@ function sampleScenario() {
     code: codeOf.get(c.club_name.trim().toLowerCase()), name: c.club_name, days: ["mon"],
     grades: ["Α"], capacity: Number(c.club_capacity),
   }));
-  const students = responses.map((r) => ({ am: r.RegistryNr, grade: "Α" }));
+  const students = responses.map((r) => ({ am: r.RegistryNr, grade: "Α", surname: r.Surname, name: r.Name }));
   const preferences = {};
   for (const r of responses) {
     const ranked = Object.entries(r)
@@ -127,7 +100,8 @@ function sampleScenario() {
       .map(([k]) => codeOf.get(k.trim().toLowerCase()));
     preferences[r.RegistryNr] = { mon: ranked };
   }
-  const lottery = drawLottery(students.map((s) => s.am), "sample-2026");
+  const seed = "sample-2026";
+  const lottery = drawLottery(students.map((s) => s.am), seed);
   // Teacher lists for the two most oversubscribed clubs: first-choice
   // students with the worst lottery numbers (who would lose without the
   // teacher) and one who ranked the club second.
@@ -139,7 +113,7 @@ function sampleScenario() {
     const second = students.find((s) => preferences[s.am].mon[1] === c.code);
     teacherLists[c.code] = [...losers, ...(second ? [second] : [])].map((s) => s.am);
   }
-  return { name: "sample", students, clubs, preferences, teacherLists, lottery };
+  return { name: "sample", students, clubs, preferences, teacherLists, lottery, seed };
 }
 
 function randomScenario(rng, name) {
@@ -153,7 +127,7 @@ function randomScenario(rng, name) {
     return a;
   };
   const grades = ["Α", "Β", "Γ"];
-  const students = Array.from({ length: 30 + Math.floor(rng() * 50) }, (_, i) => ({ am: String(5000 + i), grade: pick(grades) }));
+  const students = Array.from({ length: 30 + Math.floor(rng() * 50) }, (_, i) => ({ am: String(5000 + i), grade: pick(grades), surname: `ΕΠΩΝΥΜΟ${i}`, name: `ΟΝΟΜΑ${i}` }));
   const clubs = [];
   const nClubs = 8 + Math.floor(rng() * 10);
   for (let code = 101; code < 101 + nClubs; code++) {
@@ -177,8 +151,9 @@ function randomScenario(rng, name) {
       teacherLists[c.code] = shuffle(pool).slice(0, Math.min(c.capacity, 1 + Math.floor(rng() * 3)));
     }
   }
-  const lottery = drawLottery(students.map((s) => s.am), `${name}-${rng()}`);
-  return { name, students, clubs, preferences, teacherLists, lottery };
+  const seed = `${name} Κλήρωση ${rng()}`;
+  const lottery = drawLottery(students.map((s) => s.am), seed);
+  return { name, students, clubs, preferences, teacherLists, lottery, seed };
 }
 
 // ---------- Main ----------
@@ -192,8 +167,7 @@ const scenarios = [sampleScenario(), ...Array.from({ length: nRandom }, (_, i) =
 let failed = 0;
 for (const scenario of scenarios) {
   const dir = mkdtempSync(join(tmpdir(), `compare-${scenario.name}-`));
-  writeRInput(dir, scenario);
-  const { diffs, seats, carried, conflicts } = compare(scenario, runR(dir));
+  const { diffs, seats, carried, conflicts } = compare(scenario, runR(dir, scenario));
   const multi = scenario.clubs.filter((c) => c.days.length > 1).length;
   const summary = `${scenario.name}: ${scenario.students.length} μαθητές, ${scenario.clubs.length} όμιλοι (${multi} πολυήμεροι), ${seats} θέσεις, ${carried} μεταφορές, ${conflicts} συγκρούσεις ημερών`;
   if (diffs.length === 0) {
