@@ -11,6 +11,7 @@
 - Netlify (δωρεάν), auto-deploy από το GitHub. Netlify Functions για backend.
 - Αποθήκευση: Supabase (region EU/Frankfurt) — προτεινόμενο· σχεδιασμός με αφαιρετικό storage layer ώστε να μπορεί να αλλάξει σε Netlify Blobs.
 - Δεν υπάρχει σχολικός λογαριασμός Google· Office 365 A1 δεν καλύπτει εξωτερικούς χρήστες (γονείς).
+- **Εγκατάσταση (27/9/2026):** site https://onassisclubselection.netlify.app (Netlify, branch `claude/affectionate-mccarthy-buzytu`, auto-deploy σε κάθε push)· βάση Supabase project `wdbvpyofhhltnjiluhtp` (Frankfurt), πίνακες από `platform/supabase/schema.sql`. Μεταβλητές Netlify: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `ADMIN_PASSWORD` (τα κλειδιά μόνο στο Netlify, ποτέ στο αποθετήριο). Email: μέχρι να ρυθμιστεί υπηρεσία, στην καρτέλα «Εξερχόμενα email» της διαχείρισης.
 - Εργασία απευθείας στο GitHub (commits/PR από Claude Code). Στόχος: μέγιστη αυτοματοποίηση (auto-deploy, tests σε κάθε αλλαγή μέσω GitHub Actions).
 
 ## Δεδομένα (ανέβασμα από διαχειριστή)
