@@ -162,7 +162,16 @@ try {
   await admin.click("text=Εκτέλεση κατανομής");
   await admin.waitForSelector("h2:has-text('Αποτελέσματα')");
   step("admin: allocation run");
+  await admin.waitForSelector("h3:has-text('Κενά ανά ημέρα')");
+  await admin.fill("input[aria-label='Αναζήτηση μαθητή για αναφορά']", "9022");
+  await admin.click("button:has-text('Εμφάνιση αναφοράς')");
+  await admin.waitForSelector(".report:has-text('Αριθμός κλήρωσης')");
+  step("admin: gaps per day and a student's report");
   await shot(admin, "07-admin-results");
+  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Σύνοψη ανά όμιλο (.csv)", "summary"]]) {
+    const [d] = await Promise.all([admin.waitForEvent("download"), admin.click(`button:has-text('${label}')`)]);
+    step(`admin: ${file} downloaded (${d.suggestedFilename()})`);
+  }
   const [download] = await Promise.all([admin.waitForEvent("download"), admin.click("text=Δεδομένα για R (.zip)")]);
   step(`admin: R package downloaded (${download.suggestedFilename()})`);
   await admin.click("text=Επόμενη φάση: Ανακοίνωση");
@@ -171,8 +180,17 @@ try {
 
   await parent.reload();
   await parent.waitForSelector("h2:has-text('Αποτελέσματα κατανομής')");
-  step("parent: sees the result");
+  await parent.click("summary:has-text('Πώς προέκυψε')");
+  await parent.waitForSelector(".report li:has-text('Αίτηση στον όμιλο')");
+  step("parent: sees the result and how it came about");
   await shot(parent, "08-parent-result");
+
+  await admin.click("role=tab[name='Ιστορικό']");
+  await admin.waitForSelector("td:has-text('Κατανομή')");
+  await admin.click("role=tab[name='Αρχεία']");
+  await admin.waitForSelector("h2:has-text('Τι υπάρχει ήδη στη βάση')");
+  step("admin: history and database status");
+  await shot(admin, "08b-admin-status");
 
   // ---------- Admin: reset after the trial ----------
   await admin.click("role=tab[name='Πορεία & ρυθμίσεις']");

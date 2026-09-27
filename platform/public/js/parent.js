@@ -1,5 +1,6 @@
 import { $, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
 import { createRanker } from "./ranker.js";
+import { reportView } from "./report.js";
 
 const api = createApi("parent");
 let pub = {};
@@ -77,7 +78,8 @@ function mainView(me) {
         el("tbody", {}, ["mon", "tue", "wed", "thu", "fri"].filter((d) => days.some((x) => x.day === d)).map((d) => {
           const label = days.find((x) => x.day === d).label;
           return el("tr", {}, el("td", {}, label), el("td", {}, result[d]?.name ?? el("span.muted", {}, "—")));
-        }))))));
+        })))),
+      me.report ? el("details", {}, el("summary", {}, "Πώς προέκυψε η κατανομή (βήμα προς βήμα)"), reportView(me.report, { title: null })) : null));
   }
 
   if (submission) {

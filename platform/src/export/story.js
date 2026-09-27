@@ -1,0 +1,88 @@
+// The allocation's audit log in plain Greek: one sentence per event, and
+// the "story" of one student per day (what the R scripts wrote in
+// <day>_audit_log.csv and <day>_report_<student>.txt).
+
+import { DAYS, DAY_LABELS } from "../algorithm/days.js";
+
+const ordinal = (n) => `${n}η`;
+
+/** Where a student ended up on a day with no club: why. */
+export const GAP_REASONS = {
+  all_rejected: "δεν χώρεσε",
+  no_preferences: "χωρίς προτιμήσεις",
+  not_offered: "δεν υπάρχει όμιλος για την τάξη του",
+};
+
+/**
+ * One event as a sentence.
+ * @param {object} e an entry of allocateWeek()'s log
+ * @param {(code: string) => string} nameOf club code → name
+ * @param {(code: string) => string[]} daysOf club code → its days
+ */
+export function describeEvent(e, nameOf, daysOf = () => []) {
+  const club = e.club !== undefined ? `«${nameOf(e.club)}»` : "";
+  switch (e.event) {
+    case "ROUND_START":
+      return `Γύρος ${e.round}: ${e.count} μαθητές κάνουν αίτηση.`;
+    case "PROPOSAL":
+      return `Αίτηση στον όμιλο ${club} (${ordinal(e.rank)} επιλογή).`;
+    case "ACCEPTED":
+      return `Προσωρινή θέση στον όμιλο ${club}.`;
+    case "RETAINED":
+      return `Κράτησε τη θέση στον όμιλο ${club}.`;
+    case "REJECTED":
+      return `Δεν χώρεσε στον όμιλο ${club}: γέμισε με μαθητές υψηλότερης προτεραιότητας.`;
+    case "DISPLACED":
+      return `Έχασε τη θέση στον όμιλο ${club} από μαθητή υψηλότερης προτεραιότητας.`;
+    case "CARRIED": {
+      const first = daysOf(e.club)[0];
+      return `Θέση στον όμιλο ${club}, γιατί τοποθετήθηκε σε αυτόν ${first ? `τη ${DAY_LABELS[first]}` : "νωρίτερα"} (όμιλος πολλών ημερών).`;
+    }
+    case "CLUB_DROPPED":
+      return e.reason === "day_conflict"
+        ? `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα: γίνεται και σε ημέρα όπου έχει ήδη όμιλο.`
+        : `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα αυτής της ημέρας: η κατανομή του έγινε την πρώτη του ημέρα.`;
+    case "NO_MORE_PROPOSALS":
+      return `Τέλος: ${e.count} μαθητές δεν έχουν άλλους ομίλους για αίτηση.`;
+    default:
+      return e.event;
+  }
+}
+
+/**
+ * Per-student story from the whole week's log.
+ * @returns {Record<string, Record<string, {round: number, event: string, club?: string, rank?: number, text: string}[]>>}
+ *   am → day → events
+ */
+export function storiesByStudent(logByDay, nameOf, daysOf) {
+  const out = {};
+  for (const day of DAYS) {
+    for (const e of logByDay[day] ?? []) {
+      if (!e.am) continue;
+      ((out[e.am] ??= {})[day] ??= []).push({
+        round: e.round, event: e.event, ...(e.club !== undefined ? { club: e.club } : {}), ...(e.rank !== undefined ? { rank: e.rank } : {}),
+        text: describeEvent(e, nameOf, daysOf),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Why each student has no club on a day: all_rejected / no_preferences /
+ * not_offered (no club for their grade that day).
+ * @returns {Record<string, Record<string, string>>} am → day → reason
+ */
+export function gapReasons(results, students, clubs) {
+  const offered = (day, grade) => clubs.some((c) => c.days.includes(day) && c.grades.includes(grade));
+  const reasons = {};
+  for (const day of DAYS) {
+    const unassigned = new Map((results.days[day]?.unassigned ?? []).map((u) => [u.am, u.reason]));
+    for (const s of students) {
+      if (results.byStudent[s.am]?.[day]) continue;
+      const reason = !offered(day, s.grade) ? "not_offered" : unassigned.get(s.am) ?? "no_preferences";
+      (reasons[s.am] ??= {})[day] = reason;
+    }
+  }
+  return reasons;
+}

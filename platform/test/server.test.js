@@ -331,3 +331,62 @@ test("trial import of last year's responses → allocation", async () => {
   assert.equal(r.data.results.byStudent["8000"].mon, winner === "8000" ? "100" : null);
   assert.equal((await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "mon", rows: mon } })).status, 409, "not after the allocation");
 });
+
+test("reports: reasons, audit log, club summary, student story, uploads, events", async () => {
+  const { call, store } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS, fileName: "Katalogos_Mathiton.xls" } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS, fileName: "omiloi.xlsx" } });
+  await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "mon", fileName: "deutera.csv", rows: [["RegistryNr", "Αντιγόνη", "Ρομποτική"], [9001, 1, 2], [9002, 1, ""]] } });
+
+  let state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual([state.uploads.students.fileName, state.uploads.students.count, state.uploads.students.byGrade], ["Katalogos_Mathiton.xls", 4, { Α: 1, Β: 3, Γ: 0 }]);
+  assert.deepEqual([state.uploads.clubs.fileName, state.uploads.clubs.clubs, state.uploads.clubs.teachers], ["omiloi.xlsx", 4, 5]);
+  assert.deepEqual([state.uploads.legacy.mon.fileName, state.uploads.legacy.mon.rows], ["deutera.csv", 2]);
+  assert.deepEqual(state.submissions["9001"].days, ["mon"]);
+  assert.equal(state.submissions["9001"].imported, true);
+
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z" } });
+  for (const phase of ["teachers", "parents", "closed"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+  const res = (await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "Σ" } })).data.results;
+  // Αντιγόνη has 1 seat and both ranked it first; the loser ranked Ρομποτική
+  // (9001) or nothing else (9002).
+  const loser = res.byStudent["9001"].mon === "100" ? "9002" : "9001";
+  assert.equal(res.gaps[loser]?.mon ?? null, loser === "9002" ? "all_rejected" : null);
+  assert.equal(res.gaps["9003"].mon, "no_preferences");
+  assert.equal(res.gaps["9001"].thu === undefined || res.gaps["9001"].thu === "no_preferences", true);
+  assert.equal(res.gaps["9003"].thu, "no_preferences", "Χορωδία runs Thursday for Α");
+  assert.equal(res.gaps["9003"].tue, "not_offered");
+  assert.ok(res.gapCounts.mon.no_preferences >= 2);
+
+  const csv = new TextDecoder().decode((await call("GET", "/api/admin/export/results.csv", { token: admin })).data);
+  assert.match(csv, /9003,ΔΗΜΟΥ,ΣΟΦΙΑ,Α,— χωρίς προτιμήσεις,,,— χωρίς προτιμήσεις,/);
+
+  const audit = new TextDecoder().decode((await call("GET", "/api/admin/export/audit_log.csv", { token: admin })).data);
+  assert.match(audit, /^Ημέρα,Γύρος,Γεγονός,ΑΜ,Επώνυμο,Όνομα,Κωδικός ομίλου,Όμιλος,Θέση προτίμησης,Περιγραφή\n/);
+  assert.match(audit, /Δευτέρα,1,PROPOSAL,9001,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΝΙΚΟΛΑΟΣ,100,Αντιγόνη,1,Αίτηση στον όμιλο «Αντιγόνη» \(1η επιλογή\)\./);
+
+  const summary = new TextDecoder().decode((await call("GET", "/api/admin/export/club_summary.csv", { token: admin })).data);
+  assert.match(summary, /100,Αντιγόνη,Δευτέρα,κατανομή,1,1,100,2,2,/);
+  assert.match(summary, /100,Αντιγόνη,Πέμπτη,από Δευτέρα,1,1,100,/);
+
+  const report = (await call("GET", "/api/admin/report/9001", { token: admin })).data;
+  assert.equal(report.lotteryOf, 4);
+  assert.ok(report.lottery >= 1 && report.lottery <= 4);
+  assert.ok(report.days.mon.steps.length >= 2);
+  assert.equal(report.days.tue.gap, "not_offered");
+
+  const events = (await call("GET", "/api/admin/events", { token: admin })).data.events.map((e) => e.what);
+  for (const what of ["students_uploaded", "clubs_uploaded", "import_legacy", "phase", "allocated"]) assert.ok(events.includes(what), what);
+
+  // Parents see the story only after publication
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "published" } });
+  const parent = (await call("POST", "/api/parent/login", { body: { password: "omiloi2026", am: "9001", surname: "ΠΑΠΑΔΟΠΟΥΛΟΣ", name: "ΝΙΚΟΛΑΟΣ", father: "ΓΕΩΡΓΙΟΣ", mother: "ΜΑΡΙΑ" } })).data.token;
+  const me = (await call("GET", "/api/parent/me", { token: parent })).data;
+  assert.deepEqual(me.report.days.mon.steps, report.days.mon.steps);
+
+  await call("POST", "/api/admin/reset", { token: admin, body: { confirm: "ΔΙΑΓΡΑΦΗ" } });
+  state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual(state.uploads, {});
+  assert.deepEqual(await store.list("story:"), []);
+});

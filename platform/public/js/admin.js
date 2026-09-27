@@ -2,6 +2,7 @@ import { $, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
 import { readWorkbook } from "/lib/import/workbook.js";
 import { headerKey } from "/lib/import/table.js";
 import { decodeCsv, parseCsv } from "/lib/import/csv.js";
+import { reportView as studentReportView } from "./report.js";
 
 const api = createApi("admin");
 const app = $("#app");
@@ -67,10 +68,10 @@ async function refresh() {
 
 function render() {
   logout.classList.remove("hidden");
-  const tabs = [["overview", "Πορεία & ρυθμίσεις"], ["data", "Αρχεία"], ["students", "Μαθητές"], ["clubs", "Όμιλοι"], ["allocation", "Κατανομή"], ...(devOutbox ? [["outbox", "Εξερχόμενα email"]] : [])];
+  const tabs = [["overview", "Πορεία & ρυθμίσεις"], ["data", "Αρχεία"], ["students", "Μαθητές"], ["clubs", "Όμιλοι"], ["allocation", "Κατανομή"], ["history", "Ιστορικό"], ...(devOutbox ? [["outbox", "Εξερχόμενα email"]] : [])];
   const nav = el("nav.tabs", { role: "tablist" }, tabs.map(([id, label]) =>
     el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), onclick: () => { tab = id; render(); } }, label)));
-  const views = { overview, data, students, clubs, allocation, outbox };
+  const views = { overview, data, students, clubs, allocation, history, outbox };
   show(app, el("h1", {}, "Διαχείριση"), phaseBar(), nav, el("div", { role: "tabpanel" }, views[tab]()));
 }
 
@@ -210,7 +211,7 @@ function data() {
       try {
         const XLSX = await loadXlsx();
         const sheets = readWorkbook(XLSX, new Uint8Array(await file.arrayBuffer()));
-        const report = await handler(sheets);
+        const report = await handler(sheets, file.name);
         await refresh();
         tab = "data";
         render();
@@ -225,19 +226,42 @@ function data() {
   };
   const find = (sheets, name) => Object.entries(sheets).find(([n]) => headerKey(n) === headerKey(name))?.[1];
   return el("div", {},
-    upload("Κατάλογος μαθητών (myschool)", locked ? "Οι δηλώσεις είναι ανοιχτές: από νέο αρχείο προστίθενται μόνο οι νέοι μαθητές." : "Το «Κατάλογος Μαθητών» όπως εξάγεται από το myschool (.xls).", async (sheets) => {
+    uploadsStatus(),
+    upload("Κατάλογος μαθητών (myschool)", locked ? "Οι δηλώσεις είναι ανοιχτές: από νέο αρχείο προστίθενται μόνο οι νέοι μαθητές." : "Το «Κατάλογος Μαθητών» όπως εξάγεται από το myschool (.xls).", async (sheets, fileName) => {
       const rows = Object.values(sheets)[0] ?? [];
-      return (await api("PUT", "/api/admin/students", { rows })).report;
+      return (await api("PUT", "/api/admin/students", { rows, fileName })).report;
     }, false),
-    upload("Όμιλοι και εκπαιδευτικοί", locked ? "Κλειδωμένο: οι δηλώσεις έχουν ανοίξει." : "Το πρότυπο της πλατφόρμας, συμπληρωμένο.", async (sheets) => {
+    upload("Όμιλοι και εκπαιδευτικοί", locked ? "Κλειδωμένο: οι δηλώσεις έχουν ανοίξει." : "Το πρότυπο της πλατφόρμας, συμπληρωμένο.", async (sheets, fileName) => {
       const clubs = find(sheets, "Όμιλοι");
       const teachers = find(sheets, "Εκπαιδευτικοί");
       if (!clubs || !teachers) throw new Error("Το αρχείο δεν έχει τα φύλλα «Όμιλοι» και «Εκπαιδευτικοί». Χρησιμοποιήστε το πρότυπο.");
-      return (await api("PUT", "/api/admin/clubs", { clubs, teachers })).report;
+      return (await api("PUT", "/api/admin/clubs", { clubs, teachers, fileName })).report;
     }, locked),
     el("p", {}, el("a.button", { href: "/templates/omiloi_protypo.xlsx", download: "omiloi_protypo.xlsx" }, "Λήψη κενού προτύπου ομίλων")),
     legacyImport(),
     el("p.small.muted", {}, "Τα αρχεία διαβάζονται στον υπολογιστή σας· στον διακομιστή στέλνονται μόνο τα στοιχεία των πινάκων και ελέγχονται ξανά."));
+}
+
+// What is in the database now
+function uploadsStatus() {
+  const u = state.uploads ?? {};
+  const when = (x) => (x ? `${x.fileName ? `«${x.fileName}» · ` : ""}${formatDateTime(x.at)}` : "");
+  const subs = Object.values(state.submissions);
+  const imported = subs.filter((s) => s.imported).length;
+  const lists = Object.values(state.teacherLists).filter((l) => l.ams?.length).length;
+  const row = (label, ok, detail, info) => el("tr", {},
+    el("td", {}, ok ? el("span.badge.ok", {}, "✓") : el("span.badge", {}, "—")), el("td", {}, el("strong", {}, label)),
+    el("td", {}, detail), el("td.small.muted", {}, info));
+  const byGrade = (g) => ["Α", "Β", "Γ"].map((k) => `${k}: ${g?.[k] ?? 0}`).join(" · ");
+  return el("section.card", {},
+    el("h2", { style: "margin-top:0" }, "Τι υπάρχει ήδη στη βάση"),
+    el("div.table-wrap", {}, el("table", {}, el("tbody", {},
+      row("Κατάλογος μαθητών", state.students.length > 0, state.students.length ? `${state.students.length} μαθητές (${byGrade(Object.fromEntries(["Α", "Β", "Γ"].map((g) => [g, state.students.filter((s) => s.grade === g).length])))})` : "δεν έχει ανέβει", when(u.students)),
+      row("Όμιλοι και εκπαιδευτικοί", state.clubs.length > 0, state.clubs.length ? `${state.clubs.length} όμιλοι (${state.clubs.filter((c) => c.days.length > 1).length} πολυήμεροι) · ${state.teachers.length} εκπαιδευτικοί` : "δεν έχει ανέβει", when(u.clubs)),
+      row("Λίστες εκπαιδευτικών", lists > 0, `${lists} όμιλοι με προτιμώμενους μαθητές`, ""),
+      row("Δηλώσεις γονέων", subs.length - imported > 0, `${subs.length - imported} δηλώσεις`, ""),
+      ...DAYS.filter((d) => u.legacy?.[d]).map((d) => row(`Περσινές δηλώσεις — ${DAY_LABELS[d]}`, true, `${u.legacy[d].rows} δηλώσεις${u.legacy[d].newStudents ? ` · +${u.legacy[d].newStudents} δοκιμαστικοί μαθητές` : ""}`, when(u.legacy[d]))),
+      row("Κατανομή", Boolean(state.results), state.results ? `seed «${state.results.seed}»` : "δεν έχει γίνει", state.results ? formatDateTime(state.results.at) : "")))));
 }
 
 // Trial: last year's per-day responses
@@ -259,7 +283,7 @@ function legacyImport() {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const rows = /\.csv$/i.test(file.name) ? parseCsv(decodeCsv(bytes)) : Object.values(readWorkbook(await loadXlsx(), bytes))[0] ?? [];
-      const { report } = await api("POST", "/api/admin/import-legacy", { day: day.value, rows, addMissingGrade: addMissing.checked ? grade.value : null });
+      const { report } = await api("POST", "/api/admin/import-legacy", { day: day.value, rows, addMissingGrade: addMissing.checked ? grade.value : null, fileName: file.name });
       await refresh();
       tab = "data";
       render();
@@ -426,6 +450,12 @@ function allocation() {
   rZip.addEventListener("click", () => busy(rZip, out, () => api.download(`/api/admin/export/r-package.zip${state.results ? "" : `?seed=${encodeURIComponent(seed.value)}`}`, "omiloi_dedomena_R.zip")));
   const csv = el("button", { type: "button", disabled: !state.results }, "Αποτελέσματα (.csv)");
   csv.addEventListener("click", () => busy(csv, out, () => api.download("/api/admin/export/results.csv", "katanomi_omilon.csv")));
+  const xlsx = el("button", { type: "button", disabled: !state.results }, "Αποτελέσματα (.xlsx)");
+  xlsx.addEventListener("click", () => busy(xlsx, out, async () => resultsWorkbook((await api("GET", "/api/admin/results")).results)));
+  const audit = el("button", { type: "button", disabled: !state.results }, "Audit log κατανομής (.csv)");
+  audit.addEventListener("click", () => busy(audit, out, () => api.download("/api/admin/export/audit_log.csv", "audit_log_katanomis.csv")));
+  const summary = el("button", { type: "button", disabled: !state.results }, "Σύνοψη ανά όμιλο (.csv)");
+  summary.addEventListener("click", () => busy(summary, out, () => api.download("/api/admin/export/club_summary.csv", "synopsi_omilon.csv")));
 
   if (state.results) api("GET", "/api/admin/results").then(({ results }) => resultsBox.replaceChildren(resultsView(results))).catch(() => {});
   resultsBox.id = "results-box";
@@ -437,7 +467,9 @@ function allocation() {
       el("p.small", {}, "Το seed καθορίζει την κλήρωση: ένας σταθερός αριθμός για κάθε μαθητή, για όλη την εβδομάδα. Ανακοινώστε το seed· με αυτό οποιοσδήποτε ξαναβγάζει την ίδια κλήρωση και την ίδια κατανομή, και offline στο R (φάκελος R/ του αποθετηρίου)."),
       el("label", { for: "seed" }, "Seed κλήρωσης", seed),
       out,
-      el("div.actions", {}, run, randomSeed, rZip, csv)),
+      el("div.actions", {}, run, randomSeed),
+      el("h3", {}, "Εξαγωγές"),
+      el("div.actions", {}, xlsx, csv, audit, summary, rZip)),
     resultsBox);
 }
 
@@ -458,6 +490,18 @@ function resultsView(results) {
       el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th", {}, "Όμιλος"), el("th.num", {}, "Τοποθετήθηκαν"), el("th.num", {}, "Θέσεις"))),
       el("tbody", {}, clubsByDay.flatMap(([d, cs]) => cs.map((c) =>
         el("tr", {}, el("td", {}, DAY_LABELS[d]), el("td", {}, c.name), el("td.num", {}, results.enrolled[d][String(c.code)] ?? 0), el("td.num", {}, c.capacity))))))),
+    el("h3", {}, "Κενά ανά ημέρα"),
+    el("div.table-wrap", {}, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th.num", {}, "Τοποθετήθηκαν"), el("th.num", {}, "Δεν χώρεσαν"), el("th.num", {}, "Χωρίς προτιμήσεις"), el("th.num", {}, "Χωρίς όμιλο για την τάξη τους"))),
+      el("tbody", {}, DAYS.map((d) => el("tr", {},
+        el("td", {}, DAY_LABELS[d]),
+        el("td.num", {}, Object.values(results.enrolled[d]).reduce((a, b) => a + b, 0)),
+        el("td.num", {}, results.gapCounts[d].all_rejected),
+        el("td.num", {}, results.gapCounts[d].no_preferences),
+        el("td.num", {}, results.gapCounts[d].not_offered)))))),
+    el("p.small.muted", {}, "«Χωρίς προτιμήσεις»: ο μαθητής δεν δήλωσε κανέναν όμιλο εκείνης της ημέρας (ή δεν υπέβαλε δήλωση). «Δεν χώρεσε»: όλοι οι όμιλοι που δήλωσε γέμισαν."),
+    noPrefsByDay(results, byAm, who),
+    reportSearch(),
     el("h3", {}, `Δήλωσαν αλλά δεν χώρεσαν (${rejected.length})`),
     rejected.length
       ? el("div.table-wrap", {}, el("table", {},
@@ -473,6 +517,103 @@ function resultsView(results) {
         el("p.small.muted", {}, "Δεν τοποθετήθηκαν σε κανέναν όμιλο."),
         el("ul", {}, noSubmission.map((s) => el("li", {}, `${who(s)} · ${s.grade} · ΑΜ ${s.am}`))))
       : el("p.muted", {}, "Όλοι υπέβαλαν δήλωση."));
+}
+
+// Students with a submission but nothing to rank on a given day
+function noPrefsByDay(results, byAm, who) {
+  const blocks = DAYS.map((d) => {
+    const ams = Object.entries(results.gaps).filter(([am, g]) => g[d] === "no_preferences" && state.submissions[am]).map(([am]) => am);
+    if (!ams.length) return null;
+    return el("details", {}, el("summary", {}, `${DAY_LABELS[d]}: ${ams.length} μαθητές με δήλωση αλλά χωρίς προτιμήσεις αυτή την ημέρα`),
+      el("ul.small", {}, ams.map((am) => el("li", {}, `${who(byAm.get(am))} · ${byAm.get(am)?.grade ?? ""} · ΑΜ ${am}`))));
+  }).filter(Boolean);
+  return blocks.length ? el("div", {}, ...blocks) : null;
+}
+
+// Look up one student's report
+function reportSearch() {
+  const out = el("div");
+  const input = el("input", { type: "search", placeholder: "ΑΜ ή επώνυμο", "aria-label": "Αναζήτηση μαθητή για αναφορά", list: "report-students" });
+  const list = el("datalist", { id: "report-students" }, state.students.map((s) => el("option", { value: s.am }, `${s.surname} ${s.name} · ${s.grade}`)));
+  const go = el("button", { type: "button" }, "Εμφάνιση αναφοράς");
+  const run = () => busy(go, out, async () => {
+    const q = input.value.trim().toUpperCase();
+    const s = state.students.find((x) => x.am === q) ?? state.students.find((x) => x.surname.toUpperCase().startsWith(q));
+    if (!s) throw new Error("Δεν βρέθηκε μαθητής.");
+    const report = await api("GET", `/api/admin/report/${encodeURIComponent(s.am)}`);
+    show(out, el("div.card", {}, el("strong", {}, `${s.surname} ${s.name} · ${s.grade} · ΑΜ ${s.am}`), studentReportView(report, { title: null })));
+  });
+  go.addEventListener("click", run);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+  return el("div", {}, el("h3", {}, "Αναφορά μαθητή"), el("p.small.muted", {}, "Βήμα προς βήμα πώς προέκυψε η θέση του μαθητή κάθε ημέρα (αιτήσεις, απορρίψεις, αποδοχές). Την ίδια βλέπει ο γονέας μετά την ανακοίνωση."),
+    el("div.actions", {}, input, list, go), out);
+}
+
+// Results workbook, like R's week_results.xlsx
+async function resultsWorkbook(results) {
+  const XLSX = await loadXlsx();
+  const byAm = new Map(state.students.map((s) => [s.am, s]));
+  const nameOf = new Map(state.clubs.map((c) => [String(c.code), c.name]));
+  const REASON = { all_rejected: "δεν χώρεσε", no_preferences: "χωρίς προτιμήσεις", not_offered: "" };
+  const cell = (am, d) => {
+    const code = results.byStudent[am]?.[d];
+    return code ? nameOf.get(code) ?? code : REASON[results.gaps[am]?.[d]] ? `— ${REASON[results.gaps[am][d]]}` : "";
+  };
+  const sorted = [...state.students].sort((a, b) => a.grade.localeCompare(b.grade) || a.surname.localeCompare(b.surname, "el") || a.name.localeCompare(b.name, "el"));
+  const perStudent = [["ΑΜ", "Επώνυμο", "Όνομα", "Τάξη", ...DAYS.map((d) => DAY_LABELS[d])], ...sorted.map((s) => [s.am, s.surname, s.name, s.grade, ...DAYS.map((d) => cell(s.am, d))])];
+  const perClub = [["Κωδικός", "Όμιλος", "Ημέρα", "ΑΜ", "Επώνυμο", "Όνομα", "Τάξη"]];
+  for (const c of state.clubs) for (const d of c.days) {
+    for (const s of sorted.filter((x) => results.byStudent[x.am]?.[d] === String(c.code))) perClub.push([c.code, c.name, DAY_LABELS[d], s.am, s.surname, s.name, s.grade]);
+  }
+  const fill = [["Κωδικός", "Όμιλος", "Ημέρα", "Χωρητικότητα", "Τοποθετήθηκαν"], ...state.clubs.flatMap((c) => c.days.map((d) => [c.code, c.name, DAY_LABELS[d], c.capacity, results.enrolled[d][String(c.code)] ?? 0]))];
+  const gaps = [["ΑΜ", "Επώνυμο", "Όνομα", "Τάξη", "Ημέρα", "Αιτία"]];
+  for (const d of DAYS) for (const s of sorted) {
+    const g = results.gaps[s.am]?.[d];
+    if (g && g !== "not_offered") gaps.push([s.am, s.surname, s.name, s.grade, DAY_LABELS[d], REASON[g]]);
+  }
+  const info = [["Στοιχείο", "Τιμή"], ["Seed κλήρωσης", results.seed], ["Εκτέλεση", formatDateTime(results.at)], ["Μαθητές", state.students.length], ["Δηλώσεις", results.submitted]];
+  const wb = XLSX.utils.book_new();
+  for (const [name, rows] of [["Ανά μαθητή", perStudent], ["Ανά όμιλο", perClub], ["Πληρότητα", fill], ["Χωρίς όμιλο", gaps], ["Πληροφορίες", info]]) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
+  }
+  XLSX.writeFile(wb, "katanomi_omilon.xlsx");
+}
+
+// ---------- History (platform events) ----------
+
+const EVENT_LABELS = {
+  login: "Σύνδεση διαχείρισης", students_uploaded: "Ανέβασμα καταλόγου μαθητών", clubs_uploaded: "Ανέβασμα ομίλων",
+  import_legacy: "Εισαγωγή περσινών δηλώσεων", settings: "Αλλαγή ρυθμίσεων", phase: "Αλλαγή φάσης", login_exception: "Εξαίρεση σύνδεσης",
+  teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού",
+  parent_login: "Σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
+};
+const PHASE_NAMES = Object.fromEntries(PHASES);
+
+function history() {
+  const box = el("div", {}, el("p.muted", {}, "Φόρτωση…"));
+  const filter = el("select", { "aria-label": "Φίλτρο ιστορικού" }, el("option", { value: "" }, "Όλα"), el("option", { value: "admin" }, "Διαχείριση"),
+    el("option", { value: "teacher" }, "Εκπαιδευτικοί"), el("option", { value: "parent" }, "Γονείς"));
+  let events = [];
+  const detail = (e) => {
+    const { at, who, what, ...rest } = e;
+    if (what === "phase") return `${PHASE_NAMES[rest.from] ?? rest.from} → ${PHASE_NAMES[rest.to] ?? rest.to}`;
+    return Object.entries(rest).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join(" · ");
+  };
+  const draw = () => {
+    const f = filter.value;
+    const shown = [...events].reverse().filter((e) => !f || (f === "admin" ? e.who === "admin" : f === "parent" ? String(e.who).startsWith("parent:") : e.who.includes("@") || e.what.startsWith("teacher")));
+    box.replaceChildren(el("div.table-wrap", {}, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Πότε"), el("th", {}, "Ποιος"), el("th", {}, "Ενέργεια"), el("th", {}, "Λεπτομέρειες"))),
+      el("tbody", {}, shown.map((e) => el("tr", {},
+        el("td.small", {}, formatDateTime(e.at)), el("td.small", {}, String(e.who).replace(/^parent:/, "γονέας ΑΜ ")),
+        el("td", {}, EVENT_LABELS[e.what] ?? e.what), el("td.small.muted", {}, detail(e))))))));
+  };
+  filter.addEventListener("change", draw);
+  api("GET", "/api/admin/events").then((r) => { events = r.events; draw(); }).catch((err) => box.replaceChildren(message("err", err.message)));
+  return el("section.card", {},
+    el("h2", { style: "margin-top:0" }, "Ιστορικό ενεργειών"),
+    el("p.small.muted", {}, "Όλες οι ενέργειες στην πλατφόρμα (τελευταίες 1000): ανεβάσματα αρχείων, αλλαγές φάσης, δηλώσεις, κατανομές. Το βήμα-βήμα της κατανομής είναι στο «Audit log κατανομής» (καρτέλα «Κατανομή»)."),
+    el("div.actions", {}, filter), box);
 }
 
 // ---------- Outbox (local development) ----------

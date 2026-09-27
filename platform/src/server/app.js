@@ -20,6 +20,7 @@ import { checkReadiness } from "../import/readiness.js";
 import { importLegacyResponses } from "../import/legacy.js";
 import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
+import { GAP_REASONS, describeEvent, gapReasons, storiesByStudent } from "../export/story.js";
 import { createHash } from "node:crypto";
 import { makeZip } from "./zip.js";
 import { createRateLimiter, hashPassword, safeEqual, signToken, verifyPassword, verifyToken } from "./auth.js";
@@ -78,6 +79,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   const getSubmissions = async () => Object.fromEntries((await store.list("submission:")).map(({ key, value }) => [key.slice(11), value]));
 
   const logEvent = (who, what, detail = {}) => store.append("events", { at: new Date(now()).toISOString(), who, what, ...detail });
+
+  /** What has been uploaded, for the admin's «Αρχεία» overview. */
+  const recordUpload = (path, info) => store.update("uploads", (u = {}) => {
+    const next = structuredClone(u);
+    let node = next;
+    for (const k of path.slice(0, -1)) node = node[k] ??= {};
+    node[path.at(-1)] = { at: new Date(now()).toISOString(), ...info };
+    return next;
+  });
+  const fileNameOf = (name) => (typeof name === "string" ? name.slice(0, 200) : "");
 
   /**
    * Send (if a mail service is configured) and record in the outbox with the
@@ -154,8 +165,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/admin/state", async (req) => {
     session(req, "admin");
-    const [settings, students, clubs, teachers, lists, submissions, results] = await Promise.all([
-      getSettings(), getStudents(), getClubs(), getTeachers(), getTeacherLists(), getSubmissions(), store.get("results"),
+    const [settings, students, clubs, teachers, lists, submissions, results, uploads] = await Promise.all([
+      getSettings(), getStudents(), getClubs(), getTeachers(), getTeacherLists(), getSubmissions(), store.get("results"), store.get("uploads"),
     ]);
     const { parentPasswordHash, ...publicSettings } = settings;
     return json(200, {
@@ -164,7 +175,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       clubs,
       teachers,
       teacherLists: lists,
-      submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1 }])),
+      submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}) }])),
+      uploads: uploads ?? {},
       readiness: students.length && clubs.length ? checkReadiness(students, clubs) : [],
       results: results ? { seed: results.seed, at: results.at } : null,
     });
@@ -172,7 +184,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("PUT", "/api/admin/students", async (req) => {
     session(req, "admin");
-    const { rows } = await body(req);
+    const { rows, fileName } = await body(req);
     const report = importStudents(Array.isArray(rows) ? rows : []);
     if (report.problems.some((p) => p.level === "error")) throw new HttpError(422, "Το αρχείο έχει σφάλματα.", { report });
 
@@ -198,7 +210,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       students = report.students.map((s) => ({ ...s, loginException: byAm.get(s.am)?.loginException ?? false }));
     }
     await store.set("students", students);
-    await logEvent("admin", "students_uploaded", { count: students.length });
+    await logEvent("admin", "students_uploaded", { count: students.length, fileName: fileNameOf(fileName) });
+    await recordUpload(["students"], { fileName: fileNameOf(fileName), count: students.length, byGrade: Object.fromEntries(["Α", "Β", "Γ"].map((g) => [g, students.filter((s) => s.grade === g).length])) });
     return json(200, { report: { ...report, problems: [...report.problems, ...notes] }, count: students.length });
   });
 
@@ -217,7 +230,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     session(req, "admin");
     const settings = await getSettings();
     if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι όμιλοι κλείδωσαν με το άνοιγμα των δηλώσεων.");
-    const { clubs: clubRows, teachers: teacherRows } = await body(req);
+    const { clubs: clubRows, teachers: teacherRows, fileName } = await body(req);
     const report = importClubs({ clubs: clubRows ?? [], teachers: teacherRows ?? [] });
     if (report.problems.some((p) => p.level === "error")) throw new HttpError(422, "Το αρχείο έχει σφάλματα.", { report });
     await store.set("clubs", report.clubs);
@@ -225,7 +238,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     // Teacher lists of clubs that no longer exist are dropped.
     const codes = new Set(report.clubs.map((c) => String(c.code)));
     for (const { key } of await store.list("teacherList:")) if (!codes.has(key.slice(12))) await store.delete(key);
-    await logEvent("admin", "clubs_uploaded", { clubs: report.clubs.length, teachers: report.teachers.length });
+    await logEvent("admin", "clubs_uploaded", { clubs: report.clubs.length, teachers: report.teachers.length, fileName: fileNameOf(fileName) });
+    await recordUpload(["clubs"], { fileName: fileNameOf(fileName), ...report.summary });
     return json(200, { report });
   });
 
@@ -278,7 +292,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     session(req, "admin");
     const settings = await getSettings();
     if (phaseAtLeast(settings.phase, "allocated")) throw new HttpError(409, "Η εισαγωγή δοκιμής γίνεται πριν από την κατανομή.");
-    const { day, rows, addMissingGrade } = await body(req);
+    const { day, rows, addMissingGrade, fileName } = await body(req);
     if (!DAYS.includes(day)) throw new HttpError(422, "Επιλέξτε ημέρα.");
     if (addMissingGrade && !["Α", "Β", "Γ"].includes(addMissingGrade)) throw new HttpError(422, "Άγνωστη τάξη.");
     const [clubs, students] = await Promise.all([getClubs(), getStudents()]);
@@ -303,7 +317,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
         },
       };
     }));
-    await logEvent("admin", "import_legacy", { day, rows: report.summary.rows, newStudents: report.newStudents.length });
+    await logEvent("admin", "import_legacy", { day, rows: report.summary.rows, newStudents: report.newStudents.length, fileName: fileNameOf(fileName) });
+    await recordUpload(["legacy", day], { fileName: fileNameOf(fileName), rows: report.summary.rows, newStudents: report.newStudents.length });
     return json(200, { report });
   });
 
@@ -314,8 +329,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const { confirm, keepSchoolInfo = true } = await body(req);
     if (confirm !== "ΔΙΑΓΡΑΦΗ") throw new HttpError(422, "Για επιβεβαίωση γράψτε ΔΙΑΓΡΑΦΗ (κεφαλαία).");
     const settings = await getSettings();
-    for (const key of ["students", "clubs", "teachers", "results", "resultsLog"]) await store.delete(key);
-    for (const prefix of ["teacherList:", "submission:"]) {
+    for (const key of ["students", "clubs", "teachers", "results", "resultsLog", "uploads"]) await store.delete(key);
+    for (const prefix of ["teacherList:", "submission:", "story:"]) {
       for (const { key } of await store.list(prefix)) await store.delete(key);
     }
     await store.deleteLog("outbox");
@@ -349,7 +364,13 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       days: Object.fromEntries(DAYS.map((d) => [d, { assignments: result.days[d].assignments, unassigned: result.days[d].unassigned }])),
     };
     await store.set("results", results);
-    await store.set("resultsLog", Object.fromEntries(DAYS.map((d) => [d, result.days[d].log])));
+    const logByDay = Object.fromEntries(DAYS.map((d) => [d, result.days[d].log]));
+    await store.set("resultsLog", logByDay);
+    // Each student's story, stored per student so a parent reads only theirs.
+    const byCode = new Map(input.clubs.map((c) => [String(c.code), c]));
+    const stories = storiesByStudent(logByDay, (code) => byCode.get(String(code))?.name ?? code, (code) => byCode.get(String(code))?.days ?? []);
+    for (const { key } of await store.list("story:")) if (!stories[key.slice(6)]) await store.delete(key);
+    await store.setMany(Object.entries(stories).map(([am, story]) => ({ key: `story:${am}`, value: story })));
     await store.update("settings", (s = {}) => ({ ...s, phase: "allocated" }));
     await logEvent("admin", "allocated", { seed });
     return json(200, { results: summarizeResults(results, input) });
@@ -382,11 +403,78 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!results) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
     const [students, clubs] = await Promise.all([getStudents(), getClubs()]);
     const nameOf = new Map(clubs.map((c) => [String(c.code), c.name]));
+    const gaps = gapReasons(results, students, clubs);
+    const cell = (s, d) => {
+      const code = results.byStudent[s.am]?.[d];
+      if (code) return nameOf.get(code) ?? code;
+      return gaps[s.am]?.[d] === "not_offered" ? "" : `— ${GAP_REASONS[gaps[s.am]?.[d]] ?? ""}`;
+    };
     const rows = [...students]
       .sort((a, b) => a.grade.localeCompare(b.grade) || a.surname.localeCompare(b.surname, "el") || a.name.localeCompare(b.name, "el"))
-      .map((s) => [s.am, s.surname, s.name, s.grade, ...DAYS.map((d) => nameOf.get(results.byStudent[s.am]?.[d] ?? "") ?? "")]);
+      .map((s) => [s.am, s.surname, s.name, s.grade, ...DAYS.map((d) => cell(s, d))]);
     const csv = "﻿" + toCsv(["ΑΜ", "Επώνυμο", "Όνομα", "Τάξη", ...DAYS.map((d) => DAY_LABELS[d])], rows);
     return new Response(csv, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": 'attachment; filename="katanomi_omilon.csv"' } });
+  });
+
+  const csvResponse = (header, rows, filename) =>
+    new Response("\ufeff" + toCsv(header, rows), { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${filename}"` } });
+
+  // Every step of the allocation, as the R scripts' <day>_audit_log.csv.
+  route("GET", "/api/admin/export/audit_log.csv", async (req) => {
+    session(req, "admin");
+    const log = await store.get("resultsLog");
+    if (!log) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
+    const [students, clubs] = await Promise.all([getStudents(), getClubs()]);
+    const byAm = new Map(students.map((s) => [s.am, s]));
+    const byCode = new Map(clubs.map((c) => [String(c.code), c]));
+    const nameOf = (code) => byCode.get(String(code))?.name ?? code;
+    const daysOf = (code) => byCode.get(String(code))?.days ?? [];
+    const rows = DAYS.flatMap((d) => (log[d] ?? []).map((e) => [
+      DAY_LABELS[d], e.round, e.event, e.am ?? "", byAm.get(e.am)?.surname ?? "", byAm.get(e.am)?.name ?? "",
+      e.club ?? "", e.club !== undefined ? nameOf(e.club) : "", e.rank ?? "", describeEvent(e, nameOf, daysOf),
+    ]));
+    return csvResponse(["Ημέρα", "Γύρος", "Γεγονός", "ΑΜ", "Επώνυμο", "Όνομα", "Κωδικός ομίλου", "Όμιλος", "Θέση προτίμησης", "Περιγραφή"], rows, "audit_log_katanomis.csv");
+  });
+
+  // Per club and day, as the R scripts' <day>_club_reports.csv.
+  route("GET", "/api/admin/export/club_summary.csv", async (req) => {
+    session(req, "admin");
+    const [results, log] = await Promise.all([store.get("results"), store.get("resultsLog")]);
+    if (!results || !log) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
+    const input = await allocationInput(results.seed);
+    const rows = [];
+    for (const c of input.clubs) {
+      const code = String(c.code);
+      for (const d of c.days) {
+        const events = (log[d] ?? []).filter((e) => e.club === code);
+        const count = (ev) => events.filter((e) => e.event === ev).length;
+        const enrolled = results.days[d].assignments.filter((a) => a.club === code);
+        const ranks = enrolled.filter((a) => a.rank).map((a) => a.rank);
+        const rankedBy = Object.values(input.preferences).filter((p) => (p[d] ?? []).map(String).includes(code)).length;
+        rows.push([
+          code, c.name, DAY_LABELS[d], d === c.days[0] ? "κατανομή" : `από ${DAY_LABELS[c.days[0]]}`, c.capacity, enrolled.length,
+          c.capacity ? Math.round((1000 * enrolled.length) / c.capacity) / 10 : "", rankedBy, count("PROPOSAL"), count("ACCEPTED"),
+          count("REJECTED") + count("DISPLACED"), ranks.length ? (ranks.reduce((a, b) => a + b, 0) / ranks.length).toFixed(2) : "",
+          (input.teacherLists[code] ?? []).length,
+        ]);
+      }
+    }
+    return csvResponse(["Κωδικός", "Όμιλος", "Ημέρα", "Τρόπος", "Χωρητικότητα", "Τοποθετήθηκαν", "Πληρότητα %", "Τον δήλωσαν", "Αιτήσεις", "Αποδοχές", "Απορρίψεις", "Μέση θέση προτίμησης", "Επιλογές εκπαιδευτικού"], rows, "synopsi_omilon.csv");
+  });
+
+  // One student's allocation, step by step (as the R <day>_report_<student>.txt).
+  route("GET", "/api/admin/report/:am", async (req, { am }) => {
+    session(req, "admin");
+    const [results, story, students, clubs] = await Promise.all([store.get("results"), store.get(`story:${am}`), getStudents(), getClubs()]);
+    if (!results) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
+    const student = students.find((s) => s.am === am);
+    if (!student) throw new HttpError(404, "Άγνωστος ΑΜ.");
+    return json(200, studentReport(student, results, story ?? {}, clubs));
+  });
+
+  route("GET", "/api/admin/events", async (req) => {
+    session(req, "admin");
+    return json(200, { events: await store.readLog("events", 1000) });
   });
 
   route("GET", "/api/admin/outbox", async (req) => {
@@ -518,6 +606,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const [settings, students, clubs, submission, results] = await Promise.all([
       getSettings(), getStudents(), getClubs(), store.get(`submission:${am}`), store.get("results"),
     ]);
+    const story = settings.phase === "published" && results ? await store.get(`story:${am}`) : null;
     const student = students.find((s) => s.am === am);
     if (!student) throw new HttpError(401, "Ο μαθητής δεν υπάρχει πια στον κατάλογο.");
     const byCode = new Map(clubs.map((c) => [String(c.code), c]));
@@ -551,6 +640,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       result: published
         ? Object.fromEntries(DAYS.map((d) => [d, results.byStudent[am]?.[d] ? publicClub(byCode.get(results.byStudent[am][d])) : null]))
         : null,
+      report: published ? studentReport(student, results, story ?? {}, clubs) : null,
     });
   });
 
@@ -608,6 +698,28 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     };
   }
 
+  /** Per day: club or reason, and the steps that led there. */
+  function studentReport(student, results, story, clubs) {
+    const gaps = gapReasons(results, [student], clubs)[student.am] ?? {};
+    const lottery = new Map(results.lottery).get(student.am) ?? null;
+    const nameOf = new Map(clubs.map((c) => [String(c.code), c.name]));
+    return {
+      am: student.am,
+      lottery,
+      lotteryOf: results.lottery.length,
+      seed: results.seed,
+      days: Object.fromEntries(DAYS.map((d) => {
+        const code = results.byStudent[student.am]?.[d] ?? null;
+        return [d, {
+          club: code ? { code, name: nameOf.get(code) ?? code } : null,
+          gap: code ? null : gaps[d] ?? null,
+          gapText: code ? null : GAP_REASONS[gaps[d]] ?? null,
+          steps: (story[d] ?? []).map((s) => s.text),
+        }];
+      })),
+    };
+  }
+
   function summarizeResults(results, input) {
     const byDayClub = {};
     for (const d of DAYS) {
@@ -615,10 +727,15 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       for (const a of results.days[d].assignments) counts[a.club] = (counts[a.club] ?? 0) + 1;
       byDayClub[d] = counts;
     }
+    const gaps = gapReasons(results, input.students, input.clubs);
+    const gapCounts = Object.fromEntries(DAYS.map((d) => [d, { all_rejected: 0, no_preferences: 0, not_offered: 0 }]));
+    for (const byDay of Object.values(gaps)) for (const [d, reason] of Object.entries(byDay)) gapCounts[d][reason]++;
     return {
       seed: results.seed,
       at: results.at,
       byStudent: results.byStudent,
+      gaps,
+      gapCounts,
       unassigned: Object.fromEntries(DAYS.map((d) => [d, results.days[d].unassigned])),
       enrolled: byDayClub,
       submitted: Object.keys(input.preferences).length,
