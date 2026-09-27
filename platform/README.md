@@ -23,4 +23,15 @@ npm test
 
 Τρέχουν αυτόματα σε κάθε αλλαγή στο `platform/` (GitHub Actions, `.github/workflows/platform-tests.yml`).
 
+## Σύγκριση με το R (`reference/`)
+
+- `daily_da_reference.R` — αντίγραφο του `daily_da_with_teacherpreferences_unified.R` με τρεις μόνο αλλαγές (σημειωμένες `REFERENCE:`): ρυθμίσεις από τη γραμμή εντολών, **σταθερή κλήρωση από `lottery.csv`** αντί για `sample(n())` σε κάθε γύρο, διόρθωση ACCEPTED/RETAINED στο audit log.
+- `run_week_reference.R` — τρέχει το παραπάνω Δευτέρα → Παρασκευή όπως πέρσι με το χέρι (αφαίρεση πολυήμερων ομίλων/τοποθετημένων μαθητών, επαναρίθμηση), με ταύτιση μαθητών μέσω ΑΜ.
+- `compare.mjs` — ίδια δεδομένα και ίδια κλήρωση σε πλατφόρμα και R, σύγκριση τοποθετήσεων.
+
+```sh
+cd platform
+node reference/compare.mjs --random 8   # χρειάζεται Rscript + dplyr, readr, tidyr, purrr, stringr, writexl
+```
+
 Τα πραγματικά αρχεία μαθητών **δεν** μπαίνουν στο αποθετήριο.

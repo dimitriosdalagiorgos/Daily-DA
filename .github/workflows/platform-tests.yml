@@ -18,3 +18,22 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+
+  # Same allocation as the R reference (platform/reference/) on the sample
+  # data and on random weeks with multi-day clubs.
+  compare-with-r:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install R and packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends r-base-core \
+            r-cran-dplyr r-cran-readr r-cran-tidyr r-cran-purrr r-cran-stringr r-cran-writexl
+      - run: node reference/compare.mjs --random 8
