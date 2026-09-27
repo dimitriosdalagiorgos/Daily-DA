@@ -122,10 +122,26 @@ export const HELP = {
   },
 };
 
-/** Help for one role: a card per section. */
+// The full manuals (docs/build.py copies them to public/docs/)
+const MANUALS = {
+  parent: [["Εγχειρίδιο γονέων", "Egxeiridio_Goneis"]],
+  teacher: [["Εγχειρίδιο εκπαιδευτικών", "Egxeiridio_Ekpaideutikoi"]],
+  admin: [["Εγχειρίδιο R (offline κατανομή)", "Egxeiridio_R"]],
+};
+
+function manualsCard(role) {
+  return el("section.card", {},
+    el("h2", { style: "margin-top:0" }, "Πλήρες εγχειρίδιο"),
+    el("p", {}, "Με όλες τις οδηγίες και την εξήγηση του αλγορίθμου κατανομής, για ανάγνωση ή εκτύπωση:"),
+    el("ul", {}, MANUALS[role].map(([label, file]) => el("li", {}, `${label}: `,
+      el("a", { href: `/docs/${file}.pdf`, target: "_blank" }, "PDF"), " · ",
+      el("a", { href: `/docs/${file}.docx`, download: `${file}.docx` }, "Word")))));
+}
+
+/** Help for one role: the full manual, then a card per section. */
 export function helpView(role) {
   const { sections } = HELP[role];
-  return el("div", {}, sections.map(([title, items]) =>
+  return el("div", {}, manualsCard(role), sections.map(([title, items]) =>
     el("section.card", {}, el("h2", { style: "margin-top:0" }, title),
       el("ul.help", {}, items.map((item) => el("li", {}, ...(Array.isArray(item) ? item : [item])))))));
 }

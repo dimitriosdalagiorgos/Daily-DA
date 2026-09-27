@@ -47,14 +47,14 @@
 
 | Για ποιον | Αρχείο |
 |---|---|
-| Γονείς | [docs/manual-parents.md](docs/manual-parents.md) |
-| Εκπαιδευτικούς | [docs/manual-teachers.md](docs/manual-teachers.md) |
-| Υπεύθυνο ομίλων — εκτέλεση σε R (offline) | [docs/manual-R.md](docs/manual-R.md) |
+| Γονείς | [docs/manual-parents.md](docs/manual-parents.md) · [PDF](docs/Egxeiridio_Goneis.pdf) · [Word](docs/Egxeiridio_Goneis.docx) |
+| Εκπαιδευτικούς | [docs/manual-teachers.md](docs/manual-teachers.md) · [PDF](docs/Egxeiridio_Ekpaideutikoi.pdf) · [Word](docs/Egxeiridio_Ekpaideutikoi.docx) |
+| Υπεύθυνο ομίλων — εκτέλεση σε R (offline) | [docs/manual-R.md](docs/manual-R.md) · [PDF](docs/Egxeiridio_R.pdf) · [Word](docs/Egxeiridio_R.docx) |
 | Πώς γίνεται η κατανομή (απλά, με παράδειγμα) | [docs/algorithm.md](docs/algorithm.md) |
 | Θεωρητικό υπόβαθρο, με βιβλιογραφία | [docs/algorithm-theory.md](docs/algorithm-theory.md) |
 | Προδιαγραφές (όλες οι αποφάσεις σχεδιασμού) | [platform/SPEC.md](platform/SPEC.md) |
 
-Τα εγχειρίδια γονέων και εκπαιδευτικών υπάρχουν και σε **Word** και **PDF** στον φάκελο [`docs/`](docs/), και μέσα στην πλατφόρμα (σελίδα «Βοήθεια»).
+Τα Word και PDF περιέχουν και την εξήγηση του αλγορίθμου (των εκπαιδευτικών και το θεωρητικό κείμενο ως παράρτημα), και διατίθενται και μέσα στην πλατφόρμα (σελίδα «Βοήθεια»). Αν αλλάξετε τα κείμενα `.md`, ξαναφτιάξτε τα με `python3 docs/build.py` (οδηγίες στην αρχή του αρχείου).
 
 ---
 
