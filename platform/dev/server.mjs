@@ -21,7 +21,7 @@ import { demoClubRows, demoStudentRows } from "./demo-data.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT ?? 8888);
-const storePath = join(root, ".data", "dev-store.json");
+const storePath = join(root, ".data", port === 8888 ? "dev-store.json" : `dev-store-${port}.json`);
 const demo = process.argv.includes("--demo");
 const noMail = process.argv.includes("--no-mail");
 

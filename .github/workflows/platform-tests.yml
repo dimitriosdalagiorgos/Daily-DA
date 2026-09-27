@@ -60,12 +60,14 @@ jobs:
           node dev/server.mjs --demo > dev.log 2>&1 &
           for i in $(seq 1 20); do curl -sf http://localhost:8888/api/public > /dev/null && break; sleep 0.5; done
           node e2e/walkthrough.mjs --shots shots/mail
-          kill %1
+      # Separate port and data file, so the two runs cannot mix.
       - name: Walk-through (without e-mail, as in production now)
+        env:
+          PORT: "8889"
+          BASE_URL: http://localhost:8889
         run: |
-          sleep 1
           node dev/server.mjs --demo --no-mail > dev-nomail.log 2>&1 &
-          for i in $(seq 1 20); do curl -sf http://localhost:8888/api/public > /dev/null && break; sleep 0.5; done
+          for i in $(seq 1 20); do curl -sf http://localhost:8889/api/public | grep -q '"mailEnabled":false' && break; sleep 0.5; done
           node e2e/walkthrough.mjs --shots shots/no-mail
       - if: always()
         uses: actions/upload-artifact@v4
