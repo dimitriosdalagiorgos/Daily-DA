@@ -129,7 +129,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return payload;
   };
   const issue = (role, fields) => signToken(env.SESSION_SECRET, { role, ...fields }, SESSION_TTL[role], now());
-  const clientIp = (request) => request.headers.get("x-nf-client-connection-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "local";
+  // Netlify's own header; behind Apache/nginx the proxy appends the real
+  // address as the last X-Forwarded-For entry (earlier ones can be forged).
+  const clientIp = (request) => request.headers.get("x-nf-client-connection-ip") ?? request.headers.get("x-forwarded-for")?.split(",").at(-1).trim() ?? "local";
 
   const body = async (request) => {
     try {
