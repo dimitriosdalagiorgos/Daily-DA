@@ -260,7 +260,13 @@ function uploadsStatus() {
       row("Όμιλοι και εκπαιδευτικοί", state.clubs.length > 0, state.clubs.length ? `${state.clubs.length} όμιλοι (${state.clubs.filter((c) => c.days.length > 1).length} πολυήμεροι) · ${state.teachers.length} εκπαιδευτικοί` : "δεν έχει ανέβει", when(u.clubs)),
       row("Λίστες εκπαιδευτικών", lists > 0, `${lists} όμιλοι με προτιμώμενους μαθητές`, ""),
       row("Δηλώσεις γονέων", subs.length - imported > 0, `${subs.length - imported} δηλώσεις`, ""),
-      ...DAYS.filter((d) => u.legacy?.[d]).map((d) => row(`Περσινές δηλώσεις — ${DAY_LABELS[d]}`, true, `${u.legacy[d].rows} δηλώσεις${u.legacy[d].newStudents ? ` · +${u.legacy[d].newStudents} δοκιμαστικοί μαθητές` : ""}`, when(u.legacy[d]))),
+      // Trial import: all five days, so a forgotten day shows up. Counts come
+      // from the submissions themselves (also for uploads made before file
+      // names were recorded).
+      ...(imported || u.legacy ? DAYS.map((d) => {
+        const n = subs.filter((s) => s.imported && s.days?.includes(d)).length;
+        return row(`Περσινές δηλώσεις — ${DAY_LABELS[d]}`, n > 0, n > 0 ? `${n} μαθητές με επιλογές` : el("strong", { style: "color:var(--warn)" }, "δεν έχει ανέβει"), when(u.legacy?.[d]));
+      }) : []),
       row("Κατανομή", Boolean(state.results), state.results ? `seed «${state.results.seed}»` : "δεν έχει γίνει", state.results ? formatDateTime(state.results.at) : "")))));
 }
 
