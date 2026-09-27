@@ -63,7 +63,7 @@ def section(name, levels):
     """A document without its title, headings shifted, internal links removed."""
     text = (DOCS / name).read_text(encoding="utf-8")
     text = re.sub(r"\A# .*\n", "", text)                # its own title
-    text = re.sub(r"\n---\n\n\*Για τη θεωρία.*\n?\Z", "\n", text, flags=re.S)
+    text = re.sub(r"\n\*Για τη θεωρία[^\n]*\n?\Z", "\n", text)  # link to the theory text
     return demote(text, levels)
 
 
