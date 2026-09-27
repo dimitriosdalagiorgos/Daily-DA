@@ -7,6 +7,11 @@ let pub = {};
 const app = $("#app");
 const logout = $("#logout");
 
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri"];
+const DAY_NAMES = { mon: "Δευτέρα", tue: "Τρίτη", wed: "Τετάρτη", thu: "Πέμπτη", fri: "Παρασκευή" };
+const DAY_GEN = { mon: "της Δευτέρας", tue: "της Τρίτης", wed: "της Τετάρτης", thu: "της Πέμπτης", fri: "της Παρασκευής" };
+const DAY_ACC = { mon: "τη Δευτέρα", tue: "την Τρίτη", wed: "την Τετάρτη", thu: "την Πέμπτη", fri: "την Παρασκευή" };
+
 // First-time order of a day's clubs: shuffled per student (same ΑΜ → same
 // order), so no club gains from its place in the clubs template.
 function initialOrder(codes, key) {
@@ -90,7 +95,7 @@ async function loginView(notice) {
 
 // ---------- Main ----------
 
-function mainView(me) {
+function mainView(me, { justSubmitted = false } = {}) {
   logout.classList.remove("hidden");
   const { student, days, submission, canEdit, result } = me;
   const out = el("div");
@@ -113,7 +118,7 @@ function mainView(me) {
 
   if (submission) {
     nodes.push(message("ok", `Υπάρχει δήλωση από ${formatDateTime(submission.submittedAt)}${canEdit ? ". Μπορείτε να την αλλάξετε μέχρι την προθεσμία." : "."}`));
-    nodes.push(receiptView(me), doneView(), historyView(me));
+    nodes.push(receiptView(me, justSubmitted), doneView(), historyView(me));
   }
   if (!canEdit && !result) {
     nodes.push(message("info", me.phase === "parents" ? "Η προθεσμία έληξε· η δήλωση δεν αλλάζει πια." : "Οι δηλώσεις δεν δέχονται αλλαγές αυτή τη στιγμή."));
@@ -133,8 +138,8 @@ function mainView(me) {
       el("li", {}, "Όταν ένας όμιλος έχει περισσότερες αιτήσεις από θέσεις, προηγούνται: (1) οι μαθητές που επέλεξε ο/η εκπαιδευτικός του ομίλου, (2) οι μαθητές των τάξεων όπου η συμμετοχή σε όμιλο είναι υποχρεωτική, (3) όσοι τον έβαλαν ψηλότερα στη λίστα τους, (4) κλήρωση."),
       el("li", {}, "Άρα η θέση που δίνετε σε έναν όμιλο μετράει: ο όμιλος που βάζετε 1ο σας δίνει προβάδισμα έναντι όσων τον έβαλαν χαμηλότερα."),
       el("li", {}, "Αν το παιδί δεν χωρέσει στην 1η επιλογή, δοκιμάζει τη 2η, και ούτω καθεξής."),
-      el("li", {}, "Στην αρχή οι όμιλοι εμφανίζονται σε τυχαία σειρά. Βάλτε τους στη σειρά που θέλετε και τσεκάρετε «Έλεγξα τη σειρά» σε κάθε ημέρα."),
-      el("li", {}, "Όμιλοι που γίνονται δύο ή τρεις ημέρες μπαίνουν στη σειρά μόνο την πρώτη τους ημέρα· τις άλλες ημέρες εμφανίζονται κλειδωμένοι."))));
+      el("li", {}, "Στην αρχή οι όμιλοι εμφανίζονται σε τυχαία σειρά. Κάθε ημέρα είναι σε δική της καρτέλα."),
+      el("li", {}, "Διπλοί και τριπλοί όμιλοι (δύο ή τρεις ημέρες) μπαίνουν στη σειρά την πρώτη τους ημέρα. Τις άλλες ημέρες τους εμφανίζονται κλειδωμένοι 🔒 στην αρχή της λίστας: αν το παιδί μπει σε αυτούς την πρώτη ημέρα, τις άλλες ημέρες πηγαίνει αυτόματα στον ίδιο όμιλο."))));
 
   const parentName = el("input", { id: "pname", type: "text", required: true, autocomplete: "name", value: submission?.parent?.name ?? "", disabled: !canEdit });
   const parentEmail = el("input", { id: "pemail", type: "email", required: true, autocomplete: "email", value: submission?.parent?.email ?? "", disabled: !canEdit });
@@ -151,50 +156,99 @@ function mainView(me) {
     return;
   }
 
+  // One tab per day. Multi-day clubs are ranked on their first day; on
+  // their later days they sit locked at the top of the list, since a seat
+  // won on the first day holds for those days too.
+  const kind = (c) => (c.days.length === 3 ? "Τριπλός όμιλος" : "Διπλός όμιλος");
+  const daysText = (c) => c.days.map((x) => DAY_NAMES[x]).join(" + ");
   const rankers = {};
-  const checks = {};
-  const daysCard = el("section.card", {}, el("h2", { style: "margin-top:0" }, "Σειρά προτίμησης ανά ημέρα"));
+  const lockedBoxes = {};
+  const visited = new Set(submission ? days.map((d) => d.day) : []);
+
+  const drawLocked = () => {
+    for (const d of days) {
+      if (!lockedBoxes[d.day]) continue;
+      const withRank = d.locked.map((c) => ({ c, rank: (rankers[c.firstDay]?.order() ?? []).indexOf(c.code) + 1 }))
+        .sort((a, b) => DAY_KEYS.indexOf(a.c.firstDay) - DAY_KEYS.indexOf(b.c.firstDay) || a.rank - b.rank);
+      lockedBoxes[d.day].replaceChildren(
+        el("ol.ranker", { "aria-label": `Όμιλοι από προηγούμενη ημέρα (${d.label})` }, withRank.map(({ c, rank }) =>
+          el("li.locked", {},
+            el("span.handle", { "aria-hidden": "true" }, "🔒"),
+            el("span.lockpos", {}, rank ? `${rank}η` : ""),
+            el("span.name", {}, c.name, el("span.tag", {}, `${kind(c)}: ${daysText(c)}`),
+              el("span.desc", {}, `Τον βάλατε ${rank}ο στη σειρά ${DAY_GEN[c.firstDay]}. Αν το παιδί μπει σε αυτόν ${DAY_ACC[c.firstDay]}, και ${DAY_ACC[d.day]} πηγαίνει αυτόματα στον ίδιο όμιλο. Εδώ δεν χρειάζεται να κάνετε κάτι.`))))),
+        el("p.small.muted", {}, withRank.length > 1
+          ? `Αν το παιδί δεν μπει σε κανέναν από τους παραπάνω, ισχύει η σειρά σας για τους υπόλοιπους ομίλους της ημέρας:`
+          : `Αν το παιδί δεν μπει σε αυτόν, ισχύει η σειρά σας για τους υπόλοιπους ομίλους της ημέρας:`));
+    }
+  };
+
+  const panels = {};
   for (const d of days) {
-    const section = el("div.day", {}, el("h3", {}, d.label, d.clubs.length ? el("span.badge", {}, `${d.clubs.length} όμιλοι`) : null));
+    const panel = el("div.day", { role: "tabpanel", "aria-label": d.label });
+    if (d.clubs.length) {
+      panel.append(el("p.day-intro", {},
+        `Βάλτε σε σειρά `, el("strong", {}, `όλους τους ομίλους ${DAY_GEN[d.day]}`),
+        `: 1ος αυτός που θέλετε περισσότερο.${submission?.preferences?.[d.day] ? "" : " Στην αρχή η σειρά είναι τυχαία."} Μετακινήστε τους σύροντας τη λαβή ⠿, γράφοντας τον αριθμό της θέσης ή με τα κουμπιά ↑ ↓.`));
+    }
+    if (d.locked.length) {
+      lockedBoxes[d.day] = el("div.locked-box");
+      panel.append(lockedBoxes[d.day]);
+    }
     if (d.clubs.length) {
       const saved = submission?.preferences?.[d.day];
       const order = saved ?? initialOrder(d.clubs.map((c) => c.code), `${student.am}:${d.day}`);
-      // Changing the order asks for a new check of that day.
-      const check = el("input", { type: "checkbox", checked: Boolean(saved), disabled: !canEdit });
-      const r = createRanker({ items: d.clubs, order, disabled: !canEdit, label: `Σειρά ομίλων ${d.label}`, onChange: () => { check.checked = false; } });
-      rankers[d.day] = r;
-      section.append(r.node);
-      if (canEdit) {
-        checks[d.day] = { check, label: d.label };
-        section.append(el("label.day-check", {}, check, ` Έλεγξα τη σειρά της ημέρας (${d.label})`));
-      }
+      const items = d.clubs.map((c) => (c.days.length > 1 ? { ...c, tag: `${kind(c)}: ${daysText(c)}` } : c));
+      rankers[d.day] = createRanker({ items, order, disabled: !canEdit, label: `Σειρά ομίλων ${d.label}`, onChange: drawLocked });
+      panel.append(rankers[d.day].node);
+    } else {
+      panel.append(el("p.muted", {}, `${DAY_ACC[d.day][0].toUpperCase()}${DAY_ACC[d.day].slice(1)} δεν υπάρχει άλλος όμιλος για την τάξη του παιδιού.`));
     }
-    if (d.locked.length) {
-      section.append(el("ol.ranker", { "aria-label": `Κλειδωμένοι όμιλοι ${d.label}` }, d.locked.map((c) =>
-        el("li.locked", {}, el("span.handle", { "aria-hidden": "true" }, "🔒"),
-          el("span", {}, el("span.name", {}, c.name), el("span.desc", {}, `Γίνεται και ${d.label}. Ισχύει η θέση που του δώσατε τη ${c.firstDayLabel}: αν μπει εκεί, έχει θέση και ${d.label}.`))))));
-    }
-    daysCard.append(section);
+    panels[d.day] = panel;
   }
-  nodes.push(daysCard);
+  drawLocked();
+
+  let current = days[0].day;
+  const nav = el("nav.tabs.day-tabs", { role: "tablist", "aria-label": "Ημέρες" });
+  const panelBox = el("div");
+  const dayActions = el("div.actions.phase-actions");
+  const idx = () => days.findIndex((d) => d.day === current);
+  const go = (day) => { current = day; drawTabs(); nav.scrollIntoView({ block: "start", behavior: "smooth" }); };
+  const submit = canEdit ? el("button", { type: "button" }, submission ? "Αποθήκευση αλλαγών" : "Υποβολή δήλωσης") : null;
+  function drawTabs() {
+    visited.add(current);
+    nav.replaceChildren(...days.map((d) => el("button", {
+      type: "button", role: "tab", "aria-selected": String(d.day === current), onclick: () => go(d.day),
+    }, d.label, visited.has(d.day) && d.day !== current ? " ✓" : "")));
+    panelBox.replaceChildren(panels[current]);
+    const i = idx();
+    const prev = days[i - 1];
+    const next = days[i + 1];
+    if (submit) submit.className = next ? "" : "primary";
+    dayActions.replaceChildren(...[
+      prev ? el("button", { type: "button", onclick: () => go(prev.day) }, `← ${prev.label}`) : null,
+      el("span.spacer"),
+      next ? el("button.primary", { type: "button", onclick: () => go(next.day) }, `${next.label} →`) : null,
+      submit].filter(Boolean));
+  }
+  drawTabs();
+  nodes.push(el("section.card", {},
+    el("h2", { style: "margin-top:0" }, "Σειρά προτίμησης ανά ημέρα"),
+    nav, panelBox, out, dayActions));
 
   if (canEdit) {
-    const submit = el("button.primary", { type: "button" }, submission ? "Αποθήκευση αλλαγών" : "Υποβολή δήλωσης");
     submit.addEventListener("click", () => busy(submit, out, async () => {
-      const unchecked = Object.values(checks).filter((c) => !c.check.checked).map((c) => c.label);
-      if (unchecked.length) {
-        throw new Error(`Τσεκάρετε «Έλεγξα τη σειρά της ημέρας» για: ${unchecked.join(", ")}.`);
-      }
+      const unseen = days.filter((d) => !visited.has(d.day) && d.clubs.length).map((d) => d.label);
+      if (unseen.length && !confirm(`Δεν έχετε δει τη σειρά για: ${unseen.join(", ")}. Εκεί θα μείνει η τυχαία σειρά. Υποβολή παρ' όλα αυτά;`)) return;
       const preferences = Object.fromEntries(Object.entries(rankers).map(([day, r]) => [day, r.order()]));
       await api("PUT", "/api/parent/submission", { parent: { name: parentName.value, email: parentEmail.value }, preferences });
       const me2 = await api("GET", "/api/parent/me");
-      mainView(me2);
+      mainView(me2, { justSubmitted: true });
       $("#app").prepend(message("ok", pub.mailEnabled
         ? `Η δήλωση καταχωρίστηκε. Στάλθηκε επιβεβαίωση στο ${parentEmail.value}.`
         : `Η δήλωση καταχωρίστηκε. Εκτυπώστε ή αποθηκεύστε την απόδειξη (κωδικός ${me2.submission.receipt}).`));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }));
-    nodes.push(out, el("div.actions", {}, submit));
   }
   show(app, nodes);
 }
@@ -211,12 +265,14 @@ function doneView() {
 
 // ---------- Receipt & history ----------
 
-function receiptView(me) {
+function receiptView(me, open) {
   const { student, days, submission } = me;
   const nameOf = new Map(days.flatMap((d) => d.clubs.map((c) => [c.code, c.name])));
   const print = el("button", { type: "button", onclick: () => window.print() }, "Εκτύπωση / αποθήκευση ως PDF");
-  return el("section.card.receipt", {},
-    el("h2", { style: "margin-top:0" }, "Απόδειξη δήλωσης ομίλων"),
+  // Closed unless just submitted: the parent opens it when needed.
+  return el("details.card.receipt", { open },
+    el("summary", {}, el("span.summary-title", {}, `Απόδειξη δήλωσης (κωδικός ${submission.receipt})`)),
+    el("h2", {}, "Απόδειξη δήλωσης ομίλων"),
     pub.schoolName ? el("p", {}, pub.schoolName) : null,
     el("p", {}, el("strong", {}, `${student.surname} ${student.name}`), ` · Τάξη ${student.grade} · ΑΜ ${student.am}`),
     el("p", {}, "Υποβλήθηκε: ", el("strong", {}, formatDateTime(submission.submittedAt)), el("br"),
@@ -231,7 +287,7 @@ function receiptView(me) {
 function historyView(me) {
   const history = me.submission.history ?? [];
   if (history.length < 2) return null;
-  return el("details.card", { open: true },
+  return el("details.card", {},
     el("summary", {}, el("strong", {}, `Η δήλωση έχει αποθηκευτεί ${history.length} φορές`)),
     el("ul", {}, [...history].reverse().map((h) => el("li", {}, `${formatDateTime(h.at)} — ${h.email}`))),
     el("p.small", {}, `Αν κάποια από αυτές τις αλλαγές δεν την κάνατε εσείς, επικοινωνήστε αμέσως με το σχολείο${pub.contact ? `: ${pub.contact}` : "."}`));

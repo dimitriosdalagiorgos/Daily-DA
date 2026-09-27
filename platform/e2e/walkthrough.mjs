@@ -132,16 +132,32 @@ try {
   const afterDrag = await names();
   if (afterDrag[1] !== afterType[0] || afterDrag[0] !== afterType[1]) throw new Error(`dragging failed: ${afterDrag}`);
   step(`parent: reorder by typing and by dragging (${afterDrag.join(" › ")})`);
-  const locked = await parent.locator("li.locked").count();
-  if (locked < 1) throw new Error("multi-day club not shown locked on its later day");
   await parent.fill("#pname", "Γιάννης Γεωργίου");
   await parent.fill("#pemail", "parent@example.com");
-  await parent.click("text=Υποβολή δήλωσης");
-  await parent.waitForSelector(".msg.err:has-text('Έλεγξα τη σειρά της ημέρας')");
-  step("parent: submit refused until every day is checked");
-  for (const box of await parent.locator(".day-check input").all()) await box.check();
+
+  // Submitting before opening the other days asks first (dismissed here)
+  let asked = "";
+  parent.once("dialog", (d) => { asked = d.message(); d.dismiss(); });
+  await parent.click("button:has-text('Υποβολή δήλωσης')");
+  await parent.waitForTimeout(300);
+  if (!asked.includes("Δεν έχετε δει τη σειρά για: Τρίτη")) throw new Error(`no reminder for unseen days: ${asked}`);
+  if (await parent.locator(".receipt").count()) throw new Error("submitted although the reminder was dismissed");
+  step("parent: reminder for days not opened yet");
+
+  // Thursday: «Αντιγόνη» (Monday + Thursday) is locked at the top with its Monday rank
+  const antigoneRank = afterDrag.findIndex((n) => n.includes("Αντιγόνη")) + 1;
+  await parent.click("role=tab[name='Πέμπτη']");
+  const locked = parent.locator("li.locked:has-text('Αντιγόνη')");
+  await locked.waitFor();
+  const lockedText = await locked.textContent();
+  if (!lockedText.includes(`Τον βάλατε ${antigoneRank}ο στη σειρά της Δευτέρας`)) throw new Error(`locked club text: ${lockedText}`);
+  step(`parent: double club locked on Thursday (${antigoneRank}η on Monday)`);
   await shot(parent, "05-parent-ranking");
-  await parent.click("text=Υποβολή δήλωσης");
+
+  // Visit every day with «next», then submit on the last one
+  await parent.click("nav.day-tabs button:has-text('Δευτέρα')");
+  for (const day of ["Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή"]) await parent.click(`button:has-text('${day} →')`);
+  await parent.click("button:has-text('Υποβολή δήλωσης')");
   await parent.waitForSelector(".msg.ok:has-text('καταχωρίστηκε')");
   const code = await parent.locator(".receipt strong").nth(2).textContent();
   if (!/^[0-9A-F]{4}-[0-9A-F]{4}$/.test(code)) throw new Error(`no receipt code: ${code}`);

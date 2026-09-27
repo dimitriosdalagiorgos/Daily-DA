@@ -49,7 +49,7 @@ export function createRanker({ items, order, disabled = false, label, onChange }
       const li = el("li", { dataset: { code } },
         handle,
         pos,
-        el("span.name", {}, item.name, item.description ? el("span.desc", {}, item.description) : null),
+        el("span.name", {}, item.name, item.tag ? el("span.tag", {}, item.tag) : null, item.description ? el("span.desc", {}, item.description) : null),
         el("span.moves", {},
           el("button.small", { type: "button", disabled: disabled || i === 0, "aria-label": `«${item.name}» μία θέση πάνω`, onclick: () => move(i, i - 1, `${code}:up`) }, "↑"),
           el("button.small", { type: "button", disabled: disabled || i === current.length - 1, "aria-label": `«${item.name}» μία θέση κάτω`, onclick: () => move(i, i + 1, `${code}:down`) }, "↓")));

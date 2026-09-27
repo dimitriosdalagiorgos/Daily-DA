@@ -189,7 +189,6 @@ ol.ranker li {
   touch-action: pan-y;
 }
 ol.ranker li.dragging { opacity: 0.9; box-shadow: 0 6px 18px rgb(0 0 0 / 0.18); border-color: var(--primary); position: relative; z-index: 2; }
-ol.ranker li.locked { background: var(--surface-2); grid-template-columns: 34px 1fr; color: var(--muted); }
 .handle {
   width: 34px; height: 40px;
   display: grid; place-items: center;
@@ -244,8 +243,6 @@ footer.site { max-width: 960px; margin: 0 auto; padding: 0 16px 32px; color: var
   .receipt { border: 1px solid #999; box-shadow: none; }
 }
 
-.day-check { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-weight: 600; }
-.day-check input { width: 20px; height: 20px; }
 
 .phase-actions .spacer { flex: 1; }
 nav.tabs.subtabs { margin-top: 12px; }
@@ -257,3 +254,17 @@ label .hint.after { margin-top: 4px; }
 .login-short { display: flex; flex-wrap: wrap; gap: 0 24px; align-items: flex-start; }
 .login-short #password { width: 14rem; max-width: 100%; }
 .login-short #am { width: 9rem; max-width: 100%; }
+
+/* Parent form: day tabs, locked multi-day clubs */
+nav.day-tabs { margin-top: 4px; }
+.day-intro { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+ol.ranker .tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+ol.ranker li.locked { grid-template-columns: 30px 54px 1fr; background: var(--locked-bg, #fff4d6); border-color: var(--locked-border, #e8c66a); color: inherit; }
+ol.ranker li.locked .lockpos { font-weight: 700; text-align: center; color: var(--muted); }
+ol.ranker li.locked .tag { background: rgb(0 0 0 / 0.06); }
+.locked-box > p { margin: 4px 0 8px; }
+details.receipt > summary { cursor: pointer; font-weight: 700; }
+details.receipt[open] > summary { margin-bottom: 8px; }
+@media (prefers-color-scheme: dark) {
+  :root { --locked-bg: #3a3218; --locked-border: #8a7433; }
+}
