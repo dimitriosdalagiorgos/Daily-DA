@@ -134,3 +134,14 @@ test("readiness: a day without any club for a mandatory grade is an error; days 
   assert.deepEqual(p.map((x) => [x.level, x.day, x.message]), [["error", "mon", "Δευτέρα: δεν υπάρχει όμιλος για την Β τάξη (υποχρεωτική ένταξη)."]]);
   assert.deepEqual(checkReadiness(students, clubs, { mandatoryGrades: [] }).map((x) => x.level), ["warning"]);
 });
+
+test("readiness: a grade without any club all week is reported once", () => {
+  const students = [{ am: "1", grade: "Α" }, { am: "2", grade: "Β" }, { am: "3", grade: "Β" }];
+  const clubs = [{ code: 1, days: ["mon"], grades: ["Α"], capacity: 5 }, { code: 2, days: ["tue"], grades: ["Α"], capacity: 5 }];
+  const p = checkReadiness(students, clubs, { mandatoryGrades: ["Α"] });
+  assert.equal(p.length, 1);
+  assert.equal(p[0].level, "warning");
+  assert.match(p[0].message, /^Η Β τάξη \(2 μαθητές\) δεν έχει κανέναν όμιλο σε καμία ημέρα:/);
+  // For a mandatory grade the same problem blocks the declarations.
+  assert.deepEqual(checkReadiness(students, clubs, { mandatoryGrades: ["Α", "Β"] }).map((x) => x.level), ["error"]);
+});

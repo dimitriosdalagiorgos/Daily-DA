@@ -129,6 +129,13 @@ function mainView(me) {
       el("label", { for: "pname" }, "Ονοματεπώνυμο", parentName),
       el("label", { for: "pemail" }, "Email", el("span.hint", {}, pub.mailEnabled ? "Εδώ θα έρθει η επιβεβαίωση της δήλωσης." : "Για επικοινωνία από το σχολείο. Επιβεβαίωση με email δεν στέλνεται: κρατήστε την απόδειξη που εμφανίζεται μετά την υποβολή."), parentEmail))));
 
+  if (!days.length) {
+    // No club for this grade on any day (the admin sees a warning for this).
+    nodes.push(message("warn", `Δεν υπάρχουν όμιλοι για δήλωση για την ${student.grade} τάξη. Επικοινωνήστε με το σχολείο${me.contact ? `: ${me.contact}` : "."}`));
+    show(app, nodes);
+    return;
+  }
+
   const rankers = {};
   const checks = {};
   const daysCard = el("section.card", {}, el("h2", { style: "margin-top:0" }, "Σειρά προτίμησης ανά ημέρα"));

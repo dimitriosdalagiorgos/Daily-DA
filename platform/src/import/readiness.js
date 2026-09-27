@@ -35,12 +35,24 @@ export function checkReadiness(students, clubs, { mandatoryGrades = [] } = {}) {
   const mandatory = present.filter((g) => mandatoryGrades.includes(g));
   const optional = present.filter((g) => !mandatoryGrades.includes(g));
 
+  // A grade with no club on any day: its parents would log in to an empty
+  // form. Reported once for the week instead of once per day.
+  const noClubAtAll = present.filter((g) => !clubs.some((c) => c.grades.includes(g)));
+  for (const grade of noClubAtAll) {
+    const isMandatory = mandatoryGrades.includes(grade);
+    problems.push({
+      level: isMandatory ? "error" : "warning", grades: [grade], students: perGrade[grade],
+      message: `Η ${grade} τάξη (${perGrade[grade]} μαθητές) δεν έχει κανέναν όμιλο σε καμία ημέρα${isMandatory ? " (υποχρεωτική ένταξη)" : ""}: οι γονείς της θα συνδέονται αλλά δεν θα βλέπουν ομίλους για δήλωση. Ελέγξτε τη στήλη «Τάξεις» του αρχείου ομίλων.`,
+    });
+  }
+
   for (const day of DAYS) {
     const running = clubs.filter((c) => c.days.includes(day));
     if (running.length === 0) continue; // no clubs at all that day
     const label = DAY_LABELS[day];
 
     for (const grade of present) {
+      if (noClubAtAll.includes(grade)) continue; // reported once above
       if (!running.some((c) => c.grades.includes(grade))) {
         problems.push({
           level: mandatoryGrades.includes(grade) ? "error" : "warning", day, grades: [grade],
@@ -59,6 +71,7 @@ export function checkReadiness(students, clubs, { mandatoryGrades = [] } = {}) {
     for (const group of groups(mandatory)) {
       const { seats, need } = shortfall(group);
       if (seats === 0 && group.length === 1) continue; // reported above as "no club"
+      if (group.length === 1 && noClubAtAll.includes(group[0])) continue;
       if (seats < need) {
         problems.push({
           level: "error", day, grades: group, seats, students: need,
