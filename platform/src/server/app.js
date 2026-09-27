@@ -291,7 +291,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   route("POST", "/api/admin/import-legacy", async (req) => {
     session(req, "admin");
     const settings = await getSettings();
-    if (phaseAtLeast(settings.phase, "allocated")) throw new HttpError(409, "Η εισαγωγή δοκιμής γίνεται πριν από την κατανομή.");
+    if (phaseAtLeast(settings.phase, "allocated")) throw new HttpError(409, "Έχει ήδη γίνει κατανομή. Για να προσθέσετε δηλώσεις, πατήστε επάνω «Επιστροφή» μέχρι τη φάση «Κλειστές δηλώσεις», ανεβάστε το αρχείο και ξανατρέξτε την κατανομή.");
     const { day, rows, addMissingGrade, fileName } = await body(req);
     if (!DAYS.includes(day)) throw new HttpError(422, "Επιλέξτε ημέρα.");
     if (addMissingGrade && !["Α", "Β", "Γ"].includes(addMissingGrade)) throw new HttpError(422, "Άγνωστη τάξη.");
