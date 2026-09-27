@@ -37,8 +37,9 @@ test("club rules from the template", () => {
     { code: 1, name: "Χ", days: ["thu", "mon"], grades: ["Δ"], capacity: 5 },
     { code: 2, name: "Υ", days: ["mon", "tue", "wed", "thu"], grades: ["Α"], capacity: 5 },
   ]);
+  assert.deepEqual(bad.filter((p) => p.message.includes("υπάρχει ήδη")).map((p) => [p.code, p.field]), [[1, "code"]]);
   for (const pattern of [/όνομα/, /λείπει η ημέρα/, /λείπουν οι τάξεις/, /χωρητικότητα/, /υπάρχει ήδη/, /σειρά της εβδομάδας/, /άγνωστη τάξη/, /έως 3 ημέρες/]) {
-    assert.ok(bad.some((p) => pattern.test(p)), `expected a problem matching ${pattern}`);
+    assert.ok(bad.some((p) => pattern.test(p.message)), `expected a problem matching ${pattern}`);
   }
 });
 

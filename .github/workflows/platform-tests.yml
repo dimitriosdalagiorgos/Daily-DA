@@ -17,7 +17,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Official SheetJS build for the Excel import tests (not a runtime
+      # dependency: the browser loads it from cdn.sheetjs.com).
+      - run: npm install --no-save https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
       - run: npm test
+        env:
+          REQUIRE_SHEETJS: "1"
 
   # Same allocation as the R reference (platform/reference/) on the sample
   # data and on random weeks with multi-day clubs.

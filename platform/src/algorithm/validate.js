@@ -1,37 +1,41 @@
 // Checks on what parents, teachers and the administrator submit.
-// Each function returns a list of problems in Greek (empty = valid).
+// Each function returns a list of problems in Greek (empty = valid);
+// validateClubs returns {code, field, message} objects.
 
 import { DAYS, DAY_LABELS } from "./days.js";
 
 export const GRADES = ["Α", "Β", "Γ"];
 export const MAX_CLUB_DAYS = 3;
 
-/** Clubs checked against the template's rules. */
+/**
+ * Clubs checked against the template's rules.
+ * @returns {{code: unknown, field: string, message: string}[]}
+ */
 export function validateClubs(clubs) {
   const problems = [];
   const seen = new Set();
   for (const club of clubs) {
     const code = club.code;
-    const label = `Όμιλος ${code}`;
-    if (!Number.isInteger(code) || code <= 0) problems.push(`${label}: ο κωδικός πρέπει να είναι θετικός ακέραιος.`);
-    if (seen.has(code)) problems.push(`${label}: ο κωδικός υπάρχει ήδη.`);
+    const add = (field, message) => problems.push({ code, field, message: `Όμιλος ${code}: ${message}` });
+    if (!Number.isInteger(code) || code <= 0) add("code", "ο κωδικός πρέπει να είναι θετικός ακέραιος.");
+    if (seen.has(code)) add("code", "ο κωδικός υπάρχει ήδη.");
     seen.add(code);
-    if (!String(club.name ?? "").trim()) problems.push(`${label}: λείπει το όνομα.`);
+    if (!String(club.name ?? "").trim()) add("name", "λείπει το όνομα.");
 
     const days = club.days ?? [];
-    if (days.length === 0) problems.push(`${label}: λείπει η ημέρα.`);
-    if (days.length > MAX_CLUB_DAYS) problems.push(`${label}: έως ${MAX_CLUB_DAYS} ημέρες (6 ώρες).`);
+    if (days.length === 0) add("days", "λείπει η ημέρα.");
+    if (days.length > MAX_CLUB_DAYS) add("days", `έως ${MAX_CLUB_DAYS} ημέρες (6 ώρες).`);
     if (days.some((d) => !DAYS.includes(d))) {
-      problems.push(`${label}: άγνωστη ημέρα.`);
+      add("days", "άγνωστη ημέρα.");
     } else if (days.some((d, i) => i > 0 && DAYS.indexOf(d) <= DAYS.indexOf(days[i - 1]))) {
-      problems.push(`${label}: οι ημέρες πρέπει να είναι διαφορετικές και με τη σειρά της εβδομάδας.`);
+      add("days", "οι ημέρες πρέπει να είναι διαφορετικές και με τη σειρά της εβδομάδας.");
     }
 
     const grades = club.grades ?? [];
-    if (grades.length === 0) problems.push(`${label}: λείπουν οι τάξεις.`);
-    if (grades.some((g) => !GRADES.includes(g))) problems.push(`${label}: άγνωστη τάξη.`);
+    if (grades.length === 0) add("grades", "λείπουν οι τάξεις.");
+    if (grades.some((g) => !GRADES.includes(g))) add("grades", "άγνωστη τάξη.");
     if (!Number.isInteger(club.capacity) || club.capacity <= 0) {
-      problems.push(`${label}: η χωρητικότητα πρέπει να είναι θετικός ακέραιος.`);
+      add("capacity", "η χωρητικότητα πρέπει να είναι θετικός ακέραιος.");
     }
   }
   return problems;
