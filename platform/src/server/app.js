@@ -470,8 +470,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return csvResponse(["Ημέρα", "Γύρος", "Γεγονός", "ΑΜ", "Επώνυμο", "Όνομα", "Κωδικός ομίλου", "Όμιλος", "Θέση προτίμησης", "Περιγραφή"], rows, "audit_log_katanomis.csv");
   });
 
-  // The lottery alone: ΑΜ and number, best number first — no names, so it
-  // can be announced. From the allocation, or for a given seed (preview).
+  // The lottery alone: ΑΜ and number, by ΑΜ — no names, so it can be
+  // announced, and two students are compared at a glance. From the
+  // allocation, or for a given seed (preview).
   route("GET", "/api/admin/export/lottery.csv", async (req) => {
     session(req, "admin");
     const url = new URL(req.url);
@@ -481,8 +482,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (results && !seed) lottery = new Map(results.lottery);
     else if (seed && seed.trim()) lottery = drawLottery((await getStudents()).map((s) => s.am), seed);
     else throw new HttpError(404, "Δεν έχει γίνει κατανομή· δώστε seed.");
-    const rows = [...lottery].sort((a, b) => a[1] - b[1]).map(([am, n]) => [n, am]);
-    return csvResponse(["Αριθμός κλήρωσης", "ΑΜ"], rows, "klirosi.csv");
+    const byAm = (a, b) => Number(a[0]) - Number(b[0]) || String(a[0]).localeCompare(String(b[0]));
+    const rows = [...lottery].sort(byAm).map(([am, n]) => [am, n]);
+    return csvResponse(["ΑΜ", "Αριθμός κλήρωσης"], rows, "klirosi.csv");
   });
 
   // Per club and day, as the R scripts' <day>_club_reports.csv.

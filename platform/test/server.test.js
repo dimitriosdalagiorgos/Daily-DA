@@ -182,13 +182,13 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   assert.equal(by["9003"].mon, null, "no submission");
   assert.deepEqual(r.data.results.unassigned.mon.map((u) => [u.am, u.reason]), [["9003", "no_preferences"]]);
 
-  // The lottery alone: ΑΜ and number, best first, no names
+  // The lottery alone: ΑΜ and number, by ΑΜ, no names
   const lot = await call("GET", "/api/admin/export/lottery.csv", { token: admin });
   assert.equal(lot.status, 200);
   const lotRows = new TextDecoder().decode(lot.data).trim().split(/\r?\n/).map((l) => l.split(","));
-  assert.deepEqual(lotRows[0], ["Αριθμός κλήρωσης", "ΑΜ"]);
+  assert.deepEqual(lotRows[0], ["ΑΜ", "Αριθμός κλήρωσης"]);
   const expected = drawLottery(["9001", "9002", "9003", "9004"], "Κλήρωση 2026");
-  assert.deepEqual(lotRows.slice(1), [...expected].sort((x, y) => x[1] - y[1]).map(([am, n]) => [String(n), am]));
+  assert.deepEqual(lotRows.slice(1), ["9001", "9002", "9003", "9004"].map((am) => [am, String(expected.get(am))]), "by ΑΜ");
   assert.ok(!new TextDecoder().decode(lot.data).includes("ΠΑΠΑΔΟΠΟΥΛΟΣ"), "no names");
 
   // Exports
