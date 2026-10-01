@@ -513,6 +513,8 @@ function allocation() {
   xlsx.addEventListener("click", () => busy(xlsx, out, async () => resultsWorkbook((await api("GET", "/api/admin/results")).results)));
   const audit = el("button", { type: "button", disabled: !state.results }, "Audit log κατανομής (.csv)");
   audit.addEventListener("click", () => busy(audit, out, () => api.download("/api/admin/export/audit_log.csv", "audit_log_katanomis.csv")));
+  const lotteryCsv = el("button", { type: "button" }, "Κλήρωση: ΑΜ και αριθμός (.csv)");
+  lotteryCsv.addEventListener("click", () => busy(lotteryCsv, out, () => api.download(`/api/admin/export/lottery.csv${state.results ? "" : `?seed=${encodeURIComponent(seed.value)}`}`, "klirosi.csv")));
   const summary = el("button", { type: "button", disabled: !state.results }, "Σύνοψη ανά όμιλο (.csv)");
   summary.addEventListener("click", () => busy(summary, out, () => api.download("/api/admin/export/club_summary.csv", "synopsi_omilon.csv")));
 
@@ -528,7 +530,8 @@ function allocation() {
       out,
       el("div.actions", {}, run, randomSeed),
       el("h3", {}, "Εξαγωγές"),
-      el("div.actions", {}, xlsx, csv, audit, summary, rZip)),
+      el("div.actions", {}, xlsx, csv, audit, summary, lotteryCsv, rZip),
+      el("p.small.muted", {}, "«Κλήρωση»: μόνο ΑΜ και αριθμός κλήρωσης, χωρίς ονόματα — κατάλληλο για ανακοίνωση. Πριν την κατανομή βγαίνει για το seed που έχετε γράψει.")),
     resultsBox);
 }
 

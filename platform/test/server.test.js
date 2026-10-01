@@ -6,6 +6,7 @@ import { signToken, verifyToken, hashPassword, verifyPassword } from "../src/ser
 import { makeZip, crc32 } from "../src/server/zip.js";
 import { createSupabaseStore } from "../src/server/store-supabase.js";
 import { createFakePostgrest } from "./fake-postgrest.js";
+import { drawLottery } from "../src/algorithm/lottery.js";
 
 const STORES = {
   memory: () => createMemoryStore(),
@@ -180,6 +181,15 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   assert.equal(by["9002"].thu, "102");
   assert.equal(by["9003"].mon, null, "no submission");
   assert.deepEqual(r.data.results.unassigned.mon.map((u) => [u.am, u.reason]), [["9003", "no_preferences"]]);
+
+  // The lottery alone: ΑΜ and number, best first, no names
+  const lot = await call("GET", "/api/admin/export/lottery.csv", { token: admin });
+  assert.equal(lot.status, 200);
+  const lotRows = new TextDecoder().decode(lot.data).trim().split(/\r?\n/).map((l) => l.split(","));
+  assert.deepEqual(lotRows[0], ["Αριθμός κλήρωσης", "ΑΜ"]);
+  const expected = drawLottery(["9001", "9002", "9003", "9004"], "Κλήρωση 2026");
+  assert.deepEqual(lotRows.slice(1), [...expected].sort((x, y) => x[1] - y[1]).map(([am, n]) => [String(n), am]));
+  assert.ok(!new TextDecoder().decode(lot.data).includes("ΠΑΠΑΔΟΠΟΥΛΟΣ"), "no names");
 
   // Exports
   r = await call("GET", "/api/admin/export/r-package.zip", { token: admin });
@@ -441,6 +451,11 @@ test("admin: «Παρεμφερείς» of a club can be set or cleared until de
   await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
   assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } })).status, 200);
   assert.equal((await call("PUT", "/api/admin/clubs/101/similar", { token: admin, body: { similar: "Α" } })).status, 409);
+  // Lottery preview before the allocation: needs a seed
+  assert.equal((await call("GET", "/api/admin/export/lottery.csv", { token: admin })).status, 404);
+  const preview = await call("GET", "/api/admin/export/lottery.csv?seed=abc", { token: admin });
+  assert.equal(preview.status, 200);
+  assert.equal(new TextDecoder().decode(preview.data).trim().split(/\r?\n/).length, 5, "header + 4 students");
   // R export carries the column
   r = await call("GET", "/api/admin/export/r-package.zip?seed=x", { token: admin });
   assert.equal(r.status, 200);

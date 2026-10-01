@@ -470,6 +470,21 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return csvResponse(["Ημέρα", "Γύρος", "Γεγονός", "ΑΜ", "Επώνυμο", "Όνομα", "Κωδικός ομίλου", "Όμιλος", "Θέση προτίμησης", "Περιγραφή"], rows, "audit_log_katanomis.csv");
   });
 
+  // The lottery alone: ΑΜ and number, best number first — no names, so it
+  // can be announced. From the allocation, or for a given seed (preview).
+  route("GET", "/api/admin/export/lottery.csv", async (req) => {
+    session(req, "admin");
+    const url = new URL(req.url);
+    const results = await store.get("results");
+    const seed = url.searchParams.get("seed");
+    let lottery;
+    if (results && !seed) lottery = new Map(results.lottery);
+    else if (seed && seed.trim()) lottery = drawLottery((await getStudents()).map((s) => s.am), seed);
+    else throw new HttpError(404, "Δεν έχει γίνει κατανομή· δώστε seed.");
+    const rows = [...lottery].sort((a, b) => a[1] - b[1]).map(([am, n]) => [n, am]);
+    return csvResponse(["Αριθμός κλήρωσης", "ΑΜ"], rows, "klirosi.csv");
+  });
+
   // Per club and day, as the R scripts' <day>_club_reports.csv.
   route("GET", "/api/admin/export/club_summary.csv", async (req) => {
     session(req, "admin");

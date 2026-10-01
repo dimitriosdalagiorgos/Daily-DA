@@ -224,7 +224,7 @@ try {
   await admin.waitForSelector(".report:has-text('Αριθμός κλήρωσης')");
   step("admin: gaps per day and a student's report");
   await shot(admin, "07-admin-results");
-  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Σύνοψη ανά όμιλο (.csv)", "summary"]]) {
+  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"]]) {
     const [d] = await Promise.all([admin.waitForEvent("download"), admin.click(`button:has-text('${label}')`)]);
     step(`admin: ${file} downloaded (${d.suggestedFilename()})`);
   }
