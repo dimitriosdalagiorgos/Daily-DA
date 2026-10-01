@@ -145,3 +145,17 @@ test("readiness: a grade without any club all week is reported once", () => {
   // For a mandatory grade the same problem blocks the declarations.
   assert.deepEqual(checkReadiness(students, clubs, { mandatoryGrades: ["Α", "Β"] }).map((x) => x.level), ["error"]);
 });
+
+test("optional column «Παρεμφερείς»: same word (any case or accents) = similar clubs", () => {
+  const r = importClubs({
+    clubs: [
+      [...CLUBS_HEADER, "Παρεμφερείς"],
+      [201, "Αγγλικά", "Δευτέρα", "", "", "Α-Β", 20, "", "", "Αγγλικά"],
+      [202, "Αγγλικά", "Πέμπτη", "", "", "Α-Β", 20, "", "", " ΑΓΓΛΙΚΆ "],
+      [203, "Χορωδία", "Τρίτη", "", "", "Α", 20, "", "", ""],
+    ],
+    teachers: [TEACHERS_HEADER],
+  });
+  assert.deepEqual(r.problems.filter((p) => p.level === "error"), []);
+  assert.deepEqual(r.clubs.map((c) => c.similar), ["ΑΓΓΛΙΚΑ", "ΑΓΓΛΙΚΑ", undefined]);
+});

@@ -13,12 +13,14 @@
 #   - for everyone else the club leaves their later-day lists and the
 #     remaining ranks are renumbered 1..k;
 #   - a multi-day club that would clash with a day the student already
-#     holds is removed too (ranks renumbered).
+#     holds is removed too (ranks renumbered);
+#   - similar clubs (same «similar» word): once the student has one, the
+#     others leave the lists of the following days (ranks renumbered).
 # Students are matched by RegistryNr (ΑΜ) throughout.
 #
 # Input folder (exported by the platform):
 #   students.csv       RegistryNr, Surname, Name, grade
-#   clubs.csv          code, name, days ("mon;thu"), grades ("Α;Β"), capacity
+#   clubs.csv          code, name, days ("mon;thu"), grades ("Α;Β"), capacity, similar (optional)
 #   preferences.csv    RegistryNr, day, rank, club_code
 #   teacher_lists.csv  club_code, position, RegistryNr
 #   mandatory_grades.csv grade — grades with mandatory placement; their
@@ -71,6 +73,10 @@ students <- read_input("students.csv") %>%
   # daily_da.R needs a surname and name for its reports
   mutate(Surname = coalesce(na_if(trimws(Surname), ""), RegistryNr), Name = coalesce(na_if(trimws(Name), ""), "-"))
 clubs <- read_input("clubs.csv") %>% mutate(capacity = as.integer(capacity))
+# «Παρεμφερείς»: clubs with the same word — at most one of them per student
+# in the week (column absent in older packages = no groups)
+if (!"similar" %in% names(clubs)) clubs$similar <- ""
+clubs <- clubs %>% mutate(similar = coalesce(trimws(similar), ""))
 prefs <- read_input("preferences.csv") %>% mutate(rank = as.integer(rank))
 teacher_lists <- read_input("teacher_lists.csv", required = FALSE)
 if (is.null(teacher_lists)) teacher_lists <- tibble(club_code = character(0), position = character(0), RegistryNr = character(0))
@@ -120,6 +126,7 @@ clubs <- clubs %>%
 label_of <- setNames(clubs$label, clubs$code)
 club_days <- setNames(strsplit(clubs$days, ";", fixed = TRUE), clubs$code)
 first_day <- sapply(club_days, `[`, 1)
+similar_of <- setNames(clubs$similar, clubs$code)
 
 prefs_dir <- file.path(output_dir, "teacherpreferences")
 dir.create(prefs_dir, showWarnings = FALSE)
@@ -132,6 +139,7 @@ for (code in unique(teacher_lists$club_code)) {
 # ---------- Week loop ----------
 committed <- tibble(RegistryNr = character(0), day = character(0), club_code = character(0))
 week <- tibble(RegistryNr = character(0), day = character(0), club_code = character(0), via = character(0))
+taken <- character(0)  # "RegistryNr|similar" of similar groups already held
 
 for (day in DAY_KEYS) {
   carried <- committed %>% filter(day == !!day)
@@ -148,6 +156,7 @@ for (day in DAY_KEYS) {
     rowwise() %>%
     filter(!any(club_days[[club_code]] %in% held$held_day[held$RegistryNr == RegistryNr])) %>%
     ungroup() %>%
+    filter(similar_of[club_code] == "" | !paste(RegistryNr, similar_of[club_code], sep = "|") %in% taken) %>%
     group_by(RegistryNr) %>%
     arrange(rank, .by_group = TRUE) %>%
     mutate(rank = row_number()) %>%
@@ -182,6 +191,9 @@ for (day in DAY_KEYS) {
   assigned <- assigned %>% mutate(club_code = sub(" .*$", "", club_name))
   week <- bind_rows(week, assigned %>% transmute(RegistryNr, day = day, club_code, via = "da"))
   cat(sprintf("%s: %d τοποθετήσεις (+%d από πολυήμερους ομίλους)\n", day_labels[[day]], nrow(assigned), nrow(carried)))
+
+  grouped <- assigned %>% filter(similar_of[club_code] != "")
+  taken <- c(taken, paste(grouped$RegistryNr, similar_of[grouped$club_code], sep = "|"))
 
   for (k in seq_len(nrow(assigned))) {
     later <- club_days[[assigned$club_code[k]]][-1]

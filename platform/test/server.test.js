@@ -422,3 +422,26 @@ test("mandatory grades: declarations do not open without enough seats; gaps list
   assert.deepEqual(r.data.results.mandatoryGrades, ["Α"]);
   assert.deepEqual(r.data.results.mandatoryGaps, [{ am: "9003", day: "mon", reason: "no_preferences" }]);
 });
+
+test("admin: «Παρεμφερείς» of a club can be set or cleared until declarations open", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  let r = await call("PUT", "/api/admin/clubs/101/similar", { token: admin, body: { similar: " Ρομποτική " } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.club.similar, "ΡΟΜΠΟΤΙΚΗ");
+  assert.equal((await call("PUT", "/api/admin/clubs/999/similar", { token: admin, body: { similar: "Χ" } })).status, 404);
+  let clubs = (await call("GET", "/api/admin/state", { token: admin })).data.clubs;
+  assert.equal(clubs.find((c) => c.code === 101).similar, "ΡΟΜΠΟΤΙΚΗ");
+  r = await call("PUT", "/api/admin/clubs/101/similar", { token: admin, body: { similar: "" } });
+  assert.equal("similar" in r.data.club, false);
+  // locked once declarations are open
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z", mandatoryGrades: [] } });
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
+  assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } })).status, 200);
+  assert.equal((await call("PUT", "/api/admin/clubs/101/similar", { token: admin, body: { similar: "Α" } })).status, 409);
+  // R export carries the column
+  r = await call("GET", "/api/admin/export/r-package.zip?seed=x", { token: admin });
+  assert.equal(r.status, 200);
+});

@@ -2,7 +2,7 @@
 // Plain UTF-8 CSV files, one fact per row, so they are easy to read in R
 // or Excel:
 //   students.csv       RegistryNr, Surname, Name, grade
-//   clubs.csv          code, name, days ("mon;thu"), grades ("Α;Β"), capacity
+//   clubs.csv          code, name, days ("mon;thu"), grades ("Α;Β"), capacity, similar (group word or empty)
 //   preferences.csv    RegistryNr, day, rank, club_code
 //   teacher_lists.csv  club_code, position, RegistryNr
 //   mandatory_grades.csv grade (grades placed first, after the teacher's list)
@@ -25,8 +25,8 @@ export function buildRPackage({ students, clubs, preferences, teacherLists = {},
   const files = {};
   files["students.csv"] = toCsv(["RegistryNr", "Surname", "Name", "grade"],
     students.map((s) => [s.am, s.surname ?? "", s.name ?? "", s.grade]));
-  files["clubs.csv"] = toCsv(["code", "name", "days", "grades", "capacity"],
-    clubs.map((c) => [c.code, c.name, c.days.join(";"), c.grades.join(";"), c.capacity]));
+  files["clubs.csv"] = toCsv(["code", "name", "days", "grades", "capacity", "similar"],
+    clubs.map((c) => [c.code, c.name, c.days.join(";"), c.grades.join(";"), c.capacity, c.similar ?? ""]));
   const prefRows = [];
   for (const s of students) {
     for (const day of DAYS) {

@@ -13,6 +13,11 @@
 // The result does not depend on the order in which proposals are handled;
 // rounds are just one way of computing it (tested in allocate.test.js).
 //
+// Similar clubs (same `similar` word, different days): a student gets at
+// most one of them in the week. Once placed in one, the others leave the
+// student's lists on the following days (like a day clash) and the remaining
+// clubs are renumbered.
+//
 // Multi-day clubs (2 or 3 days) take part only in the allocation of their
 // first day. Students placed there keep the seat on the club's later days
 // and sit out those days' allocations. Everyone else simply loses the club
@@ -20,7 +25,7 @@
 //
 // Input shapes:
 //   students:     [{ am, grade }]
-//   clubs:        [{ code, name, days: ["mon", "thu"], grades: ["Α", "Β"], capacity }]
+//   clubs:        [{ code, name, days: ["mon", "thu"], grades: ["Α", "Β"], capacity, similar? }]
 //   preferences:  { [am]: { [day]: [clubCode, ...] } }   best first
 //   teacherLists: { [clubCode]: [am, ...] }              teacher's order
 //   lottery:      Map<am, number>                        from drawLottery()
@@ -162,6 +167,8 @@ export function allocateWeek({ students, clubs, preferences, teacherLists = {}, 
 
   // am → Map(day → code) for seats already fixed by multi-day clubs
   const committed = new Map([...studentsByAm.keys()].map((am) => [am, new Map()]));
+  // am → Set of `similar` groups the student already has a club from
+  const groupsTaken = new Map([...studentsByAm.keys()].map((am) => [am, new Set()]));
   const byStudent = Object.fromEntries([...studentsByAm.keys()].map((am) => [am, Object.fromEntries(DAYS.map((d) => [d, null]))]));
   const result = { days: {}, byStudent };
 
@@ -209,6 +216,11 @@ export function allocateWeek({ students, clubs, preferences, teacherLists = {}, 
           log({ round: 0, event: EVENTS.CLUB_DROPPED, am, club: code, reason: "day_conflict" });
           continue;
         }
+        if (club.similar && groupsTaken.get(am).has(club.similar)) {
+          // The student already has a similar club on an earlier day.
+          log({ round: 0, event: EVENTS.CLUB_DROPPED, am, club: code, reason: "similar" });
+          continue;
+        }
         list.push(code);
       }
       lists.set(am, list);
@@ -235,7 +247,9 @@ export function allocateWeek({ students, clubs, preferences, teacherLists = {}, 
       const originalRank = (preferences[am]?.[day] ?? []).map(String).indexOf(seat.code) + 1;
       assignments.push({ am, club: seat.code, rank: seat.rank, originalRank, via: "da" });
       byStudent[am][day] = seat.code;
-      for (const d of clubsByCode.get(seat.code).days.slice(1)) committed.get(am).set(d, seat.code);
+      const seatClub = clubsByCode.get(seat.code);
+      for (const d of seatClub.days.slice(1)) committed.get(am).set(d, seat.code);
+      if (seatClub.similar) groupsTaken.get(am).add(seatClub.similar);
     }
 
     result.days[day] = { assignments, unassigned, log: dayLog };

@@ -249,6 +249,44 @@ test("mandatory grades go before the others, but after the teacher's choice", ()
   assert.equal(seatOf(t, "mon", "2"), "12");
 });
 
+test("similar clubs: at most one of them in the week (Μαρία, Νίκος, Σοφία)", () => {
+  // Αγγλικά on Monday (201) and Thursday (202) are similar; 1 seat each.
+  const clubs = [
+    { ...club(201, ["mon"], 1), similar: "ΑΓΓΛΙΚΑ" }, club(203, ["mon"], 5),
+    { ...club(202, ["thu"], 1), similar: "ΑΓΓΛΙΚΑ" }, club(204, ["thu"], 5),
+  ];
+  const r = allocateWeek({
+    students: [{ am: "Μαρία", grade: "Α" }, { am: "Νίκος", grade: "Α" }, { am: "Σοφία", grade: "Α" }],
+    clubs,
+    preferences: {
+      "Μαρία": { mon: [201, 203], thu: [202, 204] },
+      "Νίκος": { mon: [201, 203], thu: [202, 204] },
+      "Σοφία": { mon: [203, 201], thu: [202, 204] },
+    },
+    lottery: lotteryOf("Μαρία", "Νίκος", "Σοφία"),
+  });
+  // Μαρία gets Αγγλικά on Monday, so Thursday's Αγγλικά leave her list.
+  assert.equal(seatOf(r, "mon", "Μαρία"), "201");
+  assert.equal(seatOf(r, "thu", "Μαρία"), "204");
+  assert.ok(r.days.thu.log.some((e) => e.am === "Μαρία" && e.event === EVENTS.CLUB_DROPPED && e.club === "202" && e.reason === "similar"));
+  // Νίκος did not fit on Monday: he takes Thursday's seat before Σοφία.
+  assert.equal(seatOf(r, "mon", "Νίκος"), "203");
+  assert.equal(seatOf(r, "thu", "Νίκος"), "202");
+  // Σοφία ranked Monday's Αγγλικά second and got her first choice.
+  assert.equal(seatOf(r, "mon", "Σοφία"), "203");
+  assert.equal(seatOf(r, "thu", "Σοφία"), "204");
+});
+
+test("similar clubs: a double club counts once, and later similar clubs are dropped", () => {
+  const r = allocateWeek({
+    students: [{ am: "1", grade: "Α" }],
+    clubs: [{ ...club(301, ["mon", "wed"], 5), similar: "ΑΘΛΗΤΙΣΜΟΣ" }, { ...club(302, ["fri"], 5), similar: "ΑΘΛΗΤΙΣΜΟΣ" }, club(303, ["fri"], 5)],
+    preferences: { 1: { mon: [301], fri: [302, 303] } },
+    lottery: lotteryOf("1"),
+  });
+  assert.deepEqual(r.byStudent["1"], { mon: "301", tue: null, wed: "301", thu: null, fri: "303" });
+});
+
 // ---------- Property test: stability on random instances ----------
 
 function priorityKey(input, am, code, rank) {
@@ -295,6 +333,8 @@ function randomInstance(rng) {
   }
   const lottery = drawLottery(students.map((s) => s.am), String(rng()));
   const mandatoryGrades = grades.filter(() => rng() < 0.4);
+  // A few groups of similar clubs
+  for (const c of clubs) if (rng() < 0.4) c.similar = pick(["Α1", "Α2", "Α3"]);
   return { students, clubs, preferences, teacherLists, lottery, mandatoryGrades };
 }
 
@@ -358,7 +398,7 @@ test("random instances: capacities respected, no multi-day clash, and every day'
 
 // Every club on its first day only, and the lists cut accordingly.
 function singleDays(input) {
-  input.clubs = input.clubs.map((c) => ({ ...c, days: [c.days[0]] }));
+  input.clubs = input.clubs.map(({ similar, ...c }) => ({ ...c, days: [c.days[0]] })); // and no similar groups
   const on = new Map(input.clubs.map((c) => [String(c.code), c.days[0]]));
   for (const days of Object.values(input.preferences)) {
     for (const day of Object.keys(days)) days[day] = days[day].filter((c) => on.get(String(c)) === day);

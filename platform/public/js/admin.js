@@ -430,7 +430,7 @@ function clubsTable() {
   const byAm = new Map(state.students.map((s) => [s.am, s]));
   return el("section.card", {},
     el("div.table-wrap", {}, el("table", {},
-      el("thead", {}, el("tr", {}, el("th.num", {}, "Κωδ."), el("th", {}, "Όμιλος"), el("th", {}, "Ημέρες"), el("th", {}, "Τάξεις"), el("th.num", {}, "Θέσεις"), el("th", {}, "Εκπαιδευτικοί"), el("th", {}, "Λίστα εκπαιδευτικού"))),
+      el("thead", {}, el("tr", {}, el("th.num", {}, "Κωδ."), el("th", {}, "Όμιλος"), el("th", {}, "Ημέρες"), el("th", {}, "Τάξεις"), el("th.num", {}, "Θέσεις"), el("th", {}, "Παρεμφερείς"), el("th", {}, "Εκπαιδευτικοί"), el("th", {}, "Λίστα εκπαιδευτικού"))),
       el("tbody", {}, state.clubs.map((c) => {
         const list = state.teacherLists[c.code];
         const teachers = state.teachers.filter((t) => t.clubs.includes(c.code));
@@ -442,9 +442,32 @@ function clubsTable() {
         return el("tr", {},
           el("td.num", {}, c.code), el("td", {}, c.name), el("td", {}, c.days.map((d) => DAY_LABELS[d]).join(" + ")),
           el("td", {}, c.grades.join(", ")), el("td.num", {}, c.capacity),
+          similarCell(c, editable),
           el("td.small", {}, teachers.map((t) => el("div", {}, `${t.name} ${t.surname}`, el("br"), el("span.muted", {}, t.email)))),
           cell);
       })))));
+}
+
+// «Παρεμφερείς»: clubs with the same word — a student gets at most one
+function similarCell(club, editable) {
+  const cell = el("td");
+  const others = () => state.clubs.filter((o) => o.code !== club.code && o.similar && o.similar === club.similar).map((o) => o.code);
+  const view = () => cell.replaceChildren(
+    club.similar ? el("span", {}, el("strong", {}, club.similar), others().length ? el("span.small.muted", {}, el("br"), `με ${others().join(", ")}`) : el("span.small.muted", {}, el("br"), "μόνος του")) : el("span.muted", {}, "—"),
+    editable ? el("div", {}, el("button.small", { type: "button", onclick: edit }, "Αλλαγή")) : null);
+  function edit() {
+    const out = el("div");
+    const input = el("input", { type: "text", value: club.similar ?? "", "aria-label": `Παρεμφερείς για τον όμιλο ${club.code}`, placeholder: "π.χ. ΑΓΓΛΙΚΑ" });
+    const save = el("button.small.primary", { type: "button" }, "Αποθήκευση");
+    save.addEventListener("click", () => busy(save, out, async () => {
+      await api("PUT", `/api/admin/clubs/${club.code}/similar`, { similar: input.value });
+      await refresh();
+    }));
+    cell.replaceChildren(input, el("p.small.muted", {}, "Ίδια λέξη = παρεμφερείς· κενό = κανένας."), out, el("div.actions", {}, save, el("button.small", { type: "button", onclick: view }, "Άκυρο")));
+    input.focus();
+  }
+  view();
+  return cell;
 }
 
 function editList(club, list, cell) {

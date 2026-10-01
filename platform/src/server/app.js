@@ -16,7 +16,7 @@ import { drawLottery } from "../algorithm/lottery.js";
 import { allocateWeek } from "../algorithm/allocate.js";
 import { clubsToRank, validateSubmission, validateTeacherList } from "../algorithm/validate.js";
 import { importStudents } from "../import/students.js";
-import { importClubs } from "../import/clubs.js";
+import { importClubs, normalizeSimilar } from "../import/clubs.js";
 import { checkReadiness } from "../import/readiness.js";
 import { importLegacyResponses } from "../import/legacy.js";
 import { givenNameMatches, sameName } from "../import/names.js";
@@ -245,6 +245,25 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     await logEvent("admin", "clubs_uploaded", { clubs: report.clubs.length, teachers: report.teachers.length, fileName: fileNameOf(fileName) });
     await recordUpload(["clubs"], { fileName: fileNameOf(fileName), ...report.summary });
     return json(200, { report });
+  });
+
+  // «Παρεμφερείς» of one club, until declarations open (empty = none)
+  route("PUT", "/api/admin/clubs/:code/similar", async (req, { code }) => {
+    session(req, "admin");
+    const settings = await getSettings();
+    if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι όμιλοι κλείδωσαν με το άνοιγμα των δηλώσεων.");
+    const { similar } = await body(req);
+    const value = normalizeSimilar(similar ?? "");
+    let found = null;
+    await store.update("clubs", (clubs = []) => clubs.map((c) => {
+      if (String(c.code) !== String(code)) return c;
+      const { similar: _old, ...rest } = c;
+      found = value ? { ...rest, similar: value } : rest;
+      return found;
+    }));
+    if (!found) throw new HttpError(404, "Δεν υπάρχει τέτοιος όμιλος.");
+    await logEvent("admin", "club_similar", { club: Number(code), similar: value });
+    return json(200, { club: found });
   });
 
   route("PUT", "/api/admin/settings", async (req) => {
@@ -625,7 +644,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const student = students.find((s) => s.am === am);
     if (!student) throw new HttpError(401, "Ο μαθητής δεν υπάρχει πια στον κατάλογο.");
     const byCode = new Map(clubs.map((c) => [String(c.code), c]));
-    const publicClub = (c) => ({ code: String(c.code), name: c.name, description: c.description ?? "", days: c.days });
+    const publicClub = (c) => ({ code: String(c.code), name: c.name, description: c.description ?? "", days: c.days, ...(c.similar ? { similar: c.similar } : {}) });
     const days = DAYS.map((day) => ({
       day,
       label: DAY_LABELS[day],

@@ -169,6 +169,9 @@ function mainView(me, { justSubmitted = false } = {}) {
   const multi = [...new Map(days.flatMap((d) => [...d.clubs, ...d.locked]).filter((c) => c.days.length > 1).map((c) => [c.code, c])).values()];
   const earlierClashes = (c) => multi.filter((o) => o.code !== c.code &&
     DAY_KEYS.indexOf(o.days[0]) < DAY_KEYS.indexOf(c.days[0]) && o.days.some((x) => c.days.includes(x)));
+  const allClubs = [...new Map(days.flatMap((d) => [...d.clubs, ...d.locked]).map((c) => [c.code, c])).values()];
+  const earlierSimilar = (c) => (c.similar ? allClubs.filter((o) => o.code !== c.code && o.similar === c.similar &&
+    DAY_KEYS.indexOf(o.days[0]) < DAY_KEYS.indexOf(c.days[0])) : []);
   const shared = (a, b) => a.days.filter((x) => b.days.includes(x)).map((x) => DAY_ACC[x]).join(" και ");
 
   // Locked rows of a later day: position = rank on the first day; equal
@@ -205,14 +208,17 @@ function mainView(me, { justSubmitted = false } = {}) {
       const saved = submission?.preferences?.[d.day];
       const order = saved ?? initialOrder(d.clubs.map((c) => c.code), `${student.am}:${d.day}`);
       const items = d.clubs.map((c) => {
-        if (c.days.length === 1) return c;
-        const clashes = earlierClashes(c);
-        return {
-          ...c, tag: `${kind(c)}: ${daysText(c)}`,
-          note: clashes.length
-            ? clashes.map((o) => `Αν το παιδί μπει στον όμιλο «${o.name}» ${DAY_ACC[o.days[0]]}, αυτός παραλείπεται (έχουν και οι δύο ${shared(o, c)}).`).join(" ")
-            : null,
-        };
+        const notes = [];
+        if (c.days.length > 1) {
+          for (const o of earlierClashes(c)) notes.push(`Αν το παιδί μπει στον όμιλο «${o.name}» ${DAY_ACC[o.days[0]]}, αυτός παραλείπεται (έχουν και οι δύο ${shared(o, c)}).`);
+        }
+        // Similar clubs decided on an earlier day: at most one per week
+        const similar = earlierSimilar(c);
+        if (similar.length) {
+          notes.push(`Παρεμφερής με ${similar.map((o) => `«${o.name}» (${DAY_NAMES[o.days[0]]})`).join(", ")}: αν το παιδί μπει ${similar.length > 1 ? "σε κάποιον από αυτούς" : "εκεί"}, αυτός παραλείπεται.`);
+        }
+        if (c.days.length === 1 && !notes.length) return c;
+        return { ...c, ...(c.days.length > 1 ? { tag: `${kind(c)}: ${daysText(c)}` } : {}), note: notes.join(" ") || null };
       });
       rankers[d.day] = createRanker({
         items, order, disabled: !canEdit, label: `Σειρά ομίλων ${d.label}`,

@@ -1,5 +1,7 @@
 // Clubs & teachers from our template (templates/omiloi_protypo.xlsx):
-//   «Όμιλοι»:        Κωδικός | Όνομα ομίλου | Ημέρα 1 | Ημέρα 2 | Ημέρα 3 | Τάξεις | Χωρητικότητα | Ώρες | Περιγραφή
+//   «Όμιλοι»:        Κωδικός | Όνομα ομίλου | Ημέρα 1 | Ημέρα 2 | Ημέρα 3 | Τάξεις | Χωρητικότητα | Ώρες | Περιγραφή | Παρεμφερείς
+// «Παρεμφερείς» (optional): clubs with the same word are similar — a student
+// gets at most one of them in the week.
 //   «Εκπαιδευτικοί»: Κωδικός ομίλου | Επώνυμο | Όνομα | Email | Όμιλος (έλεγχος)
 // «Ώρες» and «Όμιλος (έλεγχος)» are formulas in the template and are ignored.
 
@@ -17,6 +19,7 @@ const CLUB_FIELDS = {
   grades: ["Τάξεις"],
   capacity: ["Χωρητικότητα"],
   description: ["Περιγραφή"],
+  similar: ["Παρεμφερείς", "Παρεμφερής", "Ομάδα παρεμφερών"],
 };
 const TEACHER_FIELDS = {
   code: ["Κωδικός ομίλου"],
@@ -34,6 +37,9 @@ function parseGrades(value) {
   if (parts.length === 0 || parts.some((p) => !GRADES.includes(p))) return null;
   return GRADES.filter((g) => parts.includes(g));
 }
+
+/** «Αγγλικά », «ΑΓΓΛΙΚΆ» → «ΑΓΓΛΙΚΑ»; empty → "" (not in a group). */
+export const normalizeSimilar = (value) => normalizeName(cellText(value));
 
 const EMAIL = /^[a-z0-9._%+-]+@sch\.gr$/;
 
@@ -99,6 +105,7 @@ export function importClubs(sheets) {
       grades: grades ?? [],
       capacity: capacity ?? NaN,
       description: cellText(get("description")),
+      ...(normalizeSimilar(get("similar")) ? { similar: normalizeSimilar(get("similar")) } : {}),
     };
     // Shared rules (also used when clubs are edited on the platform); skip
     // fields already reported above in more detail.

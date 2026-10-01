@@ -155,6 +155,12 @@ try {
   if (!football.includes("Αν το παιδί μπει στον όμιλο «Θεατρική παράσταση «Αντιγόνη»» τη Δευτέρα, αυτός παραλείπεται")) throw new Error(`clash note: ${football}`);
   step("parent: clash note on Tuesday's double club");
 
+  // Thursday's «Επιτραπέζια παιχνίδια» is similar to Tuesday's «Σκάκι»
+  await parent.click("nav.day-tabs button:has-text('Πέμπτη')");
+  const games = await parent.locator("ol.ranker[aria-label='Σειρά ομίλων Πέμπτη'] li:has-text('Επιτραπέζια')").textContent();
+  if (!games.includes("Παρεμφερής με «Σκάκι» (Τρίτη)")) throw new Error(`similar note: ${games}`);
+  step("parent: similar-club note on Thursday");
+
   // Thursday: one list; the locked clubs keep their first-day numbers
   // («Ποδόσφαιρο» 1, «Αντιγόνη» 3) and the free clubs take 2 and 4.
   await parent.click("nav.day-tabs button:has-text('Πέμπτη')");
