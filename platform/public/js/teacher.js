@@ -50,7 +50,7 @@ async function loginView(notice) {
   if (pub.teacherCode) return codeLoginView(notice, pub);
   if (pub.mailEnabled === false) {
     show(app, el("h1", {}, "Σύνδεση εκπαιδευτικού"), notice,
-      message("info", "Τον προσωπικό σας σύνδεσμο εισόδου θα σας τον στείλει η διαχείριση της πλατφόρμας. Ανοίξτε τον από τη συσκευή σας· ισχύει μία εβδομάδα."),
+      message("info", "Η είσοδος εκπαιδευτικών δεν έχει ενεργοποιηθεί ακόμα. Η διαχείριση της πλατφόρμας θα σας δώσει τον κωδικό εκπαιδευτικών (ή έναν προσωπικό σύνδεσμο εισόδου)."),
       pub.contact ? el("p.small.muted", {}, `Επικοινωνία: ${pub.contact}`) : null);
     return;
   }
