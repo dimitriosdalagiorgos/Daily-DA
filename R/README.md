@@ -18,7 +18,7 @@ install.packages(c("dplyr", "readr", "tidyr", "purrr", "stringr", "writexl"))
 
 ## Εκτέλεση
 
-1. Από την πλατφόρμα (σελίδα διαχειριστή): **Εξαγωγή δεδομένων για R** → φάκελος με τα αρχεία:
+1. Από την πλατφόρμα (διαχείριση → «Κατανομή» → **«Δεδομένα για R (.zip)»**) → αποσυμπιέστε το σε έναν φάκελο με τα αρχεία:
    `students.csv`, `clubs.csv`, `preferences.csv`, `teacher_lists.csv`, `mandatory_grades.csv`, `seed.txt`, `lottery.csv`.
 2. Από τον φάκελο του αποθετηρίου:
 

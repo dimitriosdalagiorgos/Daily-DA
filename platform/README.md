@@ -8,7 +8,7 @@
 
 ```sh
 cd platform
-npm run dev -- --demo     # δοκιμαστικό σχολείο: 60 μαθητές, 12 όμιλοι
+npm run dev -- --demo     # δοκιμαστικό σχολείο: 60 μαθητές, 13 όμιλοι
 # ή
 npm run dev               # κρατά τα δεδομένα στο .data/dev-store.json
 npm run dev -- --demo --no-mail   # όπως τώρα στο Netlify: χωρίς email
@@ -23,7 +23,9 @@ npm run dev -- --demo --no-mail   # όπως τώρα στο Netlify: χωρίς
 | Φάκελος | Περιεχόμενο |
 |---|---|
 | `public/` | Σελίδες: `index.html` (γονείς), `help.html` (βοήθεια γονέων), `teacher.html` και `admin.html` — αυτές οι δύο σερβίρονται μόνο στις κρυφές διευθύνσεις `TEACHER_PATH`/`ADMIN_PATH` (`src/server/paths.js`, `scripts/build.mjs`) |
-| `src/server/` | API (`app.js`), αποθήκευση (`store.js`), sessions/κωδικοί (`auth.js`) |
+| `src/server/` | API (`app.js`), αποθήκευση (`store.js`), sessions/κωδικοί (`auth.js`), κρυφές διευθύνσεις (`paths.js`) |
+| `src/export/` | Πακέτο για R, αναφορές μαθητή (`story.js`), στατιστικά (`stats.js`), αρχεία λιστών εκπαιδευτικών |
+| `server/start.mjs` | Server παραγωγής για δικό σας μηχάνημα (βλ. README του αποθετηρίου, §6) |
 | `dev/` | Τοπικός server και δοκιμαστικά δεδομένα |
 | `netlify/functions/api.mjs` | Το ίδιο API στο Netlify, με αποθήκευση Supabase (`src/server/store-supabase.js`, πίνακες: `supabase/schema.sql`) |
 
@@ -65,6 +67,7 @@ npm test
 Διαδρομή σε browser (Playwright + Chromium) όλης της χρονιάς στο δοκιμαστικό σχολείο:
 
 ```sh
+npm install --no-save playwright && npx playwright install chromium   # μία φορά
 npm run dev -- --demo &
 node e2e/walkthrough.mjs --shots /tmp/shots
 ```
