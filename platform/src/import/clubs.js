@@ -2,7 +2,10 @@
 //   «Όμιλοι»:        Κωδικός | Όνομα ομίλου | Ημέρα 1 | Ημέρα 2 | Ημέρα 3 | Τάξεις | Χωρητικότητα | Ώρες | Περιγραφή | Παρεμφερείς
 // «Παρεμφερείς» (optional): clubs with the same word are similar — a student
 // gets at most one of them in the week.
-//   «Εκπαιδευτικοί»: Κωδικός ομίλου | Επώνυμο | Όνομα | Email | Όμιλος (έλεγχος)
+//   «Εκπαιδευτικοί»: Κωδικός ομίλου | Επώνυμο | Όνομα | Email | ΑΜ ή ΑΦΜ | Όμιλος (έλεγχος)
+// «ΑΜ ή ΑΦΜ» (optional): the teacher's registry number (permanent staff) or
+// tax number (substitutes); with the teachers' common code it identifies the
+// teacher at login. Kept only as a keyed hash on the server (see app.js).
 // «Ώρες» and «Όμιλος (έλεγχος)» are formulas in the template and are ignored.
 
 import { dayFromLabel } from "../algorithm/days.js";
@@ -26,7 +29,21 @@ const TEACHER_FIELDS = {
   surname: ["Επώνυμο"],
   name: ["Όνομα"],
   email: ["Email", "E-mail", "Ηλεκτρονικό ταχυδρομείο"],
+  personalId: ["ΑΜ ή ΑΦΜ", "ΑΜ/ΑΦΜ", "ΑΜ - ΑΦΜ", "ΑΦΜ ή ΑΜ", "ΑΜ", "ΑΦΜ", "Α.Μ.", "Α.Φ.Μ.", "Αριθμός μητρώου"],
 };
+const TEACHER_REQUIRED = ["code", "surname", "name", "email"];
+
+/**
+ * ΑΜ or ΑΦΜ as typed or as Excel keeps it: digits only, without spaces, dots
+ * or leading zeros (Excel drops them from ΑΦΜ like 012345678) → "12345678";
+ * "" if empty, null if not a number.
+ */
+export function normalizePersonalId(value) {
+  const text = cellText(value).replace(/[\s.]/g, "");
+  if (!text) return "";
+  if (!/^\d{4,12}(\.0+)?$/.test(text)) return null;
+  return text.replace(/\.0+$/, "").replace(/^0+(?=\d)/, "");
+}
 
 const DAY_BY_KEY = new Map(["Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή"].map((l) => [normalizeName(l), dayFromLabel(l)]));
 const parseDay = (value) => DAY_BY_KEY.get(normalizeName(value)) ?? null;
@@ -138,7 +155,7 @@ export function importClubs(sheets) {
 
 function importTeachers(rows, clubs, rowOfCode, problems) {
   const labels = Object.fromEntries(Object.entries(TEACHER_FIELDS).map(([f, [l]]) => [f, `«${l}»`]));
-  const th = findHeader(rows, TEACHER_FIELDS, Object.keys(TEACHER_FIELDS));
+  const th = findHeader(rows, TEACHER_FIELDS, TEACHER_REQUIRED);
   if (!("columns" in th)) {
     problems.push(missingColumns("Εκπαιδευτικοί", th, labels));
     return [];
@@ -160,6 +177,8 @@ function importTeachers(rows, clubs, rowOfCode, problems) {
     }
     const email = cellText(get("email")).toLowerCase();
     if (!EMAIL.test(email)) rowProblems.push({ ...at, field: "email", message: `Μη έγκυρο email «${cellText(get("email"))}» (μόνο διευθύνσεις @sch.gr).` });
+    const personalId = "personalId" in th.columns ? normalizePersonalId(get("personalId")) : "";
+    if (personalId === null) rowProblems.push({ ...at, field: "personalId", message: `Μη έγκυρος ΑΜ ή ΑΦΜ «${cellText(get("personalId"))}» (μόνο ψηφία).` });
 
     if (rowProblems.length) {
       problems.push(...rowProblems.map((p) => ({ level: "error", ...p })));
@@ -174,15 +193,32 @@ function importTeachers(rows, clubs, rowOfCode, problems) {
 
     const teacher = byEmail.get(email);
     if (!teacher) {
-      byEmail.set(email, { email, surname: cellText(get("surname")), name: cellText(get("name")), clubs: [code], row: at.row });
+      byEmail.set(email, { email, surname: cellText(get("surname")), name: cellText(get("name")), clubs: [code], row: at.row, personalId });
     } else {
       if (normalizeName(teacher.surname) !== normalizeName(get("surname")) || normalizeName(teacher.name) !== normalizeName(get("name"))) {
         problems.push({ level: "warning", ...at, message: `Το email ${email} έχει άλλο ονοματεπώνυμο στη γραμμή ${teacher.row}.` });
       }
+      if (personalId && teacher.personalId && personalId !== teacher.personalId) {
+        problems.push({ level: "error", ...at, field: "personalId", message: `Το email ${email} έχει άλλον ΑΜ/ΑΦΜ στη γραμμή ${teacher.row}.` });
+      }
+      teacher.personalId ||= personalId;
       teacher.clubs.push(code);
     }
   }
-  return [...byEmail.values()].map(({ row, ...t }) => t);
+  const teachers = [...byEmail.values()];
+  // One ΑΜ/ΑΦΜ per teacher; without one, the teacher can log in only with a personal link.
+  const byId = new Map();
+  for (const t of teachers) {
+    if (!t.personalId) continue;
+    if (byId.has(t.personalId)) {
+      problems.push({ level: "error", sheet: "Εκπαιδευτικοί", row: t.row, field: "personalId", message: `Ο ίδιος ΑΜ/ΑΦΜ και στη γραμμή ${byId.get(t.personalId).row} (άλλο email).` });
+    } else byId.set(t.personalId, t);
+  }
+  const withoutId = teachers.filter((t) => !t.personalId);
+  if (withoutId.length && "personalId" in th.columns) {
+    problems.push({ level: "warning", sheet: "Εκπαιδευτικοί", message: `Χωρίς ΑΜ/ΑΦΜ: ${withoutId.map((t) => `${t.surname} ${t.name}`).join(", ")}. Δεν θα μπορούν να συνδεθούν με τον κοινό κωδικό εκπαιδευτικών (μόνο με προσωπικό σύνδεσμο).` });
+  }
+  return teachers.map(({ row, personalId, ...t }) => (personalId ? { ...t, personalId } : t));
 }
 
 function summarize(clubs, teachers) {

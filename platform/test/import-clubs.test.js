@@ -159,3 +159,21 @@ test("optional column «Παρεμφερείς»: same word (any case or accents
   assert.deepEqual(r.problems.filter((p) => p.level === "error"), []);
   assert.deepEqual(r.clubs.map((c) => c.similar), ["ΑΓΓΛΙΚΑ", "ΑΓΓΛΙΚΑ", undefined]);
 });
+
+test("teachers' ΑΜ/ΑΦΜ: optional; digits only; leading zeros dropped; one per teacher", () => {
+  const clubs = [["Κωδικός", "Όνομα ομίλου", "Ημέρα 1", "Ημέρα 2", "Ημέρα 3", "Τάξεις", "Χωρητικότητα"], [1, "Α", "Δευτέρα", "", "", "Α", 5], [2, "Β", "Τρίτη", "", "", "Α", 5]];
+  const head = ["Κωδικός ομίλου", "Επώνυμο", "Όνομα", "Email", "ΑΦΜ"];
+  let r = importClubs({ clubs, teachers: [head, [1, "Χ", "Α", "a@sch.gr", "012 345 678"], [2, "Χ", "Α", "a@sch.gr", ""], [2, "Ψ", "Β", "b@sch.gr", 612345]] });
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.teachers.map((t) => [t.email, t.personalId, t.clubs]), [["a@sch.gr", "12345678", [1, 2]], ["b@sch.gr", "612345", [2]]]);
+  r = importClubs({ clubs, teachers: [head, [1, "Χ", "Α", "a@sch.gr", "12-34"], [2, "Ψ", "Β", "b@sch.gr", ""]] });
+  assert.match(r.problems.map((p) => p.message).join(" "), /Μη έγκυρος ΑΜ ή ΑΦΜ «12-34»/);
+  r = importClubs({ clubs, teachers: [head, [1, "Χ", "Α", "a@sch.gr", "612345"], [2, "Ψ", "Β", "b@sch.gr", "0612345"]] });
+  assert.ok(r.problems.some((p) => p.level === "error" && /ίδιος ΑΜ\/ΑΦΜ/.test(p.message)));
+  r = importClubs({ clubs, teachers: [head, [1, "Χ", "Α", "a@sch.gr", "612345"], [2, "Χ", "Α", "a@sch.gr", "700100"]] });
+  assert.ok(r.problems.some((p) => p.level === "error" && /άλλον ΑΜ\/ΑΦΜ/.test(p.message)));
+  // Without the column: no warning, nobody has one
+  r = importClubs({ clubs, teachers: [head.slice(0, 4), [1, "Χ", "Α", "a@sch.gr"], [2, "Ψ", "Β", "b@sch.gr"]] });
+  assert.deepEqual(r.problems, []);
+  assert.ok(r.teachers.every((t) => !("personalId" in t)));
+});

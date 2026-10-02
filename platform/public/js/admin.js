@@ -163,7 +163,7 @@ function overview() {
         el("label", { for: "contact" }, "Επικοινωνία για γονείς", el("span.hint", {}, "Εμφανίζεται όταν αποτυγχάνει η σύνδεση."), f.contact),
         el("label", { for: "deadline" }, "Προθεσμία δηλώσεων", f.deadline),
         el("label", { for: "ppw" }, "Κοινός κωδικός γονέων", el("span.hint", {}, "Ίδιος για όλους· ανακοινώνεται από το σχολείο."), f.parentPassword),
-        el("label", { for: "tpw" }, "Κοινός κωδικός εκπαιδευτικών", el("span.hint", {}, "Ίδιος για όλους τους εκπαιδευτικούς· μπορεί να είναι και ίδιος με των γονέων. Αν αλλάξει, όσοι είχαν συνδεθεί αποσυνδέονται."), f.teacherPassword)),
+        el("label", { for: "tpw" }, "Κοινός κωδικός εκπαιδευτικών", el("span.hint", {}, "Ίδιος για όλους· μαζί με τον ΑΜ ή ΑΦΜ του ο καθένας βλέπει μόνο τους ομίλους του. Μπορεί να είναι ίδιος με των γονέων. Αν αλλάξει, όσοι είχαν συνδεθεί αποσυνδέονται."), f.teacherPassword)),
       el("fieldset", { style: "border:0;padding:0;margin:12px 0 0" },
         el("legend", { style: "font-weight:600" }, "Υποχρεωτική ένταξη σε όμιλο"),
         el("p.small.muted", { style: "margin:2px 0 6px" }, "Για αυτές τις τάξεις κάθε μαθητής πρέπει να πάρει όμιλο κάθε ημέρα: οι δηλώσεις δεν ανοίγουν αν οι θέσεις δεν φτάνουν, και μετά την κατανομή εμφανίζεται όποιος έμεινε εκτός."),
@@ -474,7 +474,7 @@ function addressesCard() {
     el("p.small.muted", {}, "Δώστε σε κάθε ομάδα μόνο τη δική της διεύθυνση. Οι σελίδες δεν έχουν συνδέσμους μεταξύ τους, και η καθεμία ζητά τον δικό της κωδικό."),
     el("div.table-wrap", {}, el("table", {}, el("tbody", {},
       row("Γονείς", `${location.origin}/`, "κοινός κωδικός γονέων + στοιχεία μαθητή"),
-      state.teacherPath ? row("Εκπαιδευτικοί", `${location.origin}${state.teacherPath}`, "κοινός κωδικός εκπαιδευτικών") : null,
+      state.teacherPath ? row("Εκπαιδευτικοί", `${location.origin}${state.teacherPath}`, "κοινός κωδικός εκπαιδευτικών + ΑΜ ή ΑΦΜ") : null,
       row("Διαχείριση", `${location.origin}${location.pathname}`, "μόνο για εσάς")))));
 }
 
@@ -504,16 +504,17 @@ function teacherLinks() {
     }));
     cell.append(make);
     return el("tr", {}, el("td", {}, `${t.name} ${t.surname}`, el("br"), el("span.small.muted", {}, t.email)),
-      el("td.small", {}, state.clubs.filter((c) => t.clubs.includes(c.code)).map((c) => c.name).join(", ")), cell);
+      el("td.small", {}, state.clubs.filter((c) => t.clubs.includes(c.code)).map((c) => c.name).join(", ")),
+      el("td.small", {}, t.hasPersonalId ? "✓" : el("span.muted", { title: "Χωρίς ΑΜ/ΑΦΜ στο αρχείο ομίλων: δεν μπορεί να συνδεθεί με τον κοινό κωδικό" }, "—")), cell);
   });
   return el("section.card", {},
     el("h2", { style: "margin-top:0" }, "Σύνδεσμοι εισόδου εκπαιδευτικών"),
     el("p.small.muted", {}, state.settings.teacherPasswordSet
-      ? "Οι εκπαιδευτικοί μπαίνουν με τον κοινό κωδικό εκπαιδευτικών· οι προσωπικοί σύνδεσμοι δεν χρειάζονται. Αν θέλετε, εξακολουθούν να λειτουργούν: ο εκπαιδευτικός με σύνδεσμο βλέπει μόνο τους δικούς του ομίλους."
+      ? "Οι εκπαιδευτικοί μπαίνουν με τον κοινό κωδικό εκπαιδευτικών και τον ΑΜ ή ΑΦΜ τους (στήλη «ΑΜ ή ΑΦΜ» του αρχείου ομίλων) και βλέπουν μόνο τους δικούς τους ομίλους. Όσοι δεν έχουν ΑΜ/ΑΦΜ (—) χρειάζονται προσωπικό σύνδεσμο ή συμπλήρωση του αρχείου."
       : "Χωρίς υπηρεσία email, στείλτε εσείς σε κάθε εκπαιδευτικό τον προσωπικό του σύνδεσμο (π.χ. από το email του σχολείου), ή ορίστε κοινό κωδικό εκπαιδευτικών στην «Πορεία & ρυθμίσεις». Ο σύνδεσμος ισχύει μία εβδομάδα· αν λήξει, φτιάξτε νέο."),
     out,
     rows.length ? el("div.table-wrap", {}, el("table", {},
-      el("thead", {}, el("tr", {}, el("th", {}, "Εκπαιδευτικός"), el("th", {}, "Όμιλοι"), el("th", {}, ""))),
+      el("thead", {}, el("tr", {}, el("th", {}, "Εκπαιδευτικός"), el("th", {}, "Όμιλοι"), el("th", {}, "ΑΜ/ΑΦΜ"), el("th", {}, ""))),
       el("tbody", {}, rows))) : el("p.muted", {}, "Δεν υπάρχουν εκπαιδευτικοί ακόμα (ανεβάστε το αρχείο ομίλων)."));
 }
 
@@ -793,11 +794,11 @@ function history() {
   };
   const draw = () => {
     const f = filter.value;
-    const shown = [...events].reverse().filter((e) => !f || (f === "admin" ? e.who === "admin" : f === "parent" ? String(e.who).startsWith("parent:") : e.who.includes("@") || e.who === "teacher-code" || e.what.startsWith("teacher")));
+    const shown = [...events].reverse().filter((e) => !f || (f === "admin" ? e.who === "admin" : f === "parent" ? String(e.who).startsWith("parent:") : e.who.includes("@") || e.what.startsWith("teacher")));
     box.replaceChildren(el("div.table-wrap", {}, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Πότε"), el("th", {}, "Ποιος"), el("th", {}, "Ενέργεια"), el("th", {}, "Λεπτομέρειες"))),
       el("tbody", {}, shown.map((e) => el("tr", {},
-        el("td.small", {}, formatDateTime(e.at)), el("td.small", {}, e.who === "teacher-code" ? "εκπαιδευτικός (κοινός κωδικός)" : String(e.who).replace(/^parent:/, "γονέας ΑΜ ")),
+        el("td.small", {}, formatDateTime(e.at)), el("td.small", {}, String(e.who).replace(/^parent:/, "γονέας ΑΜ ")),
         el("td", {}, EVENT_LABELS[e.what] ?? e.what), el("td.small.muted", {}, detail(e))))))));
   };
   filter.addEventListener("change", draw);

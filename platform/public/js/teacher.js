@@ -8,7 +8,15 @@ const logout = $("#logout");
 const DAY_LABELS = { mon: "Δευτέρα", tue: "Τρίτη", wed: "Τετάρτη", thu: "Πέμπτη", fri: "Παρασκευή" };
 
 api.onExpired = () => { api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
-logout.addEventListener("click", () => { api.setToken(null); loginView(message("ok", "Αποσυνδεθήκατε.")); });
+// Clubs with ticks not saved yet: leaving or logging out asks first
+const unsaved = {};
+const hasUnsaved = () => Object.values(unsaved).some(Boolean);
+logout.addEventListener("click", () => {
+  if (hasUnsaved() && !confirm("Υπάρχουν αλλαγές που δεν αποθηκεύσατε. Αποσύνδεση χωρίς αποθήκευση;")) return;
+  for (const k of Object.keys(unsaved)) delete unsaved[k];
+  api.setToken(null);
+  loginView(message("ok", "Αποσυνδεθήκατε."));
+});
 
 // Help inside the page (the public help page is for parents only)
 const helpButton = $("#help");
@@ -70,18 +78,21 @@ async function loginView(notice) {
   show(app, el("h1", {}, "Σύνδεση εκπαιδευτικού"), notice, form);
 }
 
-// Login with the teachers' common code (set by the admin)
+// Login with the teachers' common code (set by the admin) and the teacher's own ΑΜ or ΑΦΜ
 function codeLoginView(notice, pub) {
   const out = el("div");
   const password = el("input", { id: "tcode", type: "password", required: true, autocomplete: "current-password", size: 14 });
+  const personalId = el("input", { id: "tid", type: "text", required: true, inputmode: "numeric", autocomplete: "off", size: 12 });
   const form = el("form.card", {},
-    el("div.login-short", {}, el("label", { for: "tcode" }, "Κωδικός εκπαιδευτικών", password, el("span.hint.after", {}, "Τον έχει δώσει η διαχείριση της πλατφόρμας."))),
+    el("div.login-short", {},
+      el("label", { for: "tcode" }, "Κωδικός εκπαιδευτικών", password, el("span.hint.after", {}, "Τον έχει δώσει η διαχείριση της πλατφόρμας.")),
+      el("label", { for: "tid" }, "ΑΜ ή ΑΦΜ σας", personalId, el("span.hint.after", {}, "Μόνιμοι: αριθμός μητρώου. Αναπληρωτές: ΑΦΜ."))),
     out,
     el("div.actions", {}, el("button.primary", { type: "submit" }, "Σύνδεση")));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     busy(form.querySelector("button"), out, async () => {
-      const { token } = await api("POST", "/api/teacher/code-login", { password: password.value });
+      const { token } = await api("POST", "/api/teacher/code-login", { password: password.value, personalId: personalId.value });
       api.setToken(token);
       mainView(await api("GET", "/api/teacher/me"));
     }).then(() => {
@@ -92,13 +103,8 @@ function codeLoginView(notice, pub) {
   password.focus();
 }
 
-const CLUB_KEY = "omiloi.teacherClub";
-const remember = (code) => { try { localStorage.setItem(CLUB_KEY, String(code)); } catch { /* private window */ } };
-const remembered = () => { try { return localStorage.getItem(CLUB_KEY); } catch { return null; } };
-
 function mainView(me) {
   logout.classList.remove("hidden");
-  if (me.shared) return sharedView(me);
   const nodes = [
     el("h1", {}, `${me.teacher.name} ${me.teacher.surname}`),
     me.canEdit
@@ -108,30 +114,6 @@ function mainView(me) {
   for (const club of me.clubs) nodes.push(clubCard(club, me));
   if (me.clubs.length === 0) nodes.push(message("warn", "Δεν υπάρχει όμιλος με το email σας."));
   show(app, nodes);
-}
-
-// With the common code: choose the club, then the same card as above.
-function sharedView(me) {
-  const holder = el("div");
-  const sorted = [...me.clubs].sort((a, b) => a.code - b.code);
-  const picker = el("select", { id: "club", "aria-label": "Ο όμιλός σας" },
-    el("option", { value: "" }, "— Επιλέξτε τον όμιλό σας —"),
-    sorted.map((c) => el("option", { value: String(c.code) }, `${c.code} · ${c.name} (${c.days.map((d) => DAY_LABELS[d]).join(" + ")})`)));
-  const draw = () => {
-    const club = sorted.find((c) => String(c.code) === picker.value);
-    holder.replaceChildren(club ? clubCard(club, me) : el("p.muted", {}, "Επιλέξτε τον όμιλό σας για να δείτε τους μαθητές."));
-    if (club) remember(club.code);
-  };
-  picker.addEventListener("change", draw);
-  if (sorted.some((c) => String(c.code) === remembered())) picker.value = remembered();
-  show(app,
-    el("h1", {}, "Λίστες ομίλων"),
-    me.canEdit
-      ? message("info", "Επιλέξτε τον όμιλό σας και, αν θέλετε, τσεκάρετε τους μαθητές που προτιμάτε, έως τις θέσεις του. Αλλάζετε μόνο τη λίστα του δικού σας ομίλου. Οι μαθητές της λίστας έχουν προτεραιότητα αν δηλώσουν τον όμιλο — δεν τοποθετούνται υποχρεωτικά. Τις θέσεις τις ορίζει η διαχείριση.")
-      : message("warn", me.phase === "setup" ? "Η φάση των εκπαιδευτικών δεν έχει ανοίξει ακόμα." : "Οι λίστες κλείδωσαν. Για διορθώσεις επικοινωνήστε με τη διαχείριση."),
-    sorted.length ? el("label", { for: "club" }, "Ο όμιλός σας", picker) : message("warn", "Δεν υπάρχουν όμιλοι ακόμα."),
-    holder);
-  draw();
 }
 
 function clubCard(club, me) {
@@ -151,7 +133,32 @@ function clubCard(club, me) {
   const byAm = new Map(club.eligible.map((s) => [s.am, s]));
   const label = (s) => `${s.surname} ${s.name}`;
 
+  const saved = () => chosen.size === club.list.length && club.list.every((am) => chosen.has(am));
+  const unsavedNote = el("span.small.muted");
+  const visibleRows = () => {
+    const q = normalizeName(search.value);
+    return club.eligible.filter((s) => (!gradeFilter.value || s.grade === gradeFilter.value)
+      && (!onlyChosen.checked || chosen.has(s.am))
+      && (!q || normalizeName(label(s)).includes(q) || s.am.startsWith(search.value.trim())));
+  };
+  const selectAll = el("button.small", { type: "button", disabled: !me.canEdit }, "Επιλογή όλων");
+  const clearAll = el("button.small", { type: "button", disabled: !me.canEdit }, "Αποεπιλογή όλων");
+  selectAll.addEventListener("click", () => {
+    const add = visibleRows().filter((s) => !chosen.has(s.am));
+    const free = club.capacity - chosen.size;
+    if (add.length > free) {
+      show(out, message("warn", `Δεν χωρούν: θα προστίθεντο ${add.length} μαθητές, ενώ οι ελεύθερες θέσεις είναι ${free}. Περιορίστε τη λίστα με το φίλτρο τάξης ή την αναζήτηση, ή τσεκάρετε έναν έναν.`));
+      return;
+    }
+    for (const s of add) chosen.add(s.am);
+    show(out, null);
+    renderCount(); syncBoxes();
+  });
+  clearAll.addEventListener("click", () => { chosen.clear(); show(out, null); renderCount(); syncBoxes(); });
+
   const renderCount = () => {
+    unsavedNote.textContent = saved() ? "" : "Μη αποθηκευμένες αλλαγές";
+    unsaved[club.code] = !saved();
     count.textContent = `${chosen.size} / ${club.capacity}`;
     count.className = `badge ${chosen.size > club.capacity ? "warn" : "primary"}`;
     fullNote.replaceChildren(me.canEdit && full() ? message("info", `Η λίστα έφτασε τις ${club.capacity} θέσεις του ομίλου. Για να προσθέσετε άλλον, αφαιρέστε πρώτα κάποιον.`) : "");
@@ -162,10 +169,7 @@ function clubCard(club, me) {
       : el("span.muted", {}, "Κανένας — χωρίς λίστα, όσοι δηλώσουν τον όμιλο κρίνονται με την κλήρωση."));
   };
   const renderList = () => {
-    const q = normalizeName(search.value);
-    const rows = club.eligible.filter((s) => (!gradeFilter.value || s.grade === gradeFilter.value)
-      && (!onlyChosen.checked || chosen.has(s.am))
-      && (!q || normalizeName(label(s)).includes(q) || s.am.startsWith(search.value.trim())));
+    const rows = visibleRows();
     listBox.replaceChildren(...rows.map((s) => {
       const box = el("input", { type: "checkbox", checked: chosen.has(s.am), disabled: !me.canEdit || (!chosen.has(s.am) && full()), dataset: { am: s.am } });
       box.addEventListener("change", () => { if (box.checked) chosen.add(s.am); else chosen.delete(s.am); renderCount(); syncBoxes(); });
@@ -186,25 +190,35 @@ function clubCard(club, me) {
 
   const save = el("button.primary", { type: "button", disabled: !me.canEdit }, "Αποθήκευση");
   save.addEventListener("click", () => busy(save, out, async () => {
-    await api("PUT", `/api/teacher/clubs/${club.code}`, { ams: [...chosen] });
+    const { list } = await api("PUT", `/api/teacher/clubs/${club.code}`, { ams: [...chosen] });
+    // What is saved now (so the card and the "unsaved" note stay right)
+    Object.assign(club, { list: list.ams, updatedBy: list.updatedBy, updatedAt: list.updatedAt });
+    renderCount();
+    lastChange.textContent = changeText();
     show(out, message("ok", "Αποθηκεύτηκε."));
   }));
 
-  const by = { admin: "διαχείριση", "admin-file": "διαχείριση (από αρχείο)", "teacher-code": "εκπαιδευτικός (κοινός κωδικός)" }[club.updatedBy] ?? club.updatedBy;
+  const changeText = () => (club.updatedAt
+    ? `Τελευταία αλλαγή: ${{ admin: "διαχείριση", "admin-file": "διαχείριση (από αρχείο)" }[club.updatedBy] ?? club.updatedBy}, ${formatDateTime(club.updatedAt)}`
+    : "");
+  const lastChange = el("p.small.muted", {}, changeText());
   return el("section.card", {},
     el("h2", { style: "margin-top:0" }, club.name),
     el("p.muted.small", {}, `${club.days.map((d) => DAY_LABELS[d]).join(" + ")} · Τάξεις ${club.grades.join(", ")} · `, el("strong", {}, `${club.capacity} θέσεις`),
-      club.coTeachers.length ? ` · ${me.shared ? "Εκπαιδευτικοί" : "Μαζί με"}: ${club.coTeachers.join(", ")}` : ""),
-    club.coTeachers.length > (me.shared ? 1 : 0) ? message("info", "Ο όμιλος έχει κοινή λίστα για όλους τους εκπαιδευτικούς του. Συνεννοηθείτε ώστε να τη συμπληρώσει ένας.") : null,
-    club.updatedAt ? el("p.small.muted", {}, `Τελευταία αλλαγή: ${by}, ${formatDateTime(club.updatedAt)}`) : null,
+      club.coTeachers.length ? ` · Μαζί με: ${club.coTeachers.join(", ")}` : ""),
+    club.coTeachers.length ? message("info", "Ο όμιλος έχει κοινή λίστα για όλους τους εκπαιδευτικούς του. Συνεννοηθείτε ώστε να τη συμπληρώσει ένας.") : null,
+    lastChange,
     el("h3", {}, "Προτιμώμενοι μαθητές ", count),
     chosenBox,
     fullNote,
     el("div.filters", {}, search, gradeFilter, el("label.inline", {}, onlyChosen, " μόνο οι επιλεγμένοι")),
+    me.canEdit ? el("div.actions", { style: "margin:4px 0 8px" }, selectAll, clearAll,
+      el("span.small.muted", {}, "«Επιλογή όλων»: όσοι εμφανίζονται με τα τρέχοντα φίλτρα.")) : null,
     listBox,
     out,
-    el("div.actions", {}, save));
+    el("div.actions", {}, save, unsavedNote));
 }
 
+window.addEventListener("beforeunload", (e) => { if (hasUnsaved()) e.preventDefault(); });
 window.addEventListener("hashchange", () => { if (location.hash.includes("token=")) start(); });
 start();

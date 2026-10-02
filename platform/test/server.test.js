@@ -483,54 +483,81 @@ test("admin: «Παρεμφερείς» of a club can be set or cleared until de
   assert.equal(r.status, 200);
 });
 
-test("teachers' common code: any club, history, a new code ends old sessions", async () => {
+// The teachers' sheet with the optional «ΑΜ ή ΑΦΜ» column (ΑΦΜ with its leading zero lost, as Excel does)
+const TEACHER_ROWS_WITH_IDS = [
+  [...TEACHER_ROWS[0], "ΑΜ ή ΑΦΜ"],
+  [...TEACHER_ROWS[1], "612345"],
+  [...TEACHER_ROWS[2], 12345678],
+  [...TEACHER_ROWS[3], ""],
+  [...TEACHER_ROWS[4], "700100"],
+  [...TEACHER_ROWS[5], "700200"],
+];
+
+test("teachers' common code + own ΑΜ/ΑΦΜ: only their clubs; the number is not kept; a new code ends old sessions", async () => {
   const { call, store } = setup();
   const admin = await adminLogin(call);
   await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
-  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  let r = await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS_WITH_IDS } });
+  assert.equal(r.status, 200);
+  assert.match(r.data.report.problems.map((p) => p.message).join(" "), /Χωρίς ΑΜ\/ΑΦΜ: ΜΗΧΑΝΙΚΟΥ ΑΝΝΑ/);
+  const stored = JSON.stringify(await store.get("teachers"));
+  for (const id of ["612345", "12345678", "700100"]) {
+    assert.ok(!stored.includes(id), `ΑΜ/ΑΦΜ ${id} must not be stored`);
+    assert.ok(!JSON.stringify(r.data).includes(id), `ΑΜ/ΑΦΜ ${id} must not be sent back`);
+  }
+  let state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual(state.teachers.map((t) => t.hasPersonalId), [true, true, false, true, true]);
+  assert.ok(!JSON.stringify(state).includes("idHash"));
+
   assert.equal((await call("GET", "/api/public")).data.teacherCode, false);
-  let r = await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" } });
+  r = await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: "612345" } });
   assert.equal(r.status, 409, "not enabled yet");
   assert.equal((await call("PUT", "/api/admin/settings", { token: admin, body: { teacherPassword: "abc" } })).status, 422);
   await call("PUT", "/api/admin/settings", { token: admin, body: { teacherPassword: "omiloi2026" } });
   assert.equal((await call("GET", "/api/public")).data.teacherCode, true);
-  const state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  state = (await call("GET", "/api/admin/state", { token: admin })).data;
   assert.equal(state.settings.teacherPasswordSet, true);
   assert.equal(state.settings.teacherPasswordHash, undefined, "the hash is not sent");
   assert.equal(state.teacherPath, "/e-test1234/");
 
-  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "wrong-code" } })).status, 401);
-  r = await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" } });
+  // Wrong code, unknown number, or a teacher without one: the same answer
+  for (const body of [{ password: "wrong-code", personalId: "612345" }, { password: "omiloi2026", personalId: "999999" }, { password: "omiloi2026", personalId: "" }]) {
+    r = await call("POST", "/api/teacher/code-login", { body });
+    assert.equal(r.status, 401);
+    assert.match(r.data.error, /κωδικός ή ο ΑΜ\/ΑΦΜ/);
+  }
+  // ΑΦΜ typed with its leading zero matches the number Excel kept without it
+  r = await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: " 012345678 " } });
   assert.equal(r.status, 200);
-  const teacher = r.data.token;
-  r = await call("GET", "/api/teacher/me", { token: teacher });
-  assert.equal(r.data.shared, true);
-  assert.equal(r.data.teacher, null);
-  assert.deepEqual(r.data.clubs.map((c) => c.code), [100, 101, 102, 103], "every club");
-  assert.deepEqual(r.data.clubs[0].coTeachers, ["ΕΛΕΝΗ ΘΕΑΤΡΙΚΟΥ", "ΝΙΚΟΣ ΣΚΗΝΙΚΟΥ"]);
+  const skin = r.data.token;
+  r = await call("GET", "/api/teacher/me", { token: skin });
+  assert.equal(r.data.teacher.email, "nskin@sch.gr");
+  assert.deepEqual(r.data.clubs.map((c) => c.code), [100], "only their own club");
 
-  assert.equal((await call("PUT", "/api/teacher/clubs/102", { token: teacher, body: { ams: ["9001"] } })).status, 409, "only in the teachers' phase");
   await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
-  r = await call("PUT", "/api/teacher/clubs/102", { token: teacher, body: { ams: ["9001"], capacity: 99 } });
+  assert.equal((await call("PUT", "/api/teacher/clubs/102", { token: skin, body: { ams: ["9001"] } })).status, 403, "not their club");
+  r = await call("PUT", "/api/teacher/clubs/100", { token: skin, body: { ams: ["9001"], capacity: 99 } });
   assert.equal(r.status, 200);
-  assert.equal(r.data.list.updatedBy, "teacher-code");
-  assert.equal(r.data.list.capacity, 5, "the capacity stays the admin's");
-  const events = (await store.readLog("events")).filter((e) => e.who === "teacher-code").map((e) => e.what);
+  assert.equal(r.data.list.updatedBy, "nskin@sch.gr", "the history names the teacher");
+  assert.equal(r.data.list.capacity, 1, "the capacity stays the admin's");
+  const events = (await store.readLog("events")).filter((e) => e.who === "nskin@sch.gr").map((e) => e.what);
   assert.deepEqual(events, ["teacher_login", "teacher_list"]);
 
   // A new code signs out whoever used the old one
   await call("PUT", "/api/admin/settings", { token: admin, body: { teacherPassword: "neos-kodikos" } });
-  r = await call("GET", "/api/teacher/me", { token: teacher });
+  r = await call("GET", "/api/teacher/me", { token: skin });
   assert.equal(r.status, 401);
   assert.match(r.data.error, /κωδικός άλλαξε/);
-  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" } })).status, 401);
+  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: "12345678" } })).status, 401);
+  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "neos-kodikos", personalId: "12345678" } })).status, 200);
 });
 
 test("teachers' common code is rate-limited per address", async () => {
   const { call } = setup();
   const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS_WITH_IDS } });
   await call("PUT", "/api/admin/settings", { token: admin, body: { teacherPassword: "omiloi2026" } });
-  for (let i = 0; i < 10; i++) assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "x" }, ip: "9.9.9.9" })).status, 401);
-  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" }, ip: "9.9.9.9" })).status, 429);
-  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" }, ip: "8.8.8.8" })).status, 200);
+  for (let i = 0; i < 10; i++) assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: String(100000 + i) }, ip: "9.9.9.9" })).status, 401);
+  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: "612345" }, ip: "9.9.9.9" })).status, 429);
+  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: "612345" }, ip: "8.8.8.8" })).status, 200);
 });

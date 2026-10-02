@@ -16,6 +16,7 @@ import { createApp } from "../src/server/app.js";
 import { createFileStore } from "../src/server/store.js";
 import { serveNode } from "../src/server/node-http.js";
 import { rolePaths } from "../src/server/paths.js";
+import { withIdHashes } from "../src/server/auth.js";
 import { importClubs } from "../src/import/clubs.js";
 import { importStudents } from "../src/import/students.js";
 import { demoClubRows, demoStudentRows } from "./demo-data.mjs";
@@ -28,6 +29,7 @@ const noMail = process.argv.includes("--no-mail");
 // Hidden addresses of the teachers' and admin's pages (fixed ones for development)
 const paths = rolePaths({ TEACHER_PATH: process.env.TEACHER_PATH ?? "ekpaideutikoi-dev", ADMIN_PATH: process.env.ADMIN_PATH ?? "diaxeirisi-dev" });
 
+const sessionSecret = process.env.SESSION_SECRET ?? "dev-only-secret-change-me";
 if (demo) rmSync(storePath, { force: true });
 const store = createFileStore(storePath);
 if (demo) {
@@ -35,12 +37,12 @@ if (demo) {
   const { clubs, teachers } = importClubs(demoClubRows());
   await store.set("students", students.map((s) => ({ ...s, loginException: false })));
   await store.set("clubs", clubs);
-  await store.set("teachers", teachers);
+  await store.set("teachers", withIdHashes(sessionSecret, teachers));
   await store.set("settings", { phase: "setup", schoolName: "Δοκιμαστικό Γυμνάσιο", contact: "Γραμματεία: 2310 000000" });
 }
 
 const env = {
-  SESSION_SECRET: process.env.SESSION_SECRET ?? "dev-only-secret-change-me",
+  SESSION_SECRET: sessionSecret,
   ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ?? "admin",
   BASE_URL: `http://localhost:${port}`,
   TEACHER_PATH: paths.teacher.slice(1, -1),

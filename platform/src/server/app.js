@@ -16,7 +16,7 @@ import { drawLottery } from "../algorithm/lottery.js";
 import { allocateWeek } from "../algorithm/allocate.js";
 import { clubsToRank, validateSubmission, validateTeacherList } from "../algorithm/validate.js";
 import { importStudents } from "../import/students.js";
-import { importClubs, normalizeSimilar } from "../import/clubs.js";
+import { importClubs, normalizePersonalId, normalizeSimilar } from "../import/clubs.js";
 import { importTeacherLists } from "../import/teacherLists.js";
 import { checkReadiness } from "../import/readiness.js";
 import { importLegacyResponses } from "../import/legacy.js";
@@ -25,7 +25,7 @@ import { buildRPackage, toCsv } from "../export/rPackage.js";
 import { GAP_REASONS, describeEvent, gapReasons, storiesByStudent } from "../export/story.js";
 import { createHash } from "node:crypto";
 import { makeZip } from "./zip.js";
-import { createRateLimiter, hashPassword, safeEqual, signToken, verifyPassword, verifyToken } from "./auth.js";
+import { createRateLimiter, hashPassword, personalIdHash, safeEqual, signToken, verifyPassword, verifyToken, withIdHashes } from "./auth.js";
 
 export const PHASES = ["setup", "teachers", "parents", "closed", "allocated", "published"];
 const phaseAtLeast = (phase, min) => PHASES.indexOf(phase) >= PHASES.indexOf(min);
@@ -185,7 +185,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       teacherPath: env.TEACHER_PATH ? `/${env.TEACHER_PATH}/` : null,
       students: students.map(({ am, grade, surname, name, loginException }) => ({ am, grade, surname, name, loginException: Boolean(loginException) })),
       clubs,
-      teachers,
+      teachers: teachers.map(({ idHash, ...t }) => ({ ...t, hasPersonalId: Boolean(idHash) })),
       teacherLists: lists,
       submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}) }])),
       uploads: uploads ?? {},
@@ -243,8 +243,11 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const settings = await getSettings();
     if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι όμιλοι κλείδωσαν με το άνοιγμα των δηλώσεων.");
     const { clubs: clubRows, teachers: teacherRows, fileName } = await body(req);
-    const report = importClubs({ clubs: clubRows ?? [], teachers: teacherRows ?? [] });
-    if (report.problems.some((p) => p.level === "error")) throw new HttpError(422, "Το αρχείο έχει σφάλματα.", { report });
+    const imported = importClubs({ clubs: clubRows ?? [], teachers: teacherRows ?? [] });
+    // The teachers' ΑΜ/ΑΦΜ are neither kept nor sent back: only a keyed hash, for the login.
+    const report = { ...imported, teachers: withIdHashes(env.SESSION_SECRET, imported.teachers) };
+    const reply = { ...report, teachers: report.teachers.map(({ idHash, ...t }) => ({ ...t, hasPersonalId: Boolean(idHash) })) };
+    if (report.problems.some((p) => p.level === "error")) throw new HttpError(422, "Το αρχείο έχει σφάλματα.", { report: reply });
     await store.set("clubs", report.clubs);
     await store.set("teachers", report.teachers);
     // Teacher lists of clubs that no longer exist are dropped.
@@ -252,7 +255,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     for (const { key } of await store.list("teacherList:")) if (!codes.has(key.slice(12))) await store.delete(key);
     await logEvent("admin", "clubs_uploaded", { clubs: report.clubs.length, teachers: report.teachers.length, fileName: fileNameOf(fileName) });
     await recordUpload(["clubs"], { fileName: fileNameOf(fileName), ...report.summary });
-    return json(200, { report });
+    return json(200, { report: reply });
   });
 
   // «Παρεμφερείς» of one club, until declarations open (empty = none)
@@ -618,40 +621,44 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return json(200, { token: issue("teacher", { email: teacher.email }) });
   });
 
-  // The teachers' common code (set by the admin, like the parents' code):
-  // whoever has it may change the list of any club. The session carries a
-  // fingerprint of the code, so a new code ends the old sessions.
+  // The teachers' common code (set by the admin, like the parents' code)
+  // together with the teacher's own ΑΜ or ΑΦΜ (from the clubs file): the
+  // teacher sees only their own clubs. The session carries a fingerprint of
+  // the code, so a new code ends the old sessions.
   const codeFingerprint = (hash) => createHash("sha256").update(String(hash)).digest("base64url").slice(0, 12);
-  const SHARED = "teacher-code"; // «who» in the history for changes made with the common code
 
   route("POST", "/api/teacher/code-login", async (req) => {
     if (!teacherCodeByIp.hit(clientIp(req), now())) throw new HttpError(429, "Πολλές προσπάθειες. Δοκιμάστε σε λίγα λεπτά.");
-    const { password } = await body(req);
+    const { password, personalId } = await body(req);
     const settings = await getSettings();
     if (!settings.teacherPasswordHash) throw new HttpError(409, "Η είσοδος με κωδικό δεν έχει ενεργοποιηθεί. Επικοινωνήστε με τη διαχείριση.");
-    if (!verifyPassword(password, settings.teacherPasswordHash)) throw new HttpError(401, "Λάθος κωδικός.");
-    await logEvent(SHARED, "teacher_login");
-    return json(200, { token: issue("teacher", { shared: codeFingerprint(settings.teacherPasswordHash) }) });
+    const id = normalizePersonalId(personalId);
+    const teacher = id ? (await getTeachers()).find((t) => t.idHash && t.idHash === personalIdHash(env.SESSION_SECRET, id)) : null;
+    // One answer for a wrong code and an unknown ΑΜ/ΑΦΜ
+    if (!verifyPassword(password, settings.teacherPasswordHash) || !teacher) {
+      throw new HttpError(401, "Ο κωδικός ή ο ΑΜ/ΑΦΜ δεν είναι σωστός. Αν συνεχίζει, επικοινωνήστε με τη διαχείριση.");
+    }
+    await logEvent(teacher.email, "teacher_login", { via: "code" });
+    return json(200, { token: issue("teacher", { email: teacher.email, code: codeFingerprint(settings.teacherPasswordHash) }) });
   });
 
-  /** {shared: true} with the common code, else the teacher (by e-mail). */
+  /** The logged-in teacher (by e-mail); a login with an old common code no longer counts. */
   const teacherSession = async (req) => {
     const payload = session(req, "teacher");
-    if (payload.shared) {
+    if (payload.code) {
       const { teacherPasswordHash } = await getSettings();
-      if (!teacherPasswordHash || payload.shared !== codeFingerprint(teacherPasswordHash)) throw new HttpError(401, "Ο κωδικός άλλαξε. Συνδεθείτε ξανά.");
-      return { shared: true };
+      if (!teacherPasswordHash || payload.code !== codeFingerprint(teacherPasswordHash)) throw new HttpError(401, "Ο κωδικός άλλαξε. Συνδεθείτε ξανά.");
     }
     const teacher = (await getTeachers()).find((t) => t.email === payload.email);
     if (!teacher) throw new HttpError(401, "Ο λογαριασμός δεν υπάρχει πια.");
-    return { teacher };
+    return teacher;
   };
 
   route("GET", "/api/teacher/me", async (req) => {
-    const { shared, teacher } = await teacherSession(req);
-    const email = teacher?.email;
+    const teacher = await teacherSession(req);
+    const { email } = teacher;
     const [settings, teachers, clubs, students, lists] = await Promise.all([getSettings(), getTeachers(), getClubs(), getStudents(), getTeacherLists()]);
-    const mine = clubs.filter((c) => shared || teacher.clubs.includes(c.code)).map((c) => ({
+    const mine = clubs.filter((c) => teacher.clubs.includes(c.code)).map((c) => ({
       ...c,
       list: lists[c.code]?.ams ?? [],
       updatedBy: lists[c.code]?.updatedBy ?? null,
@@ -660,16 +667,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       eligible: students.filter((s) => c.grades.includes(s.grade)).map(({ am, surname, name, grade }) => ({ am, surname, name, grade })),
     }));
     return json(200, {
-      teacher: shared ? null : { name: teacher.name, surname: teacher.surname, email }, shared: Boolean(shared),
+      teacher: { name: teacher.name, surname: teacher.surname, email },
       phase: settings.phase, canEdit: settings.phase === "teachers", clubs: mine,
     });
   });
 
   route("PUT", "/api/teacher/clubs/:code", async (req, { code }) => {
-    const { shared, teacher } = await teacherSession(req);
-    if (!shared && !teacher.clubs.includes(Number(code))) throw new HttpError(403, "Ο όμιλος δεν είναι δικός σας.");
+    const teacher = await teacherSession(req);
+    if (!teacher.clubs.includes(Number(code))) throw new HttpError(403, "Ο όμιλος δεν είναι δικός σας.");
     if ((await getSettings()).phase !== "teachers") throw new HttpError(409, "Οι αλλαγές από εκπαιδευτικούς γίνονται μόνο στη φάση «Εκπαιδευτικοί».");
-    return saveTeacherList(req, code, shared ? SHARED : teacher.email);
+    return saveTeacherList(req, code, teacher.email);
   });
 
   // The capacity is set by the admin only (the clubs file, or «Όμιλοι» →
@@ -696,7 +703,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     // Tell the club's teachers (except the one who saved).
     for (const t of (await getTeachers()).filter((t) => t.clubs.includes(club.code) && t.email !== who)) {
       await mail(t.email, `Αλλαγή στον όμιλο «${club.name}»`,
-        `Η λίστα μαθητών του ομίλου «${club.name}» άλλαξε από ${who === "admin" || who === "admin-file" ? "τον διαχειριστή" : who === SHARED ? "εκπαιδευτικό (με τον κοινό κωδικό)" : who}.\nΘέσεις: ${capacity}, μαθητές στη λίστα: ${list.length}.`);
+        `Η λίστα μαθητών του ομίλου «${club.name}» άλλαξε από ${who === "admin" || who === "admin-file" ? "τον διαχειριστή" : who}.\nΘέσεις: ${capacity}, μαθητές στη λίστα: ${list.length}.`);
     }
     return entry;
   }

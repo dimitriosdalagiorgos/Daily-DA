@@ -41,6 +41,18 @@ export function verifyPassword(password, stored) {
   return timingSafeEqual(actual, expected);
 }
 
+/**
+ * A teacher's ΑΜ/ΑΦΜ as stored: a keyed hash, so the number itself is never
+ * kept and cannot be recovered without the secret.
+ */
+export function personalIdHash(secret, id) {
+  return createHmac("sha256", secret).update(`teacher-id:${id}`).digest("base64url");
+}
+
+/** Teachers from the clubs file, ready to store: ΑΜ/ΑΦΜ → its hash. */
+export const withIdHashes = (secret, teachers) =>
+  teachers.map(({ personalId, ...t }) => (personalId ? { ...t, idHash: personalIdHash(secret, personalId) } : t));
+
 /** Constant-time comparison of two strings (admin password from env). */
 export function safeEqual(a, b) {
   const x = Buffer.from(String(a ?? ""));
