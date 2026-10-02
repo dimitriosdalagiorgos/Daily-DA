@@ -3,8 +3,9 @@
 //   node e2e/walkthrough.mjs [--shots <dir>]
 // Needs Playwright (npx playwright / global install) and Chromium.
 
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -76,13 +77,27 @@ try {
   await teacher.goto(link);
   await teacher.waitForSelector("h2:has-text('Αντιγόνη')");
   step("teacher: logged in with the magic link");
-  await teacher.fill("input[type=number]", "18");
+  if (await teacher.locator("input[type=number]").count()) throw new Error("teachers must not edit the capacity");
   await teacher.fill("input[type=search]", "γεωργ");
-  await teacher.click(".pick-list button >> nth=0");
+  await teacher.locator(".check-list input[type=checkbox] >> nth=0").check();
+  await teacher.fill("input[type=search]", "");
+  await teacher.locator(".check-list input[type=checkbox]:not(:checked) >> nth=0").check();
+  const badge = await teacher.locator("h3 .badge").textContent();
+  if (badge.trim() !== "2 / 20") throw new Error(`teacher count: ${badge}`);
   await teacher.click("text=Αποθήκευση");
   await teacher.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
-  step("teacher: capacity 18 and one preferred student saved");
+  step("teacher: two students ticked and saved (capacity shown, not editable)");
   await shot(teacher, "03-teacher");
+
+  // Admin: lists for other clubs from a file (CSV: club code + ΑΜ per row)
+  await admin.click("role=tab[name='Όμιλοι']");
+  const csvPath = join(tmpdir(), `listes-${process.pid}.csv`);
+  writeFileSync(csvPath, "Κωδικός ομίλου;ΑΜ\n105;9001\n105;9002\n108;9041\n");
+  await admin.setInputFiles("input[aria-label='Αρχεία λιστών εκπαιδευτικών']", csvPath);
+  await admin.waitForSelector("button:has-text('Αποθήκευση 2 λιστών'):not([disabled])");
+  await admin.click("button:has-text('Αποθήκευση 2 λιστών')");
+  await admin.waitForSelector("tr:has-text('Σκάκι') td:has-text('2 μαθητές')");
+  step("admin: two teachers' lists imported from a file, after the preview");
 
   // ---------- Admin: settings, open declarations ----------
   await admin.click("role=tab[name='Πορεία & ρυθμίσεις']");

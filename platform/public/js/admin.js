@@ -3,6 +3,8 @@ import { readWorkbook } from "/lib/import/workbook.js";
 import { headerKey } from "/lib/import/table.js";
 import { decodeCsv, parseCsv } from "/lib/import/csv.js";
 import { reportView as studentReportView } from "./report.js";
+import { makeZip } from "/lib/export/zip.js";
+import { LIST_SHEET, teacherListFileName, teacherListRows } from "/lib/export/teacherListFile.js";
 import { helpTabs } from "./help.js";
 
 const api = createApi("admin");
@@ -385,7 +387,79 @@ function students() {
 // ---------- Clubs ----------
 
 function clubs() {
-  return el("div", {}, clubsTable(), teacherLinks());
+  return el("div", {}, clubsTable(), teacherListFiles(), teacherLinks());
+}
+
+// Teachers' lists by Excel: one file per club out, all files back in
+function teacherListFiles() {
+  const editable = ["setup", "teachers"].includes(state.settings.phase);
+  const out = el("div");
+  const preview = el("div");
+  const download = el("button", { type: "button", disabled: !state.clubs.length }, "Αρχεία για τους εκπαιδευτικούς (.zip)");
+  download.addEventListener("click", () => busy(download, out, async () => {
+    const XLSX = await loadXlsx();
+    const files = {};
+    for (const c of state.clubs) {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(teacherListRows(c, state.students, state.teacherLists[c.code]?.ams ?? []));
+      ws["!cols"] = [{ wch: 10 }, { wch: 10 }, { wch: 24 }, { wch: 20 }, { wch: 6 }];
+      XLSX.utils.book_append_sheet(wb, ws, LIST_SHEET);
+      files[teacherListFileName(c)] = new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" }));
+    }
+    const url = URL.createObjectURL(new Blob([makeZip(files)], { type: "application/zip" }));
+    el("a", { href: url, download: "listes_ekpaideutikon.zip" }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }));
+
+  const input = el("input", { type: "file", multiple: true, accept: ".xlsx,.xls,.csv", disabled: !editable, "aria-label": "Αρχεία λιστών εκπαιδευτικών" });
+  let files = [];
+  const send = (apply) => api("POST", "/api/admin/teacher-lists/import", { files, apply });
+  const showReport = ({ report, ok }) => {
+    const save = el("button.primary", { type: "button", disabled: !ok }, `Αποθήκευση ${report.filter((r) => r.code).length} λιστών`);
+    save.addEventListener("click", () => busy(save, preview, async () => {
+      await send(true);
+      await refresh();
+      tab = "clubs";
+      render();
+    }));
+    show(preview,
+      el("div.table-wrap", {}, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "Αρχείο"), el("th", {}, "Όμιλος"), el("th.num", {}, "Μαθητές"), el("th", {}, "Έλεγχος"))),
+        el("tbody", {}, report.map((r) => el("tr", {},
+          el("td.small", {}, r.fileName), el("td", {}, r.code ? `${r.code} ${r.clubName}` : "—"),
+          el("td.num", {}, r.code ? `${r.ams.length} / ${r.capacity ?? "?"}` : ""),
+          el("td.small", {},
+            r.problems.map((m) => el("div", { style: "color:var(--err)" }, `✗ ${m}`)),
+            r.warnings.map((m) => el("div", { style: "color:var(--warn)" }, `! ${m}`)),
+            !r.problems.length && !r.warnings.length ? el("span", { style: "color:var(--ok)" }, "✓") : null)))))),
+      ok ? message("info", "Ελέγξτε τον πίνακα και πατήστε «Αποθήκευση». Οι λίστες αντικαθιστούν όσες υπάρχουν για αυτούς τους ομίλους.")
+        : message("err", "Κάποια αρχεία έχουν σφάλματα (✗). Διορθώστε τα και επιλέξτε ξανά όλα τα αρχεία· δεν αποθηκεύτηκε τίποτα."),
+      el("div.actions", {}, save));
+  };
+  input.addEventListener("change", () => busy(input, preview, async () => {
+    const XLSX = [...input.files].some((f) => !/\.csv$/i.test(f.name)) ? await loadXlsx() : null;
+    files = [];
+    for (const f of input.files) {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      let rows;
+      if (/\.csv$/i.test(f.name)) rows = parseCsv(decodeCsv(bytes));
+      else {
+        const sheets = readWorkbook(XLSX, bytes);
+        rows = Object.entries(sheets).find(([n]) => headerKey(n) === headerKey(LIST_SHEET))?.[1] ?? Object.values(sheets)[0] ?? [];
+      }
+      files.push({ fileName: f.name, rows });
+    }
+    showReport(await send(false));
+  }));
+
+  return el("section.card", {},
+    el("h2", { style: "margin-top:0" }, "Λίστες εκπαιδευτικών από Excel"),
+    el("p.small", {}, "Εναλλακτικά στη σελίδα των εκπαιδευτικών: κατεβάστε ένα Excel για κάθε όμιλο, με όλους τους μαθητές των τάξεών του. Ο εκπαιδευτικός βάζει Χ στη στήλη «Επιλογή» δίπλα στους μαθητές που προτιμά (έως τις θέσεις) — ή σβήνει τις γραμμές όσων δεν θέλει — και σας το επιστρέφει. Ανεβάστε όλα τα αρχεία μαζί: θα δείτε έλεγχο πριν την αποθήκευση."),
+    el("p.small.muted", {}, "Γίνεται δεκτός και ένας πίνακας για πολλούς ομίλους, με στήλες «Κωδικός ομίλου» και «ΑΜ» (μία γραμμή ανά μαθητή). Η χωρητικότητα δεν αλλάζει από τα αρχεία."),
+    out,
+    el("div.actions", {}, download),
+    editable ? el("label", {}, "Επιστρεφόμενα αρχεία (.xlsx, .xls, .csv — πολλά μαζί)", input) : message("info", "Οι λίστες κλείδωσαν με το άνοιγμα των δηλώσεων."),
+    preview);
 }
 
 // Login links for teachers, passed on by the admin (no e-mail service).

@@ -106,6 +106,28 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   assert.equal(r.status, 200);
   assert.equal((await store.readLog("outbox")).at(-1).to, "nskin@sch.gr", "co-teacher notified");
   assert.equal((await call("PUT", "/api/teacher/clubs/101", { token: teacher, body: { capacity: 1, ams: [] } })).status, 403);
+  // The capacity is the admin's: a teacher's value is ignored
+  r = await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { capacity: 30, ams: ["9001"] } });
+  assert.equal(r.data.list.capacity, 1, "capacity unchanged by the teacher");
+  assert.equal((await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { ams: ["9001", "9002"] } })).status, 422, "more than the seats");
+
+  // Bulk import by the admin: preview, then save (replaces the list)
+  const file = [["Κωδικός ομίλου", 100], ["Όμιλος", "Αντιγόνη"], [], ["Επιλογή", "ΑΜ", "Επώνυμο", "Όνομα", "Τάξη"], ["", 9001, "", "", "Β"], ["Χ", 9002, "", "", "Β"], ["", 9004, "", "", "Β"]];
+  r = await call("POST", "/api/admin/teacher-lists/import", { token: admin, body: { files: [{ fileName: "100.xlsx", rows: file }] } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.ok, true);
+  assert.deepEqual(r.data.report[0].ams, ["9002"]);
+  assert.match(r.data.report[0].warnings[0], /θα αντικατασταθεί/);
+  assert.deepEqual((await call("GET", "/api/admin/state", { token: admin })).data.teacherLists[100].ams, ["9001"], "preview saves nothing");
+  const bad = [["Κωδικός ομίλου", "ΑΜ"], [101, 9003], [101, 7777]];
+  r = await call("POST", "/api/admin/teacher-lists/import", { token: admin, body: { files: [{ fileName: "100.xlsx", rows: file }, { fileName: "bad.csv", rows: bad }], apply: true } });
+  assert.equal(r.status, 422, "nothing saved while a file has errors");
+  r = await call("POST", "/api/admin/teacher-lists/import", { token: admin, body: { files: [{ fileName: "100.xlsx", rows: file }], apply: true } });
+  assert.equal(r.data.saved, true);
+  const saved = (await call("GET", "/api/admin/state", { token: admin })).data.teacherLists[100];
+  assert.deepEqual([saved.ams, saved.capacity, saved.updatedBy], [["9002"], 1, "admin-file"]);
+  // back to the teacher's choice, for the rest of the year
+  await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { ams: ["9001"] } });
 
   // Open declarations
   await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z", contact: "2310 000000" } });

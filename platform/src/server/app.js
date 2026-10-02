@@ -17,6 +17,7 @@ import { allocateWeek } from "../algorithm/allocate.js";
 import { clubsToRank, validateSubmission, validateTeacherList } from "../algorithm/validate.js";
 import { importStudents } from "../import/students.js";
 import { importClubs, normalizeSimilar } from "../import/clubs.js";
+import { importTeacherLists } from "../import/teacherLists.js";
 import { checkReadiness } from "../import/readiness.js";
 import { importLegacyResponses } from "../import/legacy.js";
 import { givenNameMatches, sameName } from "../import/names.js";
@@ -320,6 +321,25 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return saveTeacherList(req, code, "admin");
   });
 
+  // Teachers' lists from files (Excel/CSV, read in the browser): preview
+  // with `apply: false`, save with `apply: true` (only if every file is OK).
+  route("POST", "/api/admin/teacher-lists/import", async (req) => {
+    session(req, "admin");
+    const settings = await getSettings();
+    if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι λίστες κλείδωσαν με το άνοιγμα των δηλώσεων.");
+    const { files, apply } = await body(req);
+    if (!Array.isArray(files) || files.length === 0) throw new HttpError(422, "Επιλέξτε αρχεία.");
+    const [clubs, students, lists] = await Promise.all([getClubs(), getStudents(), getTeacherLists()]);
+    const report = importTeacherLists(files.map((f) => ({ fileName: fileNameOf(f.fileName), rows: f.rows })), { clubs, students, lists });
+    const ok = report.every((r) => r.problems.length === 0);
+    if (apply) {
+      if (!ok) throw new HttpError(422, "Κάποια αρχεία έχουν σφάλματα· διορθώστε τα και ξαναδοκιμάστε.", { report });
+      for (const r of report) await writeTeacherList(r.code, r.ams, "admin-file");
+      await logEvent("admin", "teacher_lists_imported", { clubs: report.map((r) => r.code), files: files.length });
+    }
+    return json(200, { report, ok, saved: Boolean(apply) });
+  });
+
   // Trial only: last year's per-day responses (Google Form export) as
   // submissions, to try the allocation with real-looking data.
   route("POST", "/api/admin/import-legacy", async (req) => {
@@ -610,26 +630,33 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return saveTeacherList(req, code, email);
   });
 
+  // The capacity is set by the admin only (the clubs file, or «Όμιλοι» →
+  // «Διόρθωση»); teachers and the bulk import change only the list.
   async function saveTeacherList(req, code, who) {
+    const { capacity, ams } = await body(req);
+    const entry = await writeTeacherList(code, (Array.isArray(ams) ? ams : []).map(String), who, who === "admin" ? capacity : undefined);
+    return json(200, { list: entry });
+  }
+
+  async function writeTeacherList(code, list, who, capacity) {
     const settings = await getSettings();
     if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι λίστες κλείδωσαν με το άνοιγμα των δηλώσεων.");
-    const club = ((await store.get("clubs")) ?? []).find((c) => String(c.code) === String(code));
+    const club = (await getClubs()).find((c) => String(c.code) === String(code)); // current capacity applied
     if (!club) throw new HttpError(404, "Άγνωστος όμιλος.");
-    const { capacity, ams } = await body(req);
+    if (capacity === undefined) capacity = club.capacity;
     if (!Number.isInteger(capacity) || capacity <= 0 || capacity > 500) throw new HttpError(422, "Η χωρητικότητα πρέπει να είναι θετικός ακέραιος.");
-    const list = (Array.isArray(ams) ? ams : []).map(String);
     const studentsByAm = new Map((await getStudents()).map((s) => [s.am, s]));
     const problems = validateTeacherList({ ...club, capacity }, list, studentsByAm);
     if (problems.length) throw new HttpError(422, problems.join(" "), { problems });
     const entry = { capacity, ams: list, updatedBy: who, updatedAt: new Date(now()).toISOString() };
     await store.set(`teacherList:${club.code}`, entry);
     await logEvent(who, "teacher_list", { club: club.code, capacity, count: list.length });
-    // Tell the club's other teachers.
+    // Tell the club's teachers (except the one who saved).
     for (const t of (await getTeachers()).filter((t) => t.clubs.includes(club.code) && t.email !== who)) {
       await mail(t.email, `Αλλαγή στον όμιλο «${club.name}»`,
-        `Η χωρητικότητα και η λίστα μαθητών του ομίλου «${club.name}» άλλαξαν από ${who === "admin" ? "τον διαχειριστή" : who}.\nΧωρητικότητα: ${capacity}, μαθητές στη λίστα: ${list.length}.`);
+        `Η λίστα μαθητών του ομίλου «${club.name}» άλλαξε από ${who === "admin" || who === "admin-file" ? "τον διαχειριστή" : who}.\nΘέσεις: ${capacity}, μαθητές στη λίστα: ${list.length}.`);
     }
-    return json(200, { list: entry });
+    return entry;
   }
 
   // --- parent ---

@@ -273,3 +273,15 @@ details.receipt[open] > summary { margin-bottom: 8px; }
   :root { --locked-bg: #3a3218; --locked-border: #8a7433; }
 }
 .summary-day ul.receipt-list { list-style: none; margin: 4px 0; padding-left: 1em; }
+
+/* Teacher page: students with checkboxes */
+.filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 10px 0 6px; }
+.filters input[type="search"] { flex: 1 1 220px; width: auto; }
+.filters select { width: auto; }
+label.inline { display: inline-flex; gap: 6px; align-items: center; font-weight: 400; }
+.check-list { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 0; }
+label.check-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 6px 12px; font-weight: 400; margin: 0; cursor: pointer; }
+label.check-row:hover { background: var(--surface-2); }
+label.check-row input { width: 18px; height: 18px; }
+.chip { display: inline-flex; align-items: center; gap: 2px; background: var(--surface-2); border-radius: 999px; padding: 1px 4px 1px 10px; margin: 2px 2px; }
+button.link { border: 0; background: transparent; padding: 0 6px; min-height: 0; color: var(--muted); }
