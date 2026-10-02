@@ -1,0 +1,88 @@
+# Πλατφόρμα δήλωσης & κατανομής ομίλων
+
+Προδιαγραφές: [`SPEC.md`](SPEC.md). Πρότυπο ομίλων/εκπαιδευτικών: [`templates/omiloi_protypo.xlsx`](templates/omiloi_protypo.xlsx).
+
+## Τοπική εκτέλεση
+
+Χρειάζεται μόνο Node.js ≥ 20 (χωρίς εγκατάσταση πακέτων):
+
+```sh
+cd platform
+npm run dev -- --demo     # δοκιμαστικό σχολείο: 60 μαθητές, 13 όμιλοι
+# ή
+npm run dev               # κρατά τα δεδομένα στο .data/dev-store.json
+npm run dev -- --demo --no-mail   # όπως τώρα στο Netlify: χωρίς email
+```
+
+Ανοίξτε http://localhost:8888 (γονείς) — εκπαιδευτικοί: `/ekpaideutikoi-dev/`, διαχείριση: `/diaxeirisi-dev/`, κωδικός `admin` (αλλάζουν με `TEACHER_PATH=…`, `ADMIN_PATH=…`, `ADMIN_PASSWORD=…`).
+Τα email δεν στέλνονται τοπικά: εμφανίζονται στην κονσόλα και στην καρτέλα «Εξερχόμενα» της διαχείρισης (εκεί είναι και οι σύνδεσμοι εισόδου των εκπαιδευτικών).
+Για ανέβασμα αρχείων Excel ο browser φορτώνει το SheetJS από το cdn.sheetjs.com (χρειάζεται internet).
+
+Δοκιμαστικοί λογαριασμοί στο `--demo`: εκπαιδευτικός `etheatr@sch.gr` (ΑΜ/ΑΦΜ 012345601, με τον κοινό κωδικό εκπαιδευτικών που ορίζει η διαχείριση)· γονέας π.χ. ΑΜ 9022, ΓΕΩΡΓΙΟΥ ΕΛΕΝΗ, πατέρας ΙΩΑΝΝΗΣ, μητέρα ΔΕΣΠΟΙΝΑ (ο κωδικός γονέων ορίζεται από τη διαχείριση).
+
+| Φάκελος | Περιεχόμενο |
+|---|---|
+| `public/` | Σελίδες: `index.html` (γονείς), `help.html` (βοήθεια γονέων), `teacher.html` και `admin.html` — αυτές οι δύο σερβίρονται μόνο στις κρυφές διευθύνσεις `TEACHER_PATH`/`ADMIN_PATH` (`src/server/paths.js`, `scripts/build.mjs`) |
+| `src/server/` | API (`app.js`), αποθήκευση (`store.js`), sessions/κωδικοί (`auth.js`), κρυφές διευθύνσεις (`paths.js`) |
+| `src/export/` | Πακέτο για R, αναφορές μαθητή (`story.js`), στατιστικά (`stats.js`), αρχεία λιστών εκπαιδευτικών |
+| `server/start.mjs` | Server παραγωγής για δικό σας μηχάνημα (βλ. README του αποθετηρίου, §6) |
+| `dev/` | Τοπικός server και δοκιμαστικά δεδομένα |
+| `netlify/functions/api.mjs` | Το ίδιο API στο Netlify, με αποθήκευση Supabase (`src/server/store-supabase.js`, πίνακες: `supabase/schema.sql`) |
+
+## Αλγόριθμος (`src/algorithm/`)
+
+Καθαρή JavaScript, χωρίς εξαρτήσεις — τρέχει ίδια σε Netlify Functions και στον browser.
+
+| Αρχείο | Τι κάνει |
+|---|---|
+| `lottery.js` | Κλήρωση: ένας σταθερός αριθμός ανά μαθητή από δημοσιευμένο seed (`drawLottery`). |
+| `allocate.js` | Deferred Acceptance ανά ημέρα, Δευτέρα → Παρασκευή, με πολυήμερους ομίλους (`allocateWeek`). |
+| `validate.js` | Έλεγχοι δήλωσης γονέα, λίστας εκπαιδευτικού, ομίλων. |
+
+Προτεραιότητα ομίλου (καθαρός Gale–Shapley): επιλογή εκπαιδευτικού → μαθητές τάξεων με υποχρεωτική ένταξη → κλήρωση. Η σειρά του μαθητή ορίζει μόνο πού και με ποια σειρά κάνει αίτηση. Το αποτέλεσμα δεν εξαρτάται από τη σειρά με την οποία εξετάζονται οι αιτήσεις (έλεγχος στο `test/allocate.test.js`).
+
+## Ανάγνωση αρχείων (`src/import/`)
+
+| Αρχείο | Τι κάνει |
+|---|---|
+| `students.js` | «Κατάλογος Μαθητών» του myschool → μαθητές (ΑΜ, τάξη, 4 ονόματα) + προβλήματα ανά γραμμή. |
+| `clubs.js` | Πρότυπο ομίλων → όμιλοι + εκπαιδευτικοί + προβλήματα ανά φύλλο/γραμμή. |
+| `readiness.js` | Έλεγχοι με βάση και τα δύο αρχεία (ημέρα χωρίς όμιλο για κάποια τάξη, λίγες θέσεις). |
+| `names.js` | Κανονικοποίηση ονομάτων και κανόνες ταύτισης για την είσοδο γονέα. |
+| `legacy.js` | **Μόνο για δοκιμή:** περσινές δηλώσεις ανά ημέρα (μορφή `dailyresponses.csv`) → δηλώσεις «Εισαγωγή δοκιμής». |
+| `csv.js` | CSV σε UTF-8 ή Windows-1253 (ελληνικό Excel), με `,` ή `;`. |
+| `workbook.js` | .xls/.xlsx → γραμμές κελιών μέσω SheetJS (το δίνει ο καλών· στον browser από το cdn.sheetjs.com). |
+
+Κάθε πρόβλημα είναι `error` (το αρχείο δεν γίνεται δεκτό) ή `warning` (γίνεται δεκτό, να το δει ο διαχειριστής).
+
+## Tests
+
+```sh
+cd platform
+npm test
+```
+
+Τα tests με πραγματικά αρχεία Excel (`test/workbook.test.js`, εικονικά δεδομένα στο `test/fixtures/`) χρειάζονται το SheetJS: τοπικά παραλείπονται αν λείπει, στο CI εγκαθίσταται η επίσημη έκδοση και είναι υποχρεωτικά.
+
+Διαδρομή σε browser (Playwright + Chromium) όλης της χρονιάς στο δοκιμαστικό σχολείο:
+
+```sh
+npm install --no-save playwright && npx playwright install chromium   # μία φορά
+npm run dev -- --demo &
+node e2e/walkthrough.mjs --shots /tmp/shots
+```
+
+Τρέχουν αυτόματα σε κάθε αλλαγή στο `platform/` (GitHub Actions, `.github/workflows/platform-tests.yml`).
+
+## Σύγκριση με το R
+
+Η κατανομή υπάρχει και σε R, για εκτέλεση offline: φάκελος [`R/`](../R/README.md). Το `src/export/rPackage.js` φτιάχνει τα αρχεία που διαβάζει το `R/run_week.R`.
+
+`reference/compare.mjs`: ίδια δεδομένα σε πλατφόρμα και R (μέσω του πακέτου εξαγωγής· το R ξαναϋπολογίζει και ελέγχει την κλήρωση από το seed), σύγκριση τοποθετήσεων.
+
+```sh
+cd platform
+node reference/compare.mjs --random 8   # χρειάζεται Rscript + dplyr, readr, tidyr, purrr, stringr, writexl
+```
+
+Τα πραγματικά αρχεία μαθητών **δεν** μπαίνουν στο αποθετήριο.

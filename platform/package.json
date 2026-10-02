@@ -1,0 +1,14 @@
+{
+  "name": "daily-da-platform",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "dev": "node dev/server.mjs",
+    "start": "node server/start.mjs",
+    "build": "node scripts/build.mjs"
+  }
+}

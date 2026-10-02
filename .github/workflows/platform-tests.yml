@@ -1,0 +1,76 @@
+name: Platform tests
+
+on:
+  push:
+    paths: ["platform/**", "R/**", "archive/*.csv", ".github/workflows/platform-tests.yml"]
+  pull_request:
+    paths: ["platform/**", "R/**", "archive/*.csv", ".github/workflows/platform-tests.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Official SheetJS build for the Excel import tests (not a runtime
+      # dependency: the browser loads it from cdn.sheetjs.com).
+      - run: npm install --no-save https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+      - run: npm test
+        env:
+          REQUIRE_SHEETJS: "1"
+
+  # Same allocation as the R reference (platform/reference/) on the sample
+  # data and on random weeks with multi-day clubs.
+  compare-with-r:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install R and packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends r-base-core \
+            r-cran-dplyr r-cran-readr r-cran-tidyr r-cran-purrr r-cran-stringr r-cran-writexl
+      - run: node reference/compare.mjs --random 8
+
+  # The whole year in a real browser on the demo school.
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
+      - name: Walk-through (with e-mail)
+        run: |
+          node dev/server.mjs --demo > dev.log 2>&1 &
+          for i in $(seq 1 20); do curl -sf http://localhost:8888/api/public > /dev/null && break; sleep 0.5; done
+          node e2e/walkthrough.mjs --shots shots/mail
+      # Separate port and data file, so the two runs cannot mix.
+      - name: Walk-through (without e-mail, as in production now)
+        env:
+          PORT: "8889"
+          BASE_URL: http://localhost:8889
+        run: |
+          node dev/server.mjs --demo --no-mail > dev-nomail.log 2>&1 &
+          for i in $(seq 1 20); do curl -sf http://localhost:8889/api/public | grep -q '"mailEnabled":false' && break; sleep 0.5; done
+          node e2e/walkthrough.mjs --shots shots/no-mail
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: platform/shots
