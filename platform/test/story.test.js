@@ -23,7 +23,9 @@ test("each student's story, in words, per day", () => {
     "Δεν χώρεσε στον όμιλο «Ρομποτική»: γέμισε με μαθητές υψηλότερης προτεραιότητας (λίστα εκπαιδευτικού, τάξη με υποχρεωτική ένταξη ή καλύτερος αριθμός κλήρωσης).",
     "Αίτηση στον όμιλο «Αντιγόνη» (2η επιλογή).",
     "Προσωρινή θέση στον όμιλο «Αντιγόνη».",
+    "Η θέση στον όμιλο «Αντιγόνη» έγινε οριστική: η κατανομή της ημέρας τελείωσε και κανείς δεν την πήρε.",
   ]);
+  assert.equal(stories["1"].mon.at(-1).event, "FINAL", "every student who keeps a seat ends with the final step");
   assert.deepEqual(stories["2"].thu.map((s) => s.text), ["Θέση στον όμιλο «Αντιγόνη», γιατί τοποθετήθηκε σε αυτόν τη Δευτέρα (όμιλος πολλών ημερών)."]);
   assert.match(describeEvent({ event: "CLUB_DROPPED", club: "20", reason: "day_conflict" }, nameOf), /ήδη όμιλο/);
 });
@@ -40,4 +42,17 @@ test("why a student has no club on a day", () => {
   assert.equal(gaps["1"].thu, "no_preferences", "Αντιγόνη runs Thursday for grade Α");
   assert.equal(gaps["1"].tue, "not_offered");
   assert.equal(gaps["1"].fri, "not_offered", "no club at all that day");
+});
+
+test("story: a seat kept over several rounds is told once, then made final", () => {
+  // 10 has one seat, held by 1; 11 and 12 have none, so 2 (round 2) and 3 (round 3) end up applying to 10
+  const cl = [10, 11, 12].map((code) => ({ code, name: `Όμιλος ${code}`, days: ["mon"], grades: ["Α"], capacity: code === 10 ? 1 : 0 }));
+  const r = allocateWeek({ students, clubs: cl, preferences: { 1: { mon: ["10"] }, 2: { mon: ["11", "10"] }, 3: { mon: ["11", "12", "10"] } }, lottery });
+  const logByDay = Object.fromEntries(Object.entries(r.days).map(([d, v]) => [d, v.log]));
+  assert.equal(logByDay.mon.filter((e) => e.am === "1" && e.event === "RETAINED").length, 2, "the log has both rounds");
+  const nameOf = (c) => `Όμιλος ${c}`;
+  const story = storiesByStudent(logByDay, nameOf, () => ["mon"])["1"].mon;
+  assert.deepEqual(story.map((e) => e.event), ["PROPOSAL", "ACCEPTED", "RETAINED", "FINAL"]);
+  assert.match(story.at(-1).text, /έγινε οριστική/);
+  assert.ok(!storiesByStudent(logByDay, nameOf, () => ["mon"])["2"].mon.some((e) => e.event === "FINAL"), "no final step without a seat");
 });

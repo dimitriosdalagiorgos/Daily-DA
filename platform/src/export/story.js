@@ -29,7 +29,7 @@ export function describeEvent(e, nameOf, daysOf = () => []) {
     case "ACCEPTED":
       return `Προσωρινή θέση στον όμιλο ${club}.`;
     case "RETAINED":
-      return `Κράτησε τη θέση στον όμιλο ${club}.`;
+      return `Κράτησε τη θέση στον όμιλο ${club}: έκαναν αίτηση και άλλοι μαθητές, αλλά είχε υψηλότερη προτεραιότητα από όσους δεν χώρεσαν.`;
     case "REJECTED":
       return `Δεν χώρεσε στον όμιλο ${club}: γέμισε με μαθητές υψηλότερης προτεραιότητας (λίστα εκπαιδευτικού, τάξη με υποχρεωτική ένταξη ή καλύτερος αριθμός κλήρωσης).`;
     case "DISPLACED":
@@ -42,6 +42,8 @@ export function describeEvent(e, nameOf, daysOf = () => []) {
       if (e.reason === "day_conflict") return `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα: γίνεται και σε ημέρα όπου έχει ήδη όμιλο.`;
       if (e.reason === "similar") return `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα: έχει ήδη παρεμφερή όμιλο σε προηγούμενη ημέρα.`;
       return `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα αυτής της ημέρας: η κατανομή του έγινε την πρώτη του ημέρα.`;
+    case "FINAL":
+      return `Η θέση στον όμιλο ${club} έγινε οριστική: η κατανομή της ημέρας τελείωσε και κανείς δεν την πήρε.`;
     case "NO_MORE_PROPOSALS":
       return `Τέλος: ${e.count} μαθητές δεν έχουν άλλους ομίλους για αίτηση.`;
     default:
@@ -50,19 +52,32 @@ export function describeEvent(e, nameOf, daysOf = () => []) {
 }
 
 /**
- * Per-student story from the whole week's log.
+ * Per-student story from the whole week's log. The log records a held seat
+ * only when the club is reconsidered (new applicants); the story adds the
+ * end of the day — a final step for whoever still holds a seat — and says
+ * «Κράτησε τη θέση» once for several rounds in a row.
  * @returns {Record<string, Record<string, {round: number, event: string, club?: string, rank?: number, text: string}[]>>}
  *   am → day → events
  */
 export function storiesByStudent(logByDay, nameOf, daysOf) {
   const out = {};
+  const entry = (e) => ({
+    round: e.round, event: e.event, ...(e.club !== undefined ? { club: e.club } : {}), ...(e.rank !== undefined ? { rank: e.rank } : {}),
+    text: describeEvent(e, nameOf, daysOf),
+  });
   for (const day of DAYS) {
+    let lastRound = 0;
     for (const e of logByDay[day] ?? []) {
+      lastRound = Math.max(lastRound, e.round ?? 0);
       if (!e.am) continue;
-      ((out[e.am] ??= {})[day] ??= []).push({
-        round: e.round, event: e.event, ...(e.club !== undefined ? { club: e.club } : {}), ...(e.rank !== undefined ? { rank: e.rank } : {}),
-        text: describeEvent(e, nameOf, daysOf),
-      });
+      const story = ((out[e.am] ??= {})[day] ??= []);
+      const prev = story.at(-1);
+      if (e.event === "RETAINED" && prev?.event === "RETAINED" && prev.club === e.club) continue;
+      story.push(entry(e));
+    }
+    for (const byDay of Object.values(out)) {
+      const last = byDay[day]?.at(-1);
+      if (last && (last.event === "ACCEPTED" || last.event === "RETAINED")) byDay[day].push(entry({ round: lastRound, event: "FINAL", club: last.club }));
     }
   }
   return out;
