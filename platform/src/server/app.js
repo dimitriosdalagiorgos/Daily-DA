@@ -84,6 +84,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return clubs.map((c) => ({ ...c, capacity: lists[c.code]?.capacity ?? c.capacity }));
   };
   const getSubmissions = async () => Object.fromEntries((await store.list("submission:")).map(({ key, value }) => [key.slice(11), value]));
+  /**
+   * Clubs stay fixed once parents have declared, even if the admin goes back
+   * a phase: a new or changed club would leave saved rankings incomplete.
+   * (Trial imports of last year's responses do not count.)
+   */
+  const assertClubsChangeable = async (settings) => {
+    if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι όμιλοι κλείδωσαν με το άνοιγμα των δηλώσεων.");
+    const real = Object.values(await getSubmissions()).filter((s) => !s.imported).length;
+    if (real) throw new HttpError(409, `Υπάρχουν ήδη ${real} δηλώσεις γονέων, οπότε οι όμιλοι δεν αλλάζουν (οι δηλώσεις θα έμεναν ελλιπείς). Για νέα αρχή: «Επαναφορά πλατφόρμας».`);
+  };
 
   const logEvent = (who, what, detail = {}) => store.append("events", { at: new Date(now()).toISOString(), who, what, ...detail });
 
@@ -206,6 +216,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const byAm = new Map(existing.map((s) => [s.am, s]));
     let students;
     const notes = [];
+    if (phaseAtLeast(settings.phase, "allocated")) {
+      throw new HttpError(409, "Η κατανομή έχει γίνει: οι νέοι μαθητές δεν θα είχαν αριθμό κλήρωσης ούτε αποτέλεσμα. Για να προσθέσετε μαθητές, πατήστε «Επιστροφή» μέχρι τη φάση «Κλειστές δηλώσεις», ανεβάστε το αρχείο και ξανατρέξτε την κατανομή.");
+    }
     if (phaseAtLeast(settings.phase, "parents")) {
       // Declarations are open: only additions (SPEC).
       const incoming = new Map(report.students.map((s) => [s.am, s]));
@@ -219,6 +232,12 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       if (changed.length) notes.push({ level: "warning", message: `${changed.length} μαθητές έχουν αλλαγές· δεν εφαρμόστηκαν (οι δηλώσεις είναι ανοιχτές): ΑΜ ${changed.map((s) => s.am).join(", ")}.` });
       students = [...existing, ...added];
       notes.push({ level: "info", message: `Προστέθηκαν ${added.length} μαθητές.` });
+      // An earlier allocation (after going back a phase) no longer covers everyone
+      if (added.length && (await store.get("results"))) {
+        await store.delete("results");
+        await store.delete("resultsLog");
+        notes.push({ level: "warning", message: "Η προηγούμενη κατανομή ακυρώθηκε, γιατί δεν περιλάμβανε τους νέους μαθητές· ξανατρέξτε την." });
+      }
     } else {
       students = report.students.map((s) => ({ ...s, loginException: byAm.get(s.am)?.loginException ?? false }));
     }
@@ -241,8 +260,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("PUT", "/api/admin/clubs", async (req) => {
     session(req, "admin");
-    const settings = await getSettings();
-    if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι όμιλοι κλείδωσαν με το άνοιγμα των δηλώσεων.");
+    await assertClubsChangeable(await getSettings());
     const { clubs: clubRows, teachers: teacherRows, fileName } = await body(req);
     const imported = importClubs({ clubs: clubRows ?? [], teachers: teacherRows ?? [] });
     // The teachers' ΑΜ/ΑΦΜ are neither kept nor sent back: only a keyed hash, for the login.
@@ -256,9 +274,27 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     }
     await store.set("clubs", report.clubs);
     await store.set("teachers", report.teachers);
-    // Teacher lists of clubs that no longer exist are dropped.
-    const codes = new Set(report.clubs.map((c) => String(c.code)));
-    for (const { key } of await store.list("teacherList:")) if (!codes.has(key.slice(12))) await store.delete(key);
+    // Teacher lists: dropped for clubs that no longer exist; for the others
+    // the file's capacity wins (an earlier «Διόρθωση» no longer applies) and
+    // students no longer in the club's grades leave the list.
+    const byCode = new Map(report.clubs.map((c) => [String(c.code), c]));
+    const gradeOf = new Map((await getStudents()).map((st) => [st.am, st.grade]));
+    for (const { key, value } of await store.list("teacherList:")) {
+      const club = byCode.get(key.slice(12));
+      if (!club) {
+        await store.delete(key);
+        continue;
+      }
+      const ams = (value.ams ?? []).filter((am) => club.grades.includes(gradeOf.get(am)));
+      const { capacity: _old, ...rest } = value;
+      await store.set(key, { ...rest, ams });
+      if (ams.length < (value.ams ?? []).length) {
+        reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${value.ams.length - ams.length} μαθητές βγήκαν, γιατί δεν είναι πια στις τάξεις του ομίλου.` }];
+      }
+      if (ams.length > club.capacity) {
+        reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${ams.length} μαθητές, περισσότεροι από τις ${club.capacity} θέσεις του νέου αρχείου. Διορθώστε τη λίστα.` }];
+      }
+    }
     await logEvent("admin", "clubs_uploaded", { clubs: report.clubs.length, teachers: report.teachers.length, fileName: fileNameOf(fileName) });
     await recordUpload(["clubs"], { fileName: fileNameOf(fileName), ...report.summary });
     return json(200, { report: reply });
@@ -267,8 +303,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   // «Παρεμφερείς» of one club, until declarations open (empty = none)
   route("PUT", "/api/admin/clubs/:code/similar", async (req, { code }) => {
     session(req, "admin");
-    const settings = await getSettings();
-    if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι όμιλοι κλείδωσαν με το άνοιγμα των δηλώσεων.");
+    await assertClubsChangeable(await getSettings());
     const { similar } = await body(req);
     const value = normalizeSimilar(similar ?? "");
     let found = null;
@@ -304,7 +339,13 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (schoolName !== undefined) patch.schoolName = String(schoolName).slice(0, 120);
     if (mandatoryGrades !== undefined) {
       if (!Array.isArray(mandatoryGrades) || mandatoryGrades.some((g) => !GRADES.includes(g))) throw new HttpError(422, "Άγνωστη τάξη.");
-      patch.mandatoryGrades = GRADES.filter((g) => mandatoryGrades.includes(g));
+      const next = GRADES.filter((g) => mandatoryGrades.includes(g));
+      const current = await getSettings();
+      // The seat check runs when declarations open; after that the rule stays as checked
+      if (phaseAtLeast(current.phase, "parents") && next.join() !== current.mandatoryGrades.join()) {
+        throw new HttpError(409, "Οι τάξεις με υποχρεωτική ένταξη δεν αλλάζουν αφού ανοίξουν οι δηλώσεις (ο έλεγχος θέσεων έγινε με τις τωρινές). Για αλλαγή: «Επιστροφή» στη φάση «Εκπαιδευτικοί», αλλαγή, και ξανά άνοιγμα των δηλώσεων.");
+      }
+      patch.mandatoryGrades = next;
     }
     await store.update("settings", (s = {}) => ({ phase: "setup", ...s, ...patch }));
     await logEvent("admin", "settings", { fields: Object.keys(patch) });
@@ -702,12 +743,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι λίστες κλείδωσαν με το άνοιγμα των δηλώσεων.");
     const club = (await getClubs()).find((c) => String(c.code) === String(code)); // current capacity applied
     if (!club) throw new HttpError(404, "Άγνωστος όμιλος.");
+    // Only the admin's «Διόρθωση» stores a capacity (overriding the file's);
+    // a list saved by a teacher or from a file keeps whatever applies.
+    const previous = await store.get(`teacherList:${club.code}`);
+    const override = capacity !== undefined ? capacity : previous?.capacity;
     if (capacity === undefined) capacity = club.capacity;
     if (!Number.isInteger(capacity) || capacity <= 0 || capacity > 500) throw new HttpError(422, "Η χωρητικότητα πρέπει να είναι θετικός ακέραιος.");
     const studentsByAm = new Map((await getStudents()).map((s) => [s.am, s]));
     const problems = validateTeacherList({ ...club, capacity }, list, studentsByAm);
     if (problems.length) throw new HttpError(422, problems.join(" "), { problems });
-    const entry = { capacity, ams: list, updatedBy: who, updatedAt: new Date(now()).toISOString() };
+    const entry = { ...(override !== undefined ? { capacity } : {}), ams: list, updatedBy: who, updatedAt: new Date(now()).toISOString() };
     await store.set(`teacherList:${club.code}`, entry);
     await logEvent(who, "teacher_list", { club: club.code, capacity, count: list.length });
     // Tell the club's teachers (except the one who saved).

@@ -108,7 +108,8 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   assert.equal((await call("PUT", "/api/teacher/clubs/101", { token: teacher, body: { capacity: 1, ams: [] } })).status, 403);
   // The capacity is the admin's: a teacher's value is ignored
   r = await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { capacity: 30, ams: ["9001"] } });
-  assert.equal(r.data.list.capacity, 1, "capacity unchanged by the teacher");
+  assert.equal(r.data.list.capacity, undefined, "a teacher's save stores no capacity");
+  assert.equal((await call("GET", "/api/teacher/me", { token: teacher })).data.clubs[0].capacity, 1, "capacity unchanged by the teacher");
   assert.equal((await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { ams: ["9001", "9002"] } })).status, 422, "more than the seats");
 
   // Bulk import by the admin: preview, then save (replaces the list)
@@ -125,7 +126,7 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   r = await call("POST", "/api/admin/teacher-lists/import", { token: admin, body: { files: [{ fileName: "100.xlsx", rows: file }], apply: true } });
   assert.equal(r.data.saved, true);
   const saved = (await call("GET", "/api/admin/state", { token: admin })).data.teacherLists[100];
-  assert.deepEqual([saved.ams, saved.capacity, saved.updatedBy], [["9002"], 1, "admin-file"]);
+  assert.deepEqual([saved.ams, saved.capacity, saved.updatedBy], [["9002"], undefined, "admin-file"], "no capacity stored by the import");
   // back to the teacher's choice, for the rest of the year
   await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { ams: ["9001"] } });
 
@@ -539,7 +540,7 @@ test("teachers' common code + own ΑΜ/ΑΦΜ: only their clubs; the number is n
   r = await call("PUT", "/api/teacher/clubs/100", { token: skin, body: { ams: ["9001"], capacity: 99 } });
   assert.equal(r.status, 200);
   assert.equal(r.data.list.updatedBy, "nskin@sch.gr", "the history names the teacher");
-  assert.equal(r.data.list.capacity, 1, "the capacity stays the admin's");
+  assert.equal(r.data.list.capacity, undefined, "the capacity stays the admin's (none stored)");
   const events = (await store.readLog("events")).filter((e) => e.who === "nskin@sch.gr").map((e) => e.what);
   assert.deepEqual(events, ["teacher_login", "teacher_list"]);
 
@@ -578,4 +579,64 @@ test("a new clubs file after the trial import: warned at upload, explained at th
   r = await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "δοκιμή" } });
   assert.equal(r.status, 422);
   assert.match(r.data.error, /ο όμιλος 102 δεν γίνεται πια Πέμπτη.*ξαναεισαγάγετε/);
+});
+
+test("going back a phase: clubs stay fixed once parents declared; mandatory grades frozen; no students after the allocation", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z", mandatoryGrades: [] } });
+  for (const phase of ["teachers", "parents"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+  let r = await call("PUT", "/api/admin/settings", { token: admin, body: { mandatoryGrades: ["Β"] } });
+  assert.equal(r.status, 409, "mandatory grades frozen while declarations are open");
+  assert.equal((await call("PUT", "/api/admin/settings", { token: admin, body: { mandatoryGrades: [] } })).status, 200, "the same value is fine");
+  // A parent declares
+  const parent = (await call("POST", "/api/parent/login", { body: { password: "omiloi2026", am: "9001", surname: "ΠΑΠΑΔΟΠΟΥΛΟΣ", name: "ΝΙΚΟΛΑΟΣ", father: "ΓΕΩΡΓΙΟΣ", mother: "ΜΑΡΙΑ" } })).data.token;
+  r = await call("PUT", "/api/parent/submission", { token: parent, body: { parent: { name: "Γ", email: "g@example.com" }, preferences: { mon: ["100", "101"], thu: ["102"] } } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  // Back to the teachers' phase: clubs still cannot change
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
+  r = await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /1 δηλώσεις γονέων/);
+  assert.equal((await call("PUT", "/api/admin/clubs/101/similar", { token: admin, body: { similar: "Χ" } })).status, 409);
+  // Allocation done: no new students
+  for (const phase of ["parents", "closed"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+  assert.equal((await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "1" } })).status, 200);
+  const more = [...STUDENT_ROWS, ["Α", 9005, "ΝΕΟΣ", "ΜΑΘΗΤΗΣ", "Π", "Μ"]];
+  r = await call("PUT", "/api/admin/students", { token: admin, body: { rows: more } });
+  assert.equal(r.status, 409);
+  // Back to «closed»: allowed, and the old allocation is dropped
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
+  r = await call("PUT", "/api/admin/students", { token: admin, body: { rows: more } });
+  assert.equal(r.status, 200);
+  assert.match(r.data.report.problems.map((p) => p.message).join(" "), /ακυρώθηκε/);
+  assert.equal((await call("GET", "/api/admin/results", { token: admin })).status, 404);
+});
+
+test("a new clubs file: its capacity wins over an earlier «Διόρθωση»; lists keep only eligible students", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
+  // Admin corrects Ρομποτική (101, grades Α-Β) to 3 seats, with a list of an Α and a Β student
+  let r = await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { capacity: 3, ams: ["9003", "9001"] } });
+  assert.equal(r.status, 200);
+  let state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.equal(state.clubs.find((c) => c.code === 101).capacity, 3);
+  // A list saved later (e.g. by a teacher) keeps the correction
+  await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { ams: ["9003"] } });
+  state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.equal(state.clubs.find((c) => c.code === 101).capacity, 3, "the correction stays");
+  await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { ams: ["9003", "9001"] } });
+  // New file: 101 now 4 seats and grade Β only
+  const changed = CLUB_ROWS.map((row) => (row[0] === 101 ? [101, "Ρομποτική", "Δευτέρα", "", "", "Β", 4, "", ""] : row));
+  r = await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: changed, teachers: TEACHER_ROWS } });
+  assert.equal(r.status, 200);
+  assert.match(r.data.report.problems.map((p) => p.message).join(" "), /Ρομποτική.*1 μαθητές βγήκαν/);
+  state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.equal(state.clubs.find((c) => c.code === 101).capacity, 4, "the file's capacity");
+  assert.deepEqual(state.teacherLists["101"].ams, ["9001"]);
 });
