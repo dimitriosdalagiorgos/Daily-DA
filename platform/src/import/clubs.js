@@ -178,7 +178,7 @@ function importTeachers(rows, clubs, rowOfCode, problems) {
     const email = cellText(get("email")).toLowerCase();
     if (!EMAIL.test(email)) rowProblems.push({ ...at, field: "email", message: `Μη έγκυρο email «${cellText(get("email"))}» (μόνο διευθύνσεις @sch.gr).` });
     const personalId = "personalId" in th.columns ? normalizePersonalId(get("personalId")) : "";
-    if (personalId === null) rowProblems.push({ ...at, field: "personalId", message: `Μη έγκυρος ΑΜ ή ΑΦΜ «${cellText(get("personalId"))}» (μόνο ψηφία).` });
+    if (personalId === null) rowProblems.push({ ...at, field: "personalId", message: `Μη έγκυρος ΑΜ ή ΑΦΜ «${cellText(get("personalId"))}» : πρέπει να έχει 4 έως 12 ψηφία (ΑΜ μόνιμου ή ΑΦΜ αναπληρωτή), χωρίς γράμματα ή σύμβολα.` });
 
     if (rowProblems.length) {
       problems.push(...rowProblems.map((p) => ({ level: "error", ...p })));
