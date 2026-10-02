@@ -293,6 +293,16 @@ try {
   await admin.click("button:has-text('Εμφάνιση αναφοράς')");
   await admin.waitForSelector(".report:has-text('Αριθμός κλήρωσης')");
   step("admin: gaps per day and a student's report");
+  await admin.click("role=tab[name='Στατιστικά']");
+  await admin.waitForSelector(".viz-tile:has-text('Πήραν την 1η επιλογή')");
+  if ((await admin.locator(".viz-seg").count()) === 0) throw new Error("no stacked bars in the statistics");
+  await admin.locator(".viz-seg >> nth=0").hover();
+  await admin.waitForSelector(".viz-tip:not([hidden])");
+  await shot(admin, "07c-admin-stats");
+  await admin.setViewportSize({ width: 390, height: 844 });
+  await shot(admin, "07d-admin-stats-phone");
+  await admin.setViewportSize({ width: 1100, height: 900 });
+  step("admin: statistics with charts (tooltip on hover)");
   await shot(admin, "07-admin-results");
   for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"]]) {
     const [d] = await Promise.all([admin.waitForEvent("download"), admin.click(`button:has-text('${label}')`)]);

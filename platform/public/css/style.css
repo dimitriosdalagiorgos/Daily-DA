@@ -19,6 +19,16 @@
   --focus: #f0a500;
   --radius: 10px;
   --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.08);
+  /* Charts: ordinal blue ramp for 1st / 2nd / 3rd / 4th+ choice (validated:
+     one hue, monotone lightness, light end ≥ 2:1 on the surface), gray = no club */
+  --viz-1: #104281;
+  --viz-2: #256abf;
+  --viz-3: #3987e5;
+  --viz-4: #86b6ef;
+  --viz-none: #b9bcc2;
+  --viz-grid: #e1e4e8;
+  --viz-target: #1c2430;
+  --viz-ink-1: #fff; --viz-ink-2: #fff; --viz-ink-3: #0b1a2e; --viz-ink-4: #0b1a2e; --viz-ink-none: #1c2430;
   color-scheme: light;
 }
 
@@ -40,6 +50,15 @@
     --err: #ff8a8a;
     --err-soft: #3d1b1b;
     --shadow: none;
+    /* on dark, 1st choice is the lightest step (most prominent) */
+    --viz-1: #9ec5f4;
+    --viz-2: #5598e7;
+    --viz-3: #2a78d6;
+    --viz-4: #1c5cab;
+    --viz-none: #59616d;
+    --viz-grid: #2c3540;
+    --viz-target: #e6eaf0;
+    --viz-ink-1: #0b1a2e; --viz-ink-2: #0b1a2e; --viz-ink-3: #fff; --viz-ink-4: #fff; --viz-ink-none: #fff;
     color-scheme: dark;
   }
 }
@@ -288,3 +307,33 @@ button.link { border: 0; background: transparent; padding: 0 6px; min-height: 0;
 
 /* Teachers: in-page help above the lists */
 #help-panel:not(.hidden) { margin-bottom: 24px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+/* ---------- Charts (js/charts.js) ---------- */
+.viz { margin: 8px 0 16px; }
+.viz-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.875rem; color: var(--muted); margin-bottom: 8px; }
+.viz-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.viz-legend i.viz-tick-key { width: 2px; height: 14px; border-radius: 0; background: var(--viz-target); margin: 0 8px 0 5px; vertical-align: -2px; }
+.viz-rows { display: grid; gap: 8px; }
+.viz-row { display: grid; grid-template-columns: minmax(80px, 11rem) 1fr auto; gap: 10px; align-items: center; }
+.viz-label { font-size: 0.875rem; overflow-wrap: anywhere; }
+.viz-total { min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.viz-stack { display: flex; gap: 2px; height: 22px; }
+.viz-seg { min-width: 3px; display: flex; align-items: center; justify-content: center; overflow: visible; cursor: default; }
+.viz-seg:last-child { border-radius: 0 4px 4px 0; }
+.viz-seg b { font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.viz-track { position: relative; height: 18px; border-left: 1px solid var(--viz-grid); }
+.viz-hbar { position: absolute; left: 0; top: 2px; bottom: 2px; border-radius: 0 4px 4px 0; min-width: 2px; max-width: 100%; }
+.viz-target { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--viz-target); pointer-events: none; }
+.viz-cols { display: flex; align-items: flex-end; gap: 2px; height: 180px; border-bottom: 1px solid var(--viz-grid); padding-top: 18px; }
+.viz-col { flex: 1 1 0; max-width: 56px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; }
+.viz-colbar { width: min(24px, 80%); border-radius: 4px 4px 0 0; min-height: 0; }
+.viz-cap { font-variant-numeric: tabular-nums; color: var(--muted); }
+.viz-collabel { position: absolute; bottom: -1.6em; color: var(--muted); white-space: nowrap; }
+.viz-cols + .viz-table { margin-top: 2em; }
+[data-tip]:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.viz-tip { position: absolute; z-index: 50; max-width: 300px; padding: 6px 10px; border-radius: 6px; background: var(--text); color: var(--bg); font-size: 0.8125rem; pointer-events: none; box-shadow: var(--shadow); }
+.viz-table summary { cursor: pointer; font-size: 0.875rem; color: var(--muted); }
+.viz-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 16px; }
+.viz-tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.viz-tile strong { font-size: 1.6rem; line-height: 1.2; }
+@media (max-width: 520px) { .viz-row { grid-template-columns: 1fr auto; } .viz-row > .viz-label { grid-column: 1 / -1; } }

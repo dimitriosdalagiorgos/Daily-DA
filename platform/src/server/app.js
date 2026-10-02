@@ -23,6 +23,7 @@ import { importLegacyResponses } from "../import/legacy.js";
 import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
 import { GAP_REASONS, describeEvent, gapReasons, storiesByStudent } from "../export/story.js";
+import { allocationStats } from "../export/stats.js";
 import { createHash } from "node:crypto";
 import { makeZip } from "./zip.js";
 import { createRateLimiter, hashPassword, personalIdHash, safeEqual, signToken, verifyPassword, verifyToken, withIdHashes } from "./auth.js";
@@ -451,14 +452,14 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     await store.setMany(Object.entries(stories).map(([am, story]) => ({ key: `story:${am}`, value: story })));
     await store.update("settings", (s = {}) => ({ ...s, phase: "allocated" }));
     await logEvent("admin", "allocated", { seed });
-    return json(200, { results: summarizeResults(results, input) });
+    return json(200, { results: summarizeResults(results, input, logByDay) });
   });
 
   route("GET", "/api/admin/results", async (req) => {
     session(req, "admin");
     const results = await store.get("results");
     if (!results) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
-    return json(200, { results: summarizeResults(results, await allocationInput(results.seed)) });
+    return json(200, { results: summarizeResults(results, await allocationInput(results.seed), await store.get("resultsLog")) });
   });
 
   route("GET", "/api/admin/export/r-package.zip", async (req) => {
@@ -884,7 +885,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     };
   }
 
-  function summarizeResults(results, input) {
+  function summarizeResults(results, input, logByDay) {
     const byDayClub = {};
     for (const d of DAYS) {
       const counts = {};
@@ -904,6 +905,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       enrolled: byDayClub,
       submitted: Object.keys(input.preferences).length,
       mandatoryGrades: input.mandatoryGrades,
+      stats: allocationStats(results, input, logByDay),
       // Students of mandatory grades left without a club (per day)
       mandatoryGaps: Object.entries(gaps).flatMap(([am, byDay]) => {
         const grade = input.students.find((s) => s.am === am)?.grade;

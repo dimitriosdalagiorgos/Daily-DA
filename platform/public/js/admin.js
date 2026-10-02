@@ -6,6 +6,7 @@ import { reportView as studentReportView } from "./report.js";
 import { makeZip } from "/lib/export/zip.js";
 import { LIST_SHEET, teacherListFileName, teacherListRows } from "/lib/export/teacherListFile.js";
 import { helpTabs } from "./help.js";
+import { barsWithTarget, columns, fmt, pct, stackedBars, statTile } from "./charts.js";
 
 const api = createApi("admin");
 const app = $("#app");
@@ -668,6 +669,7 @@ function resultsView(results) {
         el("ul", {}, noSubmission.map((s) => el("li", {}, `${who(s)} · ${s.grade} · ΑΜ ${s.am}`))))
       : el("p.muted", {}, "Όλοι υπέβαλαν δήλωση.")],
     ["report", "Αναφορά μαθητή", reportSearch],
+    ["stats", "Στατιστικά", () => statsView(results)],
   ];
   if (!panels.some(([id]) => id === resultsTab)) resultsTab = "fill";
   const nav = el("nav.tabs.subtabs", { role: "tablist", "aria-label": "Αποτελέσματα" });
@@ -742,6 +744,80 @@ function reportSearch() {
     el("div.actions", {}, input, list, go), out);
 }
 
+// ---------- Statistics ----------
+
+const CHOICE_SERIES = [
+  { key: "1", label: "1η επιλογή", color: "--viz-1" },
+  { key: "2", label: "2η", color: "--viz-2" },
+  { key: "3", label: "3η", color: "--viz-3" },
+  { key: "4+", label: "4η ή χαμηλότερη", color: "--viz-4" },
+  { key: "none", label: "Δεν χώρεσε", color: "--viz-none" },
+];
+const sumOf = (o) => Object.values(o).reduce((a, n) => a + n, 0);
+
+function statsView(results) {
+  const st = results.stats;
+  if (!st) return el("p.muted", {}, "Ξανατρέξτε την κατανομή για να υπολογιστούν τα στατιστικά.");
+  const asked = sumOf(st.overall);
+  const dayRows = DAYS.filter((d) => sumOf(st.byDay[d])).map((d) => ({ label: DAY_LABELS[d], values: st.byDay[d] }));
+  const gradeRows = Object.entries(st.byGrade).filter(([, v]) => sumOf(v)).map(([g, v]) => ({ label: `${g} τάξη`, values: v }));
+  const clubLabel = (c) => `${c.name} (${DAY_LABELS[c.day]}${c.days.length > 1 ? "+" : ""})`;
+  const byPressure = [...st.demand].sort((a, b) => (b.pressure ?? 0) - (a.pressure ?? 0));
+  const byFill = [...st.demand].sort((a, b) => (b.fill ?? 0) - (a.fill ?? 0));
+  const section = (title, intro, ...body) => el("section", {}, el("h3", {}, title), intro ? el("p.small.muted", { style: "margin-top:0" }, intro) : null, ...body);
+  return el("div", {},
+    el("p.small.muted", {}, "Μετρά κάθε ημέρα κάθε μαθητή που δήλωσε ομίλους εκείνη την ημέρα («ημέρα-μαθητή»). Οι ημέρες όμιλου πολλών ημερών μετρούν με τη θέση που είχε ο όμιλος την πρώτη του ημέρα. Οι ημέρες χωρίς δήλωση δεν μετρούν. «+» δίπλα στην ημέρα: όμιλος πολλών ημερών (μετρά στην πρώτη του). Περάστε τον δείκτη πάνω από μια μπάρα για τους αριθμούς· κάτω από κάθε διάγραμμα, «Πίνακας»."),
+    el("div.viz-tiles", {},
+      statTile("Πήραν την 1η επιλογή", st.firstChoiceShare === null ? "—" : pct(st.firstChoiceShare), `${fmt(st.overall["1"])} από ${fmt(asked)} ημέρες-μαθητή`),
+      statTile("Μία από τις 3 πρώτες", st.topThreeShare === null ? "—" : pct(st.topThreeShare)),
+      statTile("Δεν χώρεσαν", fmt(st.overall.none), "ημέρες-μαθητή χωρίς όμιλο, ενώ είχαν δηλώσει"),
+      statTile("Δηλώσεις", fmt(results.submitted), `από ${fmt(state.students.length)} μαθητές`)),
+    section("Ποια επιλογή πήραν, ανά ημέρα", null, stackedBars(dayRows, CHOICE_SERIES, { unit: "ημέρες-μαθητή" })),
+    section("Ποια επιλογή πήραν, ανά τάξη", "Όλες οι ημέρες μαζί.", stackedBars(gradeRows, CHOICE_SERIES, { unit: "ημέρες-μαθητή" })),
+    section("Ιστόγραμμα: σε ποια θέση της λίστας τους ήταν ο όμιλος που πήραν", null,
+      columns(st.histogram.map((h) => ({ label: `${h.rank}η`, value: h.count })), { unit: "ημέρες-μαθητή",
+        caption: st.overall.none ? `Επιπλέον ${fmt(st.overall.none)} ημέρες-μαθητή χωρίς όμιλο (δεν χώρεσαν).` : "" })),
+    section("Ζήτηση: πόσοι τον έβαλαν 1η επιλογή, σε σχέση με τις θέσεις", "Πάνω οι όμιλοι με τη μεγαλύτερη πίεση. Όπου η μπάρα ξεπερνά τη γραμμή των θέσεων, τον ήθελαν πρώτο περισσότεροι απ' όσους χωρούν — υποψήφιοι για περισσότερες θέσεις ή δεύτερο τμήμα.",
+      barsWithTarget(byPressure.map((c) => ({ label: clubLabel(c), value: c.first, target: c.capacity, note: `τον δήλωσαν ${c.applicants}, μπήκαν ${c.placed}${c.missed === null ? "" : `, δεν χώρεσαν ${c.missed}`}` })),
+        { valueLabel: "1η επιλογή", targetLabel: "θέσεις" })),
+    section("Πληρότητα: πόσοι μπήκαν, σε σχέση με τις θέσεις", null,
+      barsWithTarget(byFill.map((c) => ({ label: clubLabel(c), value: c.placed, target: c.capacity, note: c.fill === null ? "" : `πληρότητα ${pct(c.fill)}` })),
+        { valueLabel: "μπήκαν", targetLabel: "θέσεις" })),
+    section("Ανά όμιλο", "«Δεν χώρεσαν»: έκαναν αίτηση στον όμιλο και δεν χώρεσαν (πήγαν σε επόμενη επιλογή τους ή έμειναν χωρίς όμιλο).",
+      el("div.table-wrap", {}, el("table", {},
+        el("thead", {}, el("tr", {}, ["Όμιλος", "Θέσεις", "1η επιλογή", "Τον δήλωσαν", "Μπήκαν", "Δεν χώρεσαν", "Πληρότητα"].map((h, i) => el(i ? "th.num" : "th", {}, h)))),
+        el("tbody", {}, byPressure.map((c) => el("tr", {}, el("td", {}, clubLabel(c)),
+          [c.capacity, c.first, c.applicants, c.placed, c.missed].map((v) => el("td.num", {}, v === null ? "—" : fmt(v))), el("td.num", {}, c.fill === null ? "" : pct(c.fill)))))))),
+    section("Λίστες εκπαιδευτικών", "Τι έγιναν οι μαθητές που επέλεξαν οι εκπαιδευτικοί.",
+      st.teacherLists.length
+        ? el("div.table-wrap", {}, el("table", {},
+          el("thead", {}, el("tr", {}, ["Όμιλος", "Στη λίστα", "Δήλωσαν τον όμιλο", "Μπήκαν", "Πήραν όμιλο που ήθελαν περισσότερο", "Δεν τον δήλωσαν"].map((h, i) => el(i ? "th.num" : "th", {}, h)))),
+          el("tbody", {}, st.teacherLists.map((t) => el("tr", {}, el("td", {}, t.name), [t.listed, t.ranked, t.placed, t.elsewhere, t.notRanked].map((v) => el("td.num", {}, fmt(v))))))))
+        : el("p.muted", {}, "Δεν υπάρχουν λίστες εκπαιδευτικών.")));
+}
+
+/** The statistics as rows for the results workbook. */
+function statsSheet(results) {
+  const st = results.stats;
+  if (!st) return [["Ξανατρέξτε την κατανομή για τα στατιστικά."]];
+  const head = ["", ...CHOICE_SERIES.map((s) => s.label), "Σύνολο"];
+  const line = (label, v) => [label, ...CHOICE_SERIES.map((s) => v[s.key]), sumOf(v)];
+  return [
+    ["Ποια επιλογή πήραν (ημέρες-μαθητή)"], head,
+    ...DAYS.filter((d) => sumOf(st.byDay[d])).map((d) => line(DAY_LABELS[d], st.byDay[d])),
+    ...Object.entries(st.byGrade).map(([g, v]) => line(`${g} τάξη`, v)),
+    line("Σύνολο", st.overall),
+    [],
+    ["Ιστόγραμμα: θέση του ομίλου που πήραν"], ["Θέση", "Ημέρες-μαθητή"], ...st.histogram.map((h) => [h.rank, h.count]),
+    [],
+    ["Ανά όμιλο (πρώτη ημέρα του)"], ["Κωδικός", "Όμιλος", "Ημέρα", "Θέσεις", "1η επιλογή", "Τον δήλωσαν", "Μπήκαν", "Δεν χώρεσαν", "Πληρότητα %"],
+    ...st.demand.map((c) => [c.code, c.name, DAY_LABELS[c.day], c.capacity, c.first, c.applicants, c.placed, c.missed, c.fill === null ? "" : Math.round(c.fill * 100)]),
+    [],
+    ["Λίστες εκπαιδευτικών"], ["Κωδικός", "Όμιλος", "Στη λίστα", "Δήλωσαν τον όμιλο", "Μπήκαν", "Πήραν όμιλο που ήθελαν περισσότερο", "Δεν τον δήλωσαν"],
+    ...st.teacherLists.map((t) => [t.code, t.name, t.listed, t.ranked, t.placed, t.elsewhere, t.notRanked]),
+  ];
+}
+
 // Results workbook, like R's week_results.xlsx
 async function resultsWorkbook(results) {
   const XLSX = await loadXlsx();
@@ -766,7 +842,7 @@ async function resultsWorkbook(results) {
   }
   const info = [["Στοιχείο", "Τιμή"], ["Seed κλήρωσης", results.seed], ["Εκτέλεση", formatDateTime(results.at)], ["Μαθητές", state.students.length], ["Δηλώσεις", results.submitted]];
   const wb = XLSX.utils.book_new();
-  for (const [name, rows] of [["Ανά μαθητή", perStudent], ["Ανά όμιλο", perClub], ["Πληρότητα", fill], ["Χωρίς όμιλο", gaps], ["Πληροφορίες", info]]) {
+  for (const [name, rows] of [["Ανά μαθητή", perStudent], ["Ανά όμιλο", perClub], ["Πληρότητα", fill], ["Χωρίς όμιλο", gaps], ["Στατιστικά", statsSheet(results)], ["Πληροφορίες", info]]) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
   }
   XLSX.writeFile(wb, "katanomi_omilon.xlsx");
