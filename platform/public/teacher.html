@@ -3,17 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
   <title>Δήλωση ομίλων — Εκπαιδευτικοί</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header class="site"><div class="inner">
-    <a href="/">Δήλωση ομίλων</a><span class="school">Εκπαιδευτικοί</span>
+    <a href="./">Δήλωση ομίλων</a><span class="school">Εκπαιδευτικοί</span>
     <span class="spacer"></span>
-    <a href="/help.html#teacher">Βοήθεια</a>
+    <button id="help" class="small" type="button" aria-expanded="false">Βοήθεια</button>
     <button id="logout" class="small hidden" type="button">Αποσύνδεση εκπαιδευτικού</button>
   </div></header>
-  <main id="app"><p class="muted">Φόρτωση…</p></main>
+  <main>
+    <div id="help-panel" class="hidden"></div>
+    <div id="app"><p class="muted">Φόρτωση…</p></div>
+  </main>
   <script type="module" src="/js/teacher.js"></script>
 </body>
 </html>

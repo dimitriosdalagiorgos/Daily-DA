@@ -5,6 +5,9 @@
 //   SUPABASE_SECRET_KEY   Supabase → Project Settings → API Keys → Secret key
 //                         (legacy name SUPABASE_SERVICE_ROLE_KEY also accepted)
 //   ADMIN_PASSWORD        the admin password (choose one, ≥ 10 characters)
+//   TEACHER_PATH, ADMIN_PATH  the hidden addresses of the teachers' and the
+//                         admin's pages (see src/server/paths.js); the build
+//                         needs them too
 // E-mail (Brevo, see src/server/mail-brevo.js):
 //   BREVO_API_KEY, MAIL_FROM (verified sender), MAIL_FROM_NAME (optional)
 //   Without them nothing is sent: e-mails, teachers' login links included,
@@ -18,6 +21,7 @@ import { randomBytes } from "node:crypto";
 import { createApp } from "../../src/server/app.js";
 import { createSupabaseStore } from "../../src/server/store-supabase.js";
 import { createBrevoMailer } from "../../src/server/mail-brevo.js";
+import { rolePaths } from "../../src/server/paths.js";
 
 let handle = null;
 
@@ -30,13 +34,18 @@ async function getHandler() {
   const key = env.SUPABASE_SECRET_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY;
   if (!env.SUPABASE_URL || !key) return { missing: "Η αποθήκευση δεν έχει ρυθμιστεί ακόμα (SUPABASE_URL / SUPABASE_SECRET_KEY)." };
   if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 10) return { missing: "Ορίστε ADMIN_PASSWORD (τουλάχιστον 10 χαρακτήρες) στο Netlify." };
+  try {
+    rolePaths(env);
+  } catch (err) {
+    return { missing: `${err.message} (Netlify → Environment variables)` };
+  }
 
   const store = createSupabaseStore({ url: env.SUPABASE_URL, key });
   const secret = env.SESSION_SECRET ?? (await store.update("sessionSecret", (s) => s ?? randomBytes(32).toString("base64url")));
   const mailConfigured = Boolean(env.BREVO_API_KEY && env.MAIL_FROM);
   handle = createApp({
     store,
-    env: { SESSION_SECRET: secret, ADMIN_PASSWORD: env.ADMIN_PASSWORD, BASE_URL: env.URL, SHOW_OUTBOX: true, REDACT_OUTBOX: mailConfigured },
+    env: { SESSION_SECRET: secret, ADMIN_PASSWORD: env.ADMIN_PASSWORD, BASE_URL: env.URL, TEACHER_PATH: rolePaths(env).teacher.slice(1, -1), SHOW_OUTBOX: true, REDACT_OUTBOX: mailConfigured },
     sendMail: mailConfigured ? createBrevoMailer({ apiKey: env.BREVO_API_KEY, from: env.MAIL_FROM, fromName: env.MAIL_FROM_NAME }) : undefined,
   });
   return handle;

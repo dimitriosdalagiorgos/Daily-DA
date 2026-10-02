@@ -3,20 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
   <title>Δήλωση ομίλων — Βοήθεια</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header class="site"><div class="inner">
-    <a href="/">Δήλωση ομίλων</a><span class="school">Βοήθεια</span>
+    <a href="/">Δήλωση ομίλων</a><span class="school">Βοήθεια για γονείς</span>
   </div></header>
   <main id="app"><p class="muted">Φόρτωση…</p></main>
   <script type="module">
     import { $, el, show } from "/js/ui.js";
-    import { helpTabs } from "/js/help.js";
+    import { helpView } from "/js/help.js";
     show($("#app"), el("h1", {}, "Βοήθεια"),
-      el("p.muted", {}, "Οδηγίες για γονείς και εκπαιδευτικούς. Οι οδηγίες της διαχείρισης βρίσκονται στην καρτέλα «Βοήθεια» της σελίδας διαχείρισης."),
-      helpTabs(["parent", "teacher"], { useHash: true }));
+      el("p.muted", {}, "Οδηγίες για τους γονείς και κηδεμόνες."),
+      helpView("parent"));
   </script>
 </body>
 </html>

@@ -16,7 +16,7 @@ const STORES = {
   },
 };
 
-const env = { SESSION_SECRET: "test-secret-0123456789", ADMIN_PASSWORD: "admin-pass", BASE_URL: "http://localhost", DEV: true };
+const env = { SESSION_SECRET: "test-secret-0123456789", ADMIN_PASSWORD: "admin-pass", BASE_URL: "http://localhost", TEACHER_PATH: "e-test1234", DEV: true };
 
 function setup({ now = Date.parse("2026-10-01T09:00:00Z"), store = createMemoryStore() } = {}) {
   const clock = { now };
@@ -92,7 +92,7 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   r = await call("POST", "/api/admin/teacher-link", { token: admin, body: { email: "EThEatr@sch.gr " } });
   assert.equal(r.status, 200);
   assert.equal(Date.parse(r.data.expiresAt) - clock.now, 7 * 24 * 3600 * 1000, "valid a week");
-  const magic = r.data.link.match(/^http:\/\/localhost\/teacher\.html#token=(\S+)$/)[1];
+  const magic = r.data.link.match(/^http:\/\/localhost\/e-test1234\/#token=(\S+)$/)[1];
   r = await call("POST", "/api/teacher/session", { body: { token: magic } });
   assert.equal(r.status, 200);
   const teacher = r.data.token;
@@ -481,4 +481,56 @@ test("admin: «Παρεμφερείς» of a club can be set or cleared until de
   // R export carries the column
   r = await call("GET", "/api/admin/export/r-package.zip?seed=x", { token: admin });
   assert.equal(r.status, 200);
+});
+
+test("teachers' common code: any club, history, a new code ends old sessions", async () => {
+  const { call, store } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  assert.equal((await call("GET", "/api/public")).data.teacherCode, false);
+  let r = await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" } });
+  assert.equal(r.status, 409, "not enabled yet");
+  assert.equal((await call("PUT", "/api/admin/settings", { token: admin, body: { teacherPassword: "abc" } })).status, 422);
+  await call("PUT", "/api/admin/settings", { token: admin, body: { teacherPassword: "omiloi2026" } });
+  assert.equal((await call("GET", "/api/public")).data.teacherCode, true);
+  const state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.equal(state.settings.teacherPasswordSet, true);
+  assert.equal(state.settings.teacherPasswordHash, undefined, "the hash is not sent");
+  assert.equal(state.teacherPath, "/e-test1234/");
+
+  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "wrong-code" } })).status, 401);
+  r = await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" } });
+  assert.equal(r.status, 200);
+  const teacher = r.data.token;
+  r = await call("GET", "/api/teacher/me", { token: teacher });
+  assert.equal(r.data.shared, true);
+  assert.equal(r.data.teacher, null);
+  assert.deepEqual(r.data.clubs.map((c) => c.code), [100, 101, 102, 103], "every club");
+  assert.deepEqual(r.data.clubs[0].coTeachers, ["ΕΛΕΝΗ ΘΕΑΤΡΙΚΟΥ", "ΝΙΚΟΣ ΣΚΗΝΙΚΟΥ"]);
+
+  assert.equal((await call("PUT", "/api/teacher/clubs/102", { token: teacher, body: { ams: ["9001"] } })).status, 409, "only in the teachers' phase");
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
+  r = await call("PUT", "/api/teacher/clubs/102", { token: teacher, body: { ams: ["9001"], capacity: 99 } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.list.updatedBy, "teacher-code");
+  assert.equal(r.data.list.capacity, 5, "the capacity stays the admin's");
+  const events = (await store.readLog("events")).filter((e) => e.who === "teacher-code").map((e) => e.what);
+  assert.deepEqual(events, ["teacher_login", "teacher_list"]);
+
+  // A new code signs out whoever used the old one
+  await call("PUT", "/api/admin/settings", { token: admin, body: { teacherPassword: "neos-kodikos" } });
+  r = await call("GET", "/api/teacher/me", { token: teacher });
+  assert.equal(r.status, 401);
+  assert.match(r.data.error, /κωδικός άλλαξε/);
+  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" } })).status, 401);
+});
+
+test("teachers' common code is rate-limited per address", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/settings", { token: admin, body: { teacherPassword: "omiloi2026" } });
+  for (let i = 0; i < 10; i++) assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "x" }, ip: "9.9.9.9" })).status, 401);
+  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" }, ip: "9.9.9.9" })).status, 429);
+  assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026" }, ip: "8.8.8.8" })).status, 200);
 });

@@ -1,4 +1,5 @@
 // Plain Node.js HTTP server for the platform: the site (public/), the
+// teachers' and admin's pages at their hidden addresses (see paths.js), the
 // browser-safe parts of src/ as /lib/, the clubs template, and /api/*
 // through the same handler as the Netlify Function. Used by the local dev
 // server (dev/server.mjs) and the production server (server/start.mjs).
@@ -6,6 +7,7 @@
 import { createServer } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
+import { ROLE_PAGES } from "./paths.js";
 
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
@@ -14,7 +16,12 @@ const TYPES = {
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
-function staticFile(root, pathname) {
+function staticFile(root, pathname, paths) {
+  for (const [role, file] of Object.entries(ROLE_PAGES)) {
+    if (pathname === paths[role]) return join(root, "public", file);
+    // the page files themselves are reachable only at the hidden address
+    if (pathname === `/${file}`) return null;
+  }
   const map = [
     ["/lib/", join(root, "src")],
     ["/templates/", join(root, "templates")],
@@ -36,10 +43,10 @@ function staticFile(root, pathname) {
 
 /**
  * @param {{handle: (req: Request) => Promise<Response>, root: string, port: number, host?: string,
- *          headers?: Record<string, string>, onListen?: () => void}} opts
+ *          paths: {teacher: string, admin: string}, headers?: Record<string, string>, onListen?: () => void}} opts
  * @returns {import("node:http").Server}
  */
-export function serveNode({ handle, root, port, host, headers = {}, onListen }) {
+export function serveNode({ handle, root, port, host, paths, headers = {}, onListen }) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`);
     try {
@@ -56,7 +63,11 @@ export function serveNode({ handle, root, port, host, headers = {}, onListen }) 
         res.end(Buffer.from(await response.arrayBuffer()));
         return;
       }
-      const file = staticFile(root, url.pathname);
+      if (Object.values(paths).includes(`${url.pathname}/`)) {
+        res.writeHead(301, { ...headers, location: `${url.pathname}/` }).end();
+        return;
+      }
+      const file = staticFile(root, url.pathname, paths);
       if (!file) {
         res.writeHead(404, { ...headers, "content-type": "text/plain; charset=utf-8" }).end("Δεν βρέθηκε");
         return;

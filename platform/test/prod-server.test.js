@@ -22,12 +22,14 @@ test("production server: refuses to start without its settings", () => {
   assert.match(r.stderr, /ADMIN_PASSWORD/);
   const r2 = spawnSync(process.execPath, [script], { env: { PATH: process.env.PATH, ADMIN_PASSWORD: "0123456789" }, encoding: "utf8" });
   assert.match(r2.stderr, /BASE_URL/);
+  const r3 = spawnSync(process.execPath, [script], { env: { PATH: process.env.PATH, ADMIN_PASSWORD: "0123456789", BASE_URL: "https://x.gr" }, encoding: "utf8" });
+  assert.match(r3.stderr, /TEACHER_PATH.*ADMIN_PATH/);
 });
 
 test("production server: pages, API, headers, and data kept across restarts", async () => {
   const dir = mkdtempSync(join(tmpdir(), "omiloi-prod-"));
   const port = String(18000 + Math.floor(Math.random() * 1000));
-  const env = { ADMIN_PASSWORD: "δοκιμή-κωδικός-123", BASE_URL: "https://omiloi.example.gr/", DATA_DIR: dir, PORT: port };
+  const env = { ADMIN_PASSWORD: "δοκιμή-κωδικός-123", BASE_URL: "https://omiloi.example.gr/", DATA_DIR: dir, PORT: port, TEACHER_PATH: "e-prod1234", ADMIN_PATH: "d-prod1234" };
   const base = `http://127.0.0.1:${port}`;
   let child = await start(env);
   try {
@@ -36,6 +38,18 @@ test("production server: pages, API, headers, and data kept across restarts", as
     assert.equal(page.headers.get("x-frame-options"), "DENY");
     assert.match(await page.text(), /Δήλωση/);
     assert.equal((await fetch(`${base}/lib/server/app.js`)).status, 404); // server code is not served
+    // Each role at its own address: the parents' page at the root, the
+    // others only at their hidden paths, with no links between them
+    const home = await (await fetch(`${base}/`)).text();
+    assert.match(home, /parent\.js/);
+    assert.doesNotMatch(home, /teacher|admin|e-prod1234|d-prod1234/);
+    for (const old of ["/teacher.html", "/admin.html", "/parent.html"]) assert.equal((await fetch(`${base}${old}`)).status, 404, old);
+    assert.match(await (await fetch(`${base}/e-prod1234/`)).text(), /teacher\.js/);
+    assert.match(await (await fetch(`${base}/d-prod1234/`)).text(), /admin\.js/);
+    const bare = await fetch(`${base}/d-prod1234`, { redirect: "manual" });
+    assert.equal(bare.status, 301);
+    assert.equal(bare.headers.get("location"), "/d-prod1234/");
+    assert.doesNotMatch(await (await fetch(`${base}/help.html`)).text(), /teacher|admin/);
     assert.equal((await fetch(`${base}/api/public`)).status, 200);
 
     const { token } = await (await fetch(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: env.ADMIN_PASSWORD }) })).json();

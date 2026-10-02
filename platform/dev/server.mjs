@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { createApp } from "../src/server/app.js";
 import { createFileStore } from "../src/server/store.js";
 import { serveNode } from "../src/server/node-http.js";
+import { rolePaths } from "../src/server/paths.js";
 import { importClubs } from "../src/import/clubs.js";
 import { importStudents } from "../src/import/students.js";
 import { demoClubRows, demoStudentRows } from "./demo-data.mjs";
@@ -24,6 +25,8 @@ const port = Number(process.env.PORT ?? 8888);
 const storePath = join(root, ".data", port === 8888 ? "dev-store.json" : `dev-store-${port}.json`);
 const demo = process.argv.includes("--demo");
 const noMail = process.argv.includes("--no-mail");
+// Hidden addresses of the teachers' and admin's pages (fixed ones for development)
+const paths = rolePaths({ TEACHER_PATH: process.env.TEACHER_PATH ?? "ekpaideutikoi-dev", ADMIN_PATH: process.env.ADMIN_PATH ?? "diaxeirisi-dev" });
 
 if (demo) rmSync(storePath, { force: true });
 const store = createFileStore(storePath);
@@ -40,6 +43,7 @@ const env = {
   SESSION_SECRET: process.env.SESSION_SECRET ?? "dev-only-secret-change-me",
   ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ?? "admin",
   BASE_URL: `http://localhost:${port}`,
+  TEACHER_PATH: paths.teacher.slice(1, -1),
   DEV: true,
 };
 const handle = createApp({
@@ -48,9 +52,10 @@ const handle = createApp({
   sendMail: noMail ? undefined : async (m) => console.log(`\n✉  Προς: ${m.to}\n   Θέμα: ${m.subject}\n   ${m.text.replace(/\n/g, "\n   ")}\n`),
 });
 
-serveNode({ handle, root, port, onListen: () => {
-  console.log(`Πλατφόρμα ομίλων (τοπικά): http://localhost:${port}`);
-  console.log(`  Διαχείριση: http://localhost:${port}/admin.html  (κωδικός: ${env.ADMIN_PASSWORD === "admin" ? "admin" : "από ADMIN_PASSWORD"})`);
+serveNode({ handle, root, port, paths, onListen: () => {
+  console.log(`Πλατφόρμα ομίλων (τοπικά): http://localhost:${port}  (γονείς)`);
+  console.log(`  Εκπαιδευτικοί: http://localhost:${port}${paths.teacher}`);
+  console.log(`  Διαχείριση: http://localhost:${port}${paths.admin}  (κωδικός: ${env.ADMIN_PASSWORD === "admin" ? "admin" : "από ADMIN_PASSWORD"})`);
   if (demo) console.log("  Φορτώθηκε δοκιμαστικό σχολείο (60 μαθητές, 13 όμιλοι).");
   if (noMail) console.log("  Χωρίς email: σύνδεσμοι εκπαιδευτικών από τη διαχείριση (καρτέλα «Όμιλοι»).");
   console.log(`  Δεδομένα: ${storePath}`);

@@ -3,7 +3,7 @@
 //
 // Phases (settings.phase), in order:
 //   setup      the admin uploads students and clubs
-//   teachers   teachers set capacity and (optionally) their preferred students
+//   teachers   teachers pick (optionally) their preferred students
 //   parents    parents submit rankings until the deadline; clubs and teacher
 //              lists are locked, students can only be added
 //   closed     no more submissions
@@ -65,6 +65,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   const loginByIp = createRateLimiter({ limit: 30, windowMs: 10 * 60 * 1000 });
   const loginByAm = createRateLimiter({ limit: 10, windowMs: 10 * 60 * 1000 });
   const adminByIp = createRateLimiter({ limit: 10, windowMs: 10 * 60 * 1000 });
+  const teacherCodeByIp = createRateLimiter({ limit: 10, windowMs: 10 * 60 * 1000 });
+  // The teachers' page (its hidden address, see paths.js) for login links
+  const teacherPage = `${env.BASE_URL ?? ""}${env.TEACHER_PATH ? `/${env.TEACHER_PATH}/` : "/teacher.html"}`;
 
   // ---------- data helpers ----------
 
@@ -155,7 +158,10 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/public", async () => {
     const s = await getSettings();
-    return json(200, { phase: s.phase, deadline: s.deadline, contact: s.contact, schoolName: s.schoolName ?? "", mailEnabled: Boolean(sendMail) });
+    return json(200, {
+      phase: s.phase, deadline: s.deadline, contact: s.contact, schoolName: s.schoolName ?? "", mailEnabled: Boolean(sendMail),
+      teacherCode: Boolean(s.teacherPasswordHash),
+    });
   });
 
   // --- admin ---
@@ -173,9 +179,10 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const [settings, students, clubs, teachers, lists, submissions, results, uploads] = await Promise.all([
       getSettings(), getStudents(), getClubs(), getTeachers(), getTeacherLists(), getSubmissions(), store.get("results"), store.get("uploads"),
     ]);
-    const { parentPasswordHash, ...publicSettings } = settings;
+    const { parentPasswordHash, teacherPasswordHash, ...publicSettings } = settings;
     return json(200, {
-      settings: { ...publicSettings, parentPasswordSet: Boolean(parentPasswordHash) },
+      settings: { ...publicSettings, parentPasswordSet: Boolean(parentPasswordHash), teacherPasswordSet: Boolean(teacherPasswordHash) },
+      teacherPath: env.TEACHER_PATH ? `/${env.TEACHER_PATH}/` : null,
       students: students.map(({ am, grade, surname, name, loginException }) => ({ am, grade, surname, name, loginException: Boolean(loginException) })),
       clubs,
       teachers,
@@ -269,11 +276,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("PUT", "/api/admin/settings", async (req) => {
     session(req, "admin");
-    const { parentPassword, deadline, contact, schoolName, mandatoryGrades } = await body(req);
+    const { parentPassword, teacherPassword, deadline, contact, schoolName, mandatoryGrades } = await body(req);
     const patch = {};
     if (parentPassword !== undefined) {
       if (String(parentPassword).length < 6) throw new HttpError(422, "Ο κωδικός γονέων πρέπει να έχει τουλάχιστον 6 χαρακτήρες.");
       patch.parentPasswordHash = hashPassword(parentPassword);
+    }
+    // A new teachers' code also signs out everyone who used the old one.
+    if (teacherPassword !== undefined) {
+      if (String(teacherPassword).length < 6) throw new HttpError(422, "Ο κωδικός εκπαιδευτικών πρέπει να έχει τουλάχιστον 6 χαρακτήρες.");
+      patch.teacherPasswordHash = hashPassword(teacherPassword);
     }
     if (deadline !== undefined) {
       if (deadline !== null && Number.isNaN(Date.parse(deadline))) throw new HttpError(422, "Μη έγκυρη προθεσμία.");
@@ -575,7 +587,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const token = signToken(env.SESSION_SECRET, { role: "magic", email: teacher.email }, ADMIN_LINK_TTL, now());
     await logEvent("admin", "teacher_link", { email: teacher.email });
     return json(200, {
-      link: `${env.BASE_URL ?? ""}/teacher.html#token=${token}`,
+      link: `${teacherPage}#token=${token}`,
       expiresAt: new Date(now() + ADMIN_LINK_TTL * 1000).toISOString(),
     });
   });
@@ -588,7 +600,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const teacher = (await getTeachers()).find((t) => t.email === address);
     if (teacher) {
       const token = signToken(env.SESSION_SECRET, { role: "magic", email: address }, MAGIC_TTL, now());
-      const link = `${env.BASE_URL ?? ""}/teacher.html#token=${token}`;
+      const link = `${teacherPage}#token=${token}`;
       await mail(address, "Σύνδεση στην πλατφόρμα ομίλων",
         `Καλημέρα ${teacher.name} ${teacher.surname},\n\nΓια να συνδεθείτε, ανοίξτε τον σύνδεσμο (ισχύει 20 λεπτά):\n${link}\n\nΑν δεν το ζητήσατε εσείς, αγνοήστε αυτό το μήνυμα.`);
     }
@@ -606,12 +618,40 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return json(200, { token: issue("teacher", { email: teacher.email }) });
   });
 
-  route("GET", "/api/teacher/me", async (req) => {
-    const { email } = session(req, "teacher");
-    const [settings, teachers, clubs, students, lists] = await Promise.all([getSettings(), getTeachers(), getClubs(), getStudents(), getTeacherLists()]);
-    const teacher = teachers.find((t) => t.email === email);
+  // The teachers' common code (set by the admin, like the parents' code):
+  // whoever has it may change the list of any club. The session carries a
+  // fingerprint of the code, so a new code ends the old sessions.
+  const codeFingerprint = (hash) => createHash("sha256").update(String(hash)).digest("base64url").slice(0, 12);
+  const SHARED = "teacher-code"; // «who» in the history for changes made with the common code
+
+  route("POST", "/api/teacher/code-login", async (req) => {
+    if (!teacherCodeByIp.hit(clientIp(req), now())) throw new HttpError(429, "Πολλές προσπάθειες. Δοκιμάστε σε λίγα λεπτά.");
+    const { password } = await body(req);
+    const settings = await getSettings();
+    if (!settings.teacherPasswordHash) throw new HttpError(409, "Η είσοδος με κωδικό δεν έχει ενεργοποιηθεί. Επικοινωνήστε με τη διαχείριση.");
+    if (!verifyPassword(password, settings.teacherPasswordHash)) throw new HttpError(401, "Λάθος κωδικός.");
+    await logEvent(SHARED, "teacher_login");
+    return json(200, { token: issue("teacher", { shared: codeFingerprint(settings.teacherPasswordHash) }) });
+  });
+
+  /** {shared: true} with the common code, else the teacher (by e-mail). */
+  const teacherSession = async (req) => {
+    const payload = session(req, "teacher");
+    if (payload.shared) {
+      const { teacherPasswordHash } = await getSettings();
+      if (!teacherPasswordHash || payload.shared !== codeFingerprint(teacherPasswordHash)) throw new HttpError(401, "Ο κωδικός άλλαξε. Συνδεθείτε ξανά.");
+      return { shared: true };
+    }
+    const teacher = (await getTeachers()).find((t) => t.email === payload.email);
     if (!teacher) throw new HttpError(401, "Ο λογαριασμός δεν υπάρχει πια.");
-    const mine = clubs.filter((c) => teacher.clubs.includes(c.code)).map((c) => ({
+    return { teacher };
+  };
+
+  route("GET", "/api/teacher/me", async (req) => {
+    const { shared, teacher } = await teacherSession(req);
+    const email = teacher?.email;
+    const [settings, teachers, clubs, students, lists] = await Promise.all([getSettings(), getTeachers(), getClubs(), getStudents(), getTeacherLists()]);
+    const mine = clubs.filter((c) => shared || teacher.clubs.includes(c.code)).map((c) => ({
       ...c,
       list: lists[c.code]?.ams ?? [],
       updatedBy: lists[c.code]?.updatedBy ?? null,
@@ -619,15 +659,17 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       coTeachers: teachers.filter((t) => t.email !== email && t.clubs.includes(c.code)).map((t) => `${t.name} ${t.surname}`),
       eligible: students.filter((s) => c.grades.includes(s.grade)).map(({ am, surname, name, grade }) => ({ am, surname, name, grade })),
     }));
-    return json(200, { teacher: { name: teacher.name, surname: teacher.surname, email }, phase: settings.phase, canEdit: settings.phase === "teachers", clubs: mine });
+    return json(200, {
+      teacher: shared ? null : { name: teacher.name, surname: teacher.surname, email }, shared: Boolean(shared),
+      phase: settings.phase, canEdit: settings.phase === "teachers", clubs: mine,
+    });
   });
 
   route("PUT", "/api/teacher/clubs/:code", async (req, { code }) => {
-    const { email } = session(req, "teacher");
-    const teacher = (await getTeachers()).find((t) => t.email === email);
-    if (!teacher?.clubs.includes(Number(code))) throw new HttpError(403, "Ο όμιλος δεν είναι δικός σας.");
+    const { shared, teacher } = await teacherSession(req);
+    if (!shared && !teacher.clubs.includes(Number(code))) throw new HttpError(403, "Ο όμιλος δεν είναι δικός σας.");
     if ((await getSettings()).phase !== "teachers") throw new HttpError(409, "Οι αλλαγές από εκπαιδευτικούς γίνονται μόνο στη φάση «Εκπαιδευτικοί».");
-    return saveTeacherList(req, code, email);
+    return saveTeacherList(req, code, shared ? SHARED : teacher.email);
   });
 
   // The capacity is set by the admin only (the clubs file, or «Όμιλοι» →
@@ -654,7 +696,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     // Tell the club's teachers (except the one who saved).
     for (const t of (await getTeachers()).filter((t) => t.clubs.includes(club.code) && t.email !== who)) {
       await mail(t.email, `Αλλαγή στον όμιλο «${club.name}»`,
-        `Η λίστα μαθητών του ομίλου «${club.name}» άλλαξε από ${who === "admin" || who === "admin-file" ? "τον διαχειριστή" : who}.\nΘέσεις: ${capacity}, μαθητές στη λίστα: ${list.length}.`);
+        `Η λίστα μαθητών του ομίλου «${club.name}» άλλαξε από ${who === "admin" || who === "admin-file" ? "τον διαχειριστή" : who === SHARED ? "εκπαιδευτικό (με τον κοινό κωδικό)" : who}.\nΘέσεις: ${capacity}, μαθητές στη λίστα: ${list.length}.`);
     }
     return entry;
   }

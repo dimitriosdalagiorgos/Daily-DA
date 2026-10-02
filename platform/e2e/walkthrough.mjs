@@ -17,6 +17,9 @@ try {
 }
 
 const BASE = process.env.BASE_URL ?? "http://localhost:8888";
+// Hidden addresses of the teachers' and admin's pages (dev server defaults)
+const TEACHER_URL = `${BASE}/${process.env.TEACHER_PATH ?? "ekpaideutikoi-dev"}/`;
+const ADMIN_URL = `${BASE}/${process.env.ADMIN_PATH ?? "diaxeirisi-dev"}/`;
 const shotsArg = process.argv.indexOf("--shots");
 const shots = shotsArg > 0 ? process.argv[shotsArg + 1] : null;
 if (shots) mkdirSync(shots, { recursive: true });
@@ -39,7 +42,7 @@ const api = async (path, { token, method = "GET", body } = {}) => {
 try {
   // ---------- Admin: login, move to teachers' phase ----------
   const admin = await newPage();
-  await admin.goto(`${BASE}/admin.html`);
+  await admin.goto(ADMIN_URL);
   await admin.fill("#pw", "admin");
   await admin.click("button[type=submit]");
   await admin.waitForSelector("ol.steps");
@@ -56,7 +59,7 @@ try {
   // ---------- Teacher: login link (by e-mail, or from the admin) ----------
   const { mailEnabled } = await api("/api/public");
   const teacher = await newPage();
-  await teacher.goto(`${BASE}/teacher.html`);
+  await teacher.goto(TEACHER_URL);
   let link;
   if (mailEnabled) {
     await teacher.fill("#email", "EThEatr@sch.gr");
@@ -89,6 +92,32 @@ try {
   step("teacher: two students ticked and saved (capacity shown, not editable)");
   await shot(teacher, "03-teacher");
 
+  // Teachers' common code: set by the admin; any club, chosen from a list
+  await admin.click("role=tab[name='Πορεία & ρυθμίσεις']");
+  await admin.waitForSelector(`td code:has-text('${TEACHER_URL}')`);
+  await admin.fill("#tpw", "kodikos-ek");
+  await admin.click("text=Αποθήκευση ρυθμίσεων");
+  await admin.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
+  const colleague = await newPage();
+  await colleague.goto(TEACHER_URL);
+  await colleague.fill("#tcode", "λάθος-κωδικός");
+  await colleague.click("button[type=submit]");
+  await colleague.waitForSelector(".msg.err:has-text('Λάθος κωδικός')");
+  await colleague.fill("#tcode", "kodikos-ek");
+  await colleague.click("button[type=submit]");
+  await colleague.waitForSelector("select#club");
+  await colleague.selectOption("select#club", "105");
+  await colleague.waitForSelector("h2:has-text('Σκάκι')");
+  await colleague.locator(".check-list input[type=checkbox] >> nth=0").check();
+  await colleague.click("text=Αποθήκευση");
+  await colleague.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
+  await colleague.click("header button:has-text('Βοήθεια')");
+  await colleague.waitForSelector("#help-panel h2:has-text('Σύνδεση')");
+  await shot(colleague, "03b-teacher-code");
+  await colleague.click("text=Αποσύνδεση εκπαιδευτικού");
+  await colleague.waitForSelector("#tcode");
+  step("teacher: common code set by the admin, club chosen from the list, list saved; in-page help");
+
   // Admin: lists for other clubs from a file (CSV: club code + ΑΜ per row)
   await admin.click("role=tab[name='Όμιλοι']");
   const csvPath = join(tmpdir(), `listes-${process.pid}.csv`);
@@ -112,7 +141,10 @@ try {
 
   // ---------- Parent (phone size) ----------
   const parent = await newPage({ width: 390, height: 844 });
-  await parent.goto(`${BASE}/parent.html`);
+  await parent.goto(`${BASE}/`);
+  for (const href of await parent.locator("a").evaluateAll((as) => as.map((a) => a.getAttribute("href")))) {
+    if (!["/", "/help.html"].includes(href)) throw new Error(`unexpected link on the parents' page: ${href}`);
+  }
   await parent.fill("#password", "omiloi2026");
   await parent.fill("#am", "9022");
   await parent.fill("#surname", "Γεωργίου");
@@ -268,8 +300,8 @@ try {
   await admin.click("role=tab[name='Εκπαιδευτικοί']");
   await admin.waitForSelector("h2:has-text('Τι σημαίνει «προτιμώμενος μαθητής»')");
   await parent.click("header a:has-text('Βοήθεια')");
-  await parent.waitForSelector("role=tab[name='Γονείς / κηδεμόνες'][selected=true]");
   await parent.waitForSelector("h2:has-text('Η δήλωση')");
+  if (await parent.locator("role=tab").count()) throw new Error("the parents' help must not show the teachers' help");
   step("help: admin tab and the public help page");
   await shot(parent, "08c-help");
 

@@ -126,6 +126,7 @@ function overview() {
     deadline: el("input", { id: "deadline", type: "datetime-local", value: toLocal(s.deadline) }),
     mandatory: ["Α", "Β", "Γ"].map((g) => el("input", { type: "checkbox", value: g, checked: (s.mandatoryGrades ?? []).includes(g), "aria-label": `Υποχρεωτική ένταξη ${g} τάξης` })),
     parentPassword: el("input", { id: "ppw", type: "text", autocomplete: "off", placeholder: s.parentPasswordSet ? "Έχει οριστεί — γράψτε νέο για αλλαγή" : "Τουλάχιστον 6 χαρακτήρες" }),
+    teacherPassword: el("input", { id: "tpw", type: "text", autocomplete: "off", placeholder: s.teacherPasswordSet ? "Έχει οριστεί — γράψτε νέο για αλλαγή" : "Τουλάχιστον 6 χαρακτήρες" }),
   };
   const save = el("button.primary", { type: "button" }, "Αποθήκευση ρυθμίσεων");
   save.addEventListener("click", () => busy(save, out, async () => {
@@ -134,6 +135,7 @@ function overview() {
       mandatoryGrades: f.mandatory.filter((c) => c.checked).map((c) => c.value),
     };
     if (f.parentPassword.value) body.parentPassword = f.parentPassword.value;
+    if (f.teacherPassword.value) body.teacherPassword = f.teacherPassword.value;
     await api("PUT", "/api/admin/settings", body);
     await refresh();
     $("#app [role=tabpanel]").prepend(message("ok", "Αποθηκεύτηκε."));
@@ -153,13 +155,15 @@ function overview() {
         el("li", {}, `Δηλώσεις: ${submitted} από ${state.students.length} (${byGrade})`),
         state.results ? el("li", {}, `Κατανομή: ${formatDateTime(state.results.at)} (seed «${state.results.seed}»)`) : null)),
     checksCard(),
+    addressesCard(),
     el("section.card", {},
       el("h2", { style: "margin-top:0" }, "Ρυθμίσεις"),
       el("div.grid-2", {},
         el("label", { for: "school" }, "Όνομα σχολείου", f.schoolName),
         el("label", { for: "contact" }, "Επικοινωνία για γονείς", el("span.hint", {}, "Εμφανίζεται όταν αποτυγχάνει η σύνδεση."), f.contact),
         el("label", { for: "deadline" }, "Προθεσμία δηλώσεων", f.deadline),
-        el("label", { for: "ppw" }, "Κοινός κωδικός γονέων", el("span.hint", {}, "Ίδιος για όλους· ανακοινώνεται από το σχολείο."), f.parentPassword)),
+        el("label", { for: "ppw" }, "Κοινός κωδικός γονέων", el("span.hint", {}, "Ίδιος για όλους· ανακοινώνεται από το σχολείο."), f.parentPassword),
+        el("label", { for: "tpw" }, "Κοινός κωδικός εκπαιδευτικών", el("span.hint", {}, "Ίδιος για όλους τους εκπαιδευτικούς· μπορεί να είναι και ίδιος με των γονέων. Αν αλλάξει, όσοι είχαν συνδεθεί αποσυνδέονται."), f.teacherPassword)),
       el("fieldset", { style: "border:0;padding:0;margin:12px 0 0" },
         el("legend", { style: "font-weight:600" }, "Υποχρεωτική ένταξη σε όμιλο"),
         el("p.small.muted", { style: "margin:2px 0 6px" }, "Για αυτές τις τάξεις κάθε μαθητής πρέπει να πάρει όμιλο κάθε ημέρα: οι δηλώσεις δεν ανοίγουν αν οι θέσεις δεν φτάνουν, και μετά την κατανομή εμφανίζεται όποιος έμεινε εκτός."),
@@ -462,6 +466,18 @@ function teacherListFiles() {
     preview);
 }
 
+// The three addresses: each role gets only its own (no links between them).
+function addressesCard() {
+  const row = (who, url, note) => el("tr", {}, el("td", {}, who), el("td", {}, el("code", {}, url)), el("td.small.muted", {}, note));
+  return el("section.card", {},
+    el("h2", { style: "margin-top:0" }, "Διευθύνσεις"),
+    el("p.small.muted", {}, "Δώστε σε κάθε ομάδα μόνο τη δική της διεύθυνση. Οι σελίδες δεν έχουν συνδέσμους μεταξύ τους, και η καθεμία ζητά τον δικό της κωδικό."),
+    el("div.table-wrap", {}, el("table", {}, el("tbody", {},
+      row("Γονείς", `${location.origin}/`, "κοινός κωδικός γονέων + στοιχεία μαθητή"),
+      state.teacherPath ? row("Εκπαιδευτικοί", `${location.origin}${state.teacherPath}`, "κοινός κωδικός εκπαιδευτικών") : null,
+      row("Διαχείριση", `${location.origin}${location.pathname}`, "μόνο για εσάς")))));
+}
+
 // Login links for teachers, passed on by the admin (no e-mail service).
 function teacherLinks() {
   const out = el("div");
@@ -492,7 +508,9 @@ function teacherLinks() {
   });
   return el("section.card", {},
     el("h2", { style: "margin-top:0" }, "Σύνδεσμοι εισόδου εκπαιδευτικών"),
-    el("p.small.muted", {}, "Χωρίς υπηρεσία email, στείλτε εσείς σε κάθε εκπαιδευτικό τον προσωπικό του σύνδεσμο (π.χ. από το email του σχολείου). Ισχύει μία εβδομάδα· αν λήξει, φτιάξτε νέο."),
+    el("p.small.muted", {}, state.settings.teacherPasswordSet
+      ? "Οι εκπαιδευτικοί μπαίνουν με τον κοινό κωδικό εκπαιδευτικών· οι προσωπικοί σύνδεσμοι δεν χρειάζονται. Αν θέλετε, εξακολουθούν να λειτουργούν: ο εκπαιδευτικός με σύνδεσμο βλέπει μόνο τους δικούς του ομίλους."
+      : "Χωρίς υπηρεσία email, στείλτε εσείς σε κάθε εκπαιδευτικό τον προσωπικό του σύνδεσμο (π.χ. από το email του σχολείου), ή ορίστε κοινό κωδικό εκπαιδευτικών στην «Πορεία & ρυθμίσεις». Ο σύνδεσμος ισχύει μία εβδομάδα· αν λήξει, φτιάξτε νέο."),
     out,
     rows.length ? el("div.table-wrap", {}, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Εκπαιδευτικός"), el("th", {}, "Όμιλοι"), el("th", {}, ""))),
@@ -775,11 +793,11 @@ function history() {
   };
   const draw = () => {
     const f = filter.value;
-    const shown = [...events].reverse().filter((e) => !f || (f === "admin" ? e.who === "admin" : f === "parent" ? String(e.who).startsWith("parent:") : e.who.includes("@") || e.what.startsWith("teacher")));
+    const shown = [...events].reverse().filter((e) => !f || (f === "admin" ? e.who === "admin" : f === "parent" ? String(e.who).startsWith("parent:") : e.who.includes("@") || e.who === "teacher-code" || e.what.startsWith("teacher")));
     box.replaceChildren(el("div.table-wrap", {}, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Πότε"), el("th", {}, "Ποιος"), el("th", {}, "Ενέργεια"), el("th", {}, "Λεπτομέρειες"))),
       el("tbody", {}, shown.map((e) => el("tr", {},
-        el("td.small", {}, formatDateTime(e.at)), el("td.small", {}, String(e.who).replace(/^parent:/, "γονέας ΑΜ ")),
+        el("td.small", {}, formatDateTime(e.at)), el("td.small", {}, e.who === "teacher-code" ? "εκπαιδευτικός (κοινός κωδικός)" : String(e.who).replace(/^parent:/, "γονέας ΑΜ ")),
         el("td", {}, EVENT_LABELS[e.what] ?? e.what), el("td.small.muted", {}, detail(e))))))));
   };
   filter.addEventListener("change", draw);

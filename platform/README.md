@@ -14,7 +14,7 @@ npm run dev               # κρατά τα δεδομένα στο .data/dev-st
 npm run dev -- --demo --no-mail   # όπως τώρα στο Netlify: χωρίς email
 ```
 
-Ανοίξτε http://localhost:8888 — διαχείριση: `/admin.html`, κωδικός `admin` (αλλάζει με `ADMIN_PASSWORD=…`).
+Ανοίξτε http://localhost:8888 (γονείς) — εκπαιδευτικοί: `/ekpaideutikoi-dev/`, διαχείριση: `/diaxeirisi-dev/`, κωδικός `admin` (αλλάζουν με `TEACHER_PATH=…`, `ADMIN_PATH=…`, `ADMIN_PASSWORD=…`).
 Τα email δεν στέλνονται τοπικά: εμφανίζονται στην κονσόλα και στην καρτέλα «Εξερχόμενα» της διαχείρισης (εκεί είναι και οι σύνδεσμοι εισόδου των εκπαιδευτικών).
 Για ανέβασμα αρχείων Excel ο browser φορτώνει το SheetJS από το cdn.sheetjs.com (χρειάζεται internet).
 
@@ -22,7 +22,7 @@ npm run dev -- --demo --no-mail   # όπως τώρα στο Netlify: χωρίς
 
 | Φάκελος | Περιεχόμενο |
 |---|---|
-| `public/` | Σελίδες: `index.html`, `parent.html`, `teacher.html`, `admin.html` (απλή HTML/JS, χωρίς build) |
+| `public/` | Σελίδες: `index.html` (γονείς), `help.html` (βοήθεια γονέων), `teacher.html` και `admin.html` — αυτές οι δύο σερβίρονται μόνο στις κρυφές διευθύνσεις `TEACHER_PATH`/`ADMIN_PATH` (`src/server/paths.js`, `scripts/build.mjs`) |
 | `src/server/` | API (`app.js`), αποθήκευση (`store.js`), sessions/κωδικοί (`auth.js`) |
 | `dev/` | Τοπικός server και δοκιμαστικά δεδομένα |
 | `netlify/functions/api.mjs` | Το ίδιο API στο Netlify, με αποθήκευση Supabase (`src/server/store-supabase.js`, πίνακες: `supabase/schema.sql`) |
