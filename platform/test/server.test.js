@@ -561,3 +561,21 @@ test("teachers' common code is rate-limited per address", async () => {
   assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: "612345" }, ip: "9.9.9.9" })).status, 429);
   assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: "612345" }, ip: "8.8.8.8" })).status, 200);
 });
+
+test("a new clubs file after the trial import: warned at upload, explained at the allocation", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "thu", rows: [["RegistryNr", "Άλγεβρα"], [9001, 1]] } });
+  // Now «Άλγεβρα» (102) moves from Thursday to Friday
+  const moved = CLUB_ROWS.map((row) => (row[0] === 102 ? [102, "Άλγεβρα", "Παρασκευή", "", "", "Β", 5, "", ""] : row));
+  let r = await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: moved, teachers: TEACHER_ROWS } });
+  assert.equal(r.status, 200);
+  assert.match(r.data.report.problems.map((p) => p.message).join(" "), /1 δηλώσεις .*ΑΜ 9001: ο όμιλος 102 δεν γίνεται πια Πέμπτη/);
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z" } });
+  for (const phase of ["teachers", "parents", "closed"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+  r = await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "δοκιμή" } });
+  assert.equal(r.status, 422);
+  assert.match(r.data.error, /ο όμιλος 102 δεν γίνεται πια Πέμπτη.*ξαναεισαγάγετε/);
+});

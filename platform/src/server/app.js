@@ -248,6 +248,11 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const report = { ...imported, teachers: withIdHashes(env.SESSION_SECRET, imported.teachers) };
     const reply = { ...report, teachers: report.teachers.map(({ idHash, ...t }) => ({ ...t, hasPersonalId: Boolean(idHash) })) };
     if (report.problems.some((p) => p.level === "error")) throw new HttpError(422, "Το αρχείο έχει σφάλματα.", { report: reply });
+    // Declarations already in (trial imports) that the new clubs no longer fit
+    const stale = staleSubmissions(await getSubmissions(), report.clubs, await getStudents());
+    if (stale.length) {
+      reply.problems = [...reply.problems, { level: "warning", message: `${staleText(stale)} Πριν από την κατανομή, ξαναεισαγάγετε τα περσινά αρχεία κάθε ημέρας (ή «Επαναφορά πλατφόρμας»).` }];
+    }
     await store.set("clubs", report.clubs);
     await store.set("teachers", report.teachers);
     // Teacher lists of clubs that no longer exist are dropped.
@@ -419,6 +424,10 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const { seed } = await body(req);
     if (typeof seed !== "string" || seed.trim() === "") throw new HttpError(422, "Δώστε το seed της κλήρωσης.");
     const input = await allocationInput(seed);
+    const stale = staleSubmissions(await getSubmissions(), input.clubs, input.students);
+    if (stale.length) {
+      throw new HttpError(422, `Η κατανομή δεν μπόρεσε να γίνει: ${staleText(stale)} Για δοκιμή με περσινά στοιχεία: ξαναεισαγάγετε τα αρχεία κάθε ημέρας («Αρχεία» → «Δοκιμή: εισαγωγή περσινών δηλώσεων», μετά από «Επιστροφή» στη φάση «Κλειστές δηλώσεις» αν χρειάζεται), ή κάντε «Επαναφορά πλατφόρμας» και ξεκινήστε με το τελικό αρχείο ομίλων.`);
+    }
     let result;
     try {
       result = allocateWeek(input);
@@ -813,6 +822,33 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   });
 
   // ---------- helpers using the routes' data ----------
+
+  /**
+   * Declarations that no longer match the clubs: a club removed, moved to
+   * another day, or no longer for the student's grade. Happens only when a
+   * new clubs file is uploaded after (trial) declarations were imported;
+   * real declarations open after the clubs lock.
+   */
+  function staleSubmissions(submissions, clubs, students) {
+    const byCode = new Map(clubs.map((c) => [String(c.code), c]));
+    const gradeOf = new Map(students.map((st) => [st.am, st.grade]));
+    const stale = [];
+    for (const [am, sub] of Object.entries(submissions)) {
+      for (const [day, list] of Object.entries(sub.preferences ?? {})) {
+        for (const code of list ?? []) {
+          const club = byCode.get(String(code));
+          const why = !club ? "δεν υπάρχει πια" : !club.days.includes(day) ? `δεν γίνεται πια ${DAY_LABELS[day]}` : !club.grades.includes(gradeOf.get(am)) ? "δεν απευθύνεται πια στην τάξη του" : null;
+          if (why) stale.push({ am, day, code: String(code), why });
+        }
+      }
+    }
+    return stale;
+  }
+  const staleText = (stale) => {
+    const students = new Set(stale.map((x) => x.am)).size;
+    const examples = stale.slice(0, 3).map((x) => `ΑΜ ${x.am}: ο όμιλος ${x.code} ${x.why}`).join("· ");
+    return `${students} δηλώσεις αναφέρονται σε ομίλους που άλλαξαν μετά την καταχώρισή τους (${examples}${stale.length > 3 ? "…" : ""}). Συμβαίνει όταν ανεβαίνει νέο αρχείο ομίλων μετά την εισαγωγή δηλώσεων.`;
+  };
 
   async function allocationInput(seed) {
     const [students, clubs, lists, submissions, settings] = await Promise.all([getStudents(), getClubs(), getTeacherLists(), getSubmissions(), getSettings()]);
