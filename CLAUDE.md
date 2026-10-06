@@ -29,9 +29,11 @@ npm test                                   # unit tests (node:test)
 npm run dev -- --demo                      # δοκιμαστικό σχολείο: http://localhost:8888
                                            #   εκπαιδευτικοί /ekpaideutikoi-dev/, διαχείριση /diaxeirisi-dev/ (κωδικός admin)
 npm run dev -- --demo --no-mail            # όπως η εγκατάσταση του σχολείου (χωρίς email)
-BASE_URL=http://localhost:8888 node e2e/walkthrough.mjs   # όλη η χρονιά σε browser (Playwright, με server σε λειτουργία)
+npm install --no-save playwright && npx playwright install chromium   # μία φορά, για το e2e
+BASE_URL=http://localhost:8888 node e2e/walkthrough.mjs   # όλη η χρονιά σε browser (με server σε λειτουργία)
 node reference/compare.mjs --random 8      # πλατφόρμα vs R (χρειάζεται Rscript + dplyr, readr, tidyr, purrr, stringr, writexl)
-python3 docs/build.py                      # από τη ρίζα: ξαναφτιάχνει Word/PDF των εγχειριδίων
+cd ..
+python3 docs/build.py                      # από τη ρίζα: ξαναφτιάχνει Word/PDF των εγχειριδίων (pip install markdown pypandoc_binary)
 ```
 
 Το CI (`.github/workflows/platform-tests.yml`) τρέχει tests, σύγκριση με το R και e2e, με και χωρίς email.
