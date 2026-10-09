@@ -6,6 +6,8 @@
 //   update(key, fn)       → fn(current) returns the new value; atomic per key
 //   list(prefix)          → [{key, value}] for keys starting with prefix
 //   delete(key)
+//   deletePrefix(prefix)  delete every key starting with prefix, at once
+//                         (platform reset: hundreds of keys, one request)
 //   append(kind, item)    → add to an append-only log (no lost writes when
 //                           many people act at once)
 //   readLog(kind, limit)  → the last `limit` items, oldest first
@@ -51,6 +53,11 @@ export function createMemoryStore(initial = {}) {
         data.delete(key);
       });
     },
+    deletePrefix(prefix) {
+      return serialize(() => {
+        for (const k of [...data.keys()]) if (k.startsWith(prefix)) data.delete(k);
+      });
+    },
     append(kind, item) {
       return serialize(() => {
         const log = data.get(`log:${kind}`) ?? [];
@@ -90,6 +97,7 @@ export function createFileStore(path) {
     set: (key, value) => after(mem.set(key, value)),
     update: (key, fn) => after(mem.update(key, fn)),
     delete: (key) => after(mem.delete(key)),
+    deletePrefix: (prefix) => after(mem.deletePrefix(prefix)),
     append: (kind, item) => after(mem.append(kind, item)),
     deleteLog: (kind) => after(mem.deleteLog(kind)),
     setMany: (entries) => after(mem.setMany(entries)),

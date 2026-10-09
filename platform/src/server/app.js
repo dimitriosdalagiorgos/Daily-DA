@@ -357,16 +357,21 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const { phase } = await body(req);
     if (!PHASES.includes(phase)) throw new HttpError(422, "Άγνωστη φάση.");
     const [settings, students, clubs, results] = await Promise.all([getSettings(), getStudents(), getClubs(), store.get("results")]);
+    // Going back never needs anything (e.g. after a reset cut short, or to
+    // correct something); the checks are for moving forward.
+    const forward = PHASES.indexOf(phase) > PHASES.indexOf(settings.phase);
     const missing = [];
-    if (phaseAtLeast(phase, "teachers") && clubs.length === 0) missing.push("ομίλους");
-    if (phaseAtLeast(phase, "parents")) {
-      if (students.length === 0) missing.push("μαθητές");
-      if (!settings.parentPasswordHash) missing.push("κωδικό γονέων");
-      if (!settings.deadline) missing.push("προθεσμία");
+    if (forward) {
+      if (phaseAtLeast(phase, "teachers") && clubs.length === 0) missing.push("ομίλους");
+      if (phaseAtLeast(phase, "parents")) {
+        if (students.length === 0) missing.push("μαθητές");
+        if (!settings.parentPasswordHash) missing.push("κωδικό γονέων");
+        if (!settings.deadline) missing.push("προθεσμία");
+      }
+      if (phaseAtLeast(phase, "allocated") && !results) missing.push("εκτέλεση κατανομής");
     }
-    if (phaseAtLeast(phase, "allocated") && !results) missing.push("εκτέλεση κατανομής");
     if (missing.length) throw new HttpError(409, `Για αυτή τη φάση χρειάζονται: ${missing.join(", ")}.`);
-    if (phase === "parents") {
+    if (forward && phase === "parents") {
       // Enough seats for the mandatory grades, or declarations do not open.
       const errors = checkReadiness(students, clubs, settings).filter((p) => p.level === "error");
       if (errors.length) {
@@ -445,16 +450,19 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const { confirm, keepSchoolInfo = true } = await body(req);
     if (confirm !== "ΔΙΑΓΡΑΦΗ") throw new HttpError(422, "Για επιβεβαίωση γράψτε ΔΙΑΓΡΑΦΗ (κεφαλαία).");
     const settings = await getSettings();
-    for (const key of ["students", "clubs", "teachers", "results", "resultsLog", "uploads"]) await store.delete(key);
-    for (const prefix of ["teacherList:", "submission:", "story:"]) {
-      for (const { key } of await store.list(prefix)) await store.delete(key);
-    }
-    await store.deleteLog("outbox");
-    await store.deleteLog("events");
+    // Back to «setup» first: if the deletions are cut short, the platform is
+    // not left in a late phase without data, and running the reset again
+    // finishes the job.
     await store.set("settings", {
       phase: "setup",
       ...(keepSchoolInfo ? { schoolName: settings.schoolName ?? "", contact: settings.contact ?? "" } : {}),
     });
+    await Promise.all([
+      ...["students", "clubs", "teachers", "results", "resultsLog", "uploads"].map((key) => store.delete(key)),
+      ...["teacherList:", "submission:", "story:"].map((prefix) => store.deletePrefix(prefix)),
+      store.deleteLog("outbox"),
+      store.deleteLog("events"),
+    ]);
     await logEvent("admin", "reset", { keepSchoolInfo: Boolean(keepSchoolInfo) });
     return json(200, { ok: true });
   });

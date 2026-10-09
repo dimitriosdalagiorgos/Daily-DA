@@ -640,3 +640,41 @@ test("a new clubs file: its capacity wins over an earlier «Διόρθωση»; 
   assert.equal(state.clubs.find((c) => c.code === 101).capacity, 4, "the file's capacity");
   assert.deepEqual(state.teacherLists["101"].ams, ["9001"]);
 });
+
+test("reset with hundreds of declarations: a few requests to Supabase, and «setup» first", async () => {
+  const fake = createFakePostgrest();
+  const store = createSupabaseStore({ url: "https://proj.supabase.co", key: fake.key, fetch: fake.fetch });
+  const { call } = setup({ store });
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  // 400 trial declarations and 400 stories, as after last year's data
+  await store.setMany(Array.from({ length: 400 }, (_, i) => [
+    { key: `submission:${10000 + i}`, value: { preferences: {}, imported: true } },
+    { key: `story:${10000 + i}`, value: {} },
+  ]).flat());
+  await store.set("settings", { phase: "published" });
+  const before = fake.requests.length;
+  const r = await call("POST", "/api/admin/reset", { token: admin, body: { confirm: "ΔΙΑΓΡΑΦΗ" } });
+  assert.equal(r.status, 200);
+  const used = fake.requests.length - before;
+  assert.ok(used < 40, `reset used ${used} requests`);
+  assert.equal((await store.list("submission:")).length, 0);
+  assert.equal((await store.list("story:")).length, 0);
+  assert.equal((await store.get("settings")).phase, "setup");
+  // the reset's first write is the phase, so a reset cut short leaves «setup»
+  const writes = fake.requests.slice(before).filter((q) => q.method !== "GET");
+  assert.match(writes[0].search, /key=eq\.settings/);
+});
+
+test("going back a phase needs nothing: a platform left in «published» without data can return", async () => {
+  const { call, store } = setup();
+  const admin = await adminLogin(call);
+  await store.set("settings", { phase: "published" });
+  for (const phase of ["allocated", "closed", "parents", "teachers", "setup"]) {
+    const r = await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+    assert.equal(r.status, 200, `${phase}: ${r.data.error}`);
+  }
+  // forward still checks
+  assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } })).status, 409);
+});
