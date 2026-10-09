@@ -30,6 +30,8 @@ export function createSupabaseStore({ url, key, fetch: fetchImpl = globalThis.fe
   }
 
   const eq = (k) => `eq.${encodeURIComponent(k)}`;
+  // PostgREST `like` uses * as wildcard; escape the SQL wildcards.
+  const likePrefix = (prefix) => `like.${encodeURIComponent(`${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}*`)}`;
 
   async function read(key) {
     const { rows } = await call("GET", `/kv?key=${eq(key)}&select=value,version`);
@@ -66,13 +68,16 @@ export function createSupabaseStore({ url, key, fetch: fetchImpl = globalThis.fe
     },
     update,
     async list(prefix) {
-      // PostgREST `like` uses * as wildcard; escape the SQL wildcards.
-      const pattern = `${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}*`;
-      const { rows } = await call("GET", `/kv?key=like.${encodeURIComponent(pattern)}&select=key,value&order=key`);
+      const { rows } = await call("GET", `/kv?key=${likePrefix(prefix)}&select=key,value&order=key`);
       return rows;
     },
     async delete(key) {
       await call("DELETE", `/kv?key=${eq(key)}`);
+    },
+    // One request for all keys with the prefix (a reset must finish within
+    // the function's time limit, even with hundreds of students)
+    async deletePrefix(prefix) {
+      await call("DELETE", `/kv?key=${likePrefix(prefix)}`);
     },
     async append(kind, item) {
       await call("POST", "/log", { body: { kind, data: item }, prefer: "return=minimal" });

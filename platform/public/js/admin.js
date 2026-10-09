@@ -197,7 +197,15 @@ function dangerZone() {
   go.addEventListener("click", () => {
     if (!confirm("Θα διαγραφούν οριστικά μαθητές, όμιλοι, εκπαιδευτικοί, δηλώσεις και αποτελέσματα. Συνέχεια;")) return;
     busy(go, out, async () => {
-      await api("POST", "/api/admin/reset", { confirm: word.value.trim(), keepSchoolInfo: keep.checked });
+      try {
+        await api("POST", "/api/admin/reset", { confirm: word.value.trim(), keepSchoolInfo: keep.checked });
+      } catch (err) {
+        if (err.status === 422) throw err; // the confirmation word
+        // Something may already be deleted: show what is there now, not the old page
+        await refresh();
+        $("#app [role=tabpanel]").prepend(message("err", `Η επαναφορά δεν ολοκληρώθηκε (${err.message}). Η σελίδα δείχνει πλέον την τρέχουσα κατάσταση· πατήστε ξανά «Διαγραφή όλων των δεδομένων» για να ολοκληρωθεί.`));
+        return;
+      }
       tab = "overview";
       await refresh();
       $("#app [role=tabpanel]").prepend(message("ok", "Η πλατφόρμα άδειασε. Είναι ξανά στη φάση «Προετοιμασία»."));
