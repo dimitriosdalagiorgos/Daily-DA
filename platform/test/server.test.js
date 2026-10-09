@@ -667,14 +667,35 @@ test("reset with hundreds of declarations: a few requests to Supabase, and «set
   assert.match(writes[0].search, /key=eq\.settings/);
 });
 
-test("going back a phase needs nothing: a platform left in «published» without data can return", async () => {
+test("going back a phase: no checks, except when declarations reopen", async () => {
   const { call, store } = setup();
   const admin = await adminLogin(call);
+  // A platform left in «published» without data (a reset cut short) can step back…
   await store.set("settings", { phase: "published" });
-  for (const phase of ["allocated", "closed", "parents", "teachers", "setup"]) {
+  for (const phase of ["allocated", "closed"]) {
     const r = await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
     assert.equal(r.status, 200, `${phase}: ${r.data.error}`);
   }
-  // forward still checks
+  // …but reopening declarations checks again (here: nothing to declare on)
+  let r = await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } });
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /ομίλους, μαθητές, κωδικό γονέων, προθεσμία/);
+  // the reset brings it back to «setup»; forward still checks
+  assert.equal((await call("POST", "/api/admin/reset", { token: admin, body: { confirm: "ΔΙΑΓΡΑΦΗ" } })).status, 200);
   assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } })).status, 409);
+});
+
+test("reopening declarations from «closed» checks the seats again", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z", mandatoryGrades: ["Α"] } });
+  for (const phase of ["teachers", "parents", "closed"]) assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase } })).status, 200, phase);
+  // Grade Α has 5 + 5 Monday/Thursday seats (Ρομποτική, Χορωδία); 12 more Α students no longer fit
+  const more = [...STUDENT_ROWS, ...Array.from({ length: 12 }, (_, i) => ["Α", 9100 + i, `ΝΕΟΣ${i}`, "ΜΑΘΗΤΗΣ", "Π", "Μ"])];
+  assert.equal((await call("PUT", "/api/admin/students", { token: admin, body: { rows: more } })).status, 200);
+  const r = await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } });
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /δεν υπάρχουν αρκετές θέσεις/);
 });

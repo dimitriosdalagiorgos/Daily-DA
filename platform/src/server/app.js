@@ -357,11 +357,12 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const { phase } = await body(req);
     if (!PHASES.includes(phase)) throw new HttpError(422, "Άγνωστη φάση.");
     const [settings, students, clubs, results] = await Promise.all([getSettings(), getStudents(), getClubs(), store.get("results")]);
-    // Going back never needs anything (e.g. after a reset cut short, or to
-    // correct something); the checks are for moving forward.
-    const forward = PHASES.indexOf(phase) > PHASES.indexOf(settings.phase);
+    // The checks apply moving forward, and whenever declarations (re)open:
+    // going back from «closed» to «parents» must still find enough seats.
+    // Other steps back need nothing (e.g. after a reset cut short).
+    const check = PHASES.indexOf(phase) > PHASES.indexOf(settings.phase) || phase === "parents";
     const missing = [];
-    if (forward) {
+    if (check) {
       if (phaseAtLeast(phase, "teachers") && clubs.length === 0) missing.push("ομίλους");
       if (phaseAtLeast(phase, "parents")) {
         if (students.length === 0) missing.push("μαθητές");
@@ -371,7 +372,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       if (phaseAtLeast(phase, "allocated") && !results) missing.push("εκτέλεση κατανομής");
     }
     if (missing.length) throw new HttpError(409, `Για αυτή τη φάση χρειάζονται: ${missing.join(", ")}.`);
-    if (forward && phase === "parents") {
+    if (check && phase === "parents") {
       // Enough seats for the mandatory grades, or declarations do not open.
       const errors = checkReadiness(students, clubs, settings).filter((p) => p.level === "error");
       if (errors.length) {
