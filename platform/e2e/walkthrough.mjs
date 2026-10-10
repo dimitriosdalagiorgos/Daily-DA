@@ -303,6 +303,13 @@ try {
   await shot(admin, "07d-admin-stats-phone");
   await admin.setViewportSize({ width: 1100, height: 900 });
   step("admin: statistics with charts (tooltip on hover)");
+  await admin.click("role=tab[name='Ανά μαθητή']");
+  await admin.waitForSelector("th:has-text('Πατρώνυμο')");
+  if ((await admin.locator("div[role=tabpanel] tbody tr").count()) < 60) throw new Error("the week table should list every student");
+  await admin.click("role=tab[name='Παρουσιολόγια']");
+  await admin.waitForSelector("th:has-text('Α/Α')");
+  await shot(admin, "07e-admin-rosters");
+  step("admin: the week per student and the clubs' rosters on screen");
   await shot(admin, "07-admin-results");
   for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"]]) {
     const [d] = await Promise.all([admin.waitForEvent("download"), admin.click(`button:has-text('${label}')`)]);
