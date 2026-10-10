@@ -133,7 +133,13 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   // Open declarations
   await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z", contact: "2310 000000" } });
   assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } })).status, 200);
-  assert.equal((await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { capacity: 1, ams: [] } })).status, 409, "lists locked");
+  // Teachers' lists stay open while parents declare (same deadline)
+  r = await call("PUT", "/api/teacher/clubs/100", { token: teacher, body: { ams: ["9001"] } });
+  assert.equal(r.status, 200, "lists still open in the parents' phase");
+  assert.equal((await call("GET", "/api/teacher/me", { token: teacher })).data.canEdit, true);
+  // the admin may add seats then, but not remove them (the seat check was done)
+  assert.equal((await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { capacity: 4, ams: [] } })).status, 409, "fewer seats refused");
+  assert.equal((await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { capacity: 6, ams: [] } })).status, 200, "more seats fine");
   assert.equal((await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } })).status, 409);
 
   // Parent logins
@@ -189,6 +195,10 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   assert.equal((await submit(pap2, { mon: ["101", "100"], thu: ["102"] })).status, 409);
   assert.equal((await call("GET", "/api/parent/me", { token: pap2 })).data.canEdit, false);
   admin = await adminLogin(call);
+  // …and the teachers' lists lock with the parents' deadline
+  const teacherAgain = (await call("POST", "/api/teacher/session", { body: { token: (await call("POST", "/api/admin/teacher-link", { token: admin, body: { email: "etheatr@sch.gr" } })).data.link.split("#token=")[1] } })).data.token;
+  assert.equal((await call("PUT", "/api/teacher/clubs/100", { token: teacherAgain, body: { ams: [] } })).status, 409, "lists locked after the deadline");
+  assert.equal((await call("GET", "/api/teacher/me", { token: teacherAgain })).data.canEdit, false);
 
   // Allocation
   assert.equal((await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "x" } })).status, 409, "only after closing");

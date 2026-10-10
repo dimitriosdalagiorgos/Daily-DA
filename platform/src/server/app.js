@@ -134,6 +134,13 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   };
 
   const deadlinePassed = (settings) => settings.deadline && now() > Date.parse(settings.deadline);
+  /**
+   * Teachers' lists stay open while parents declare (same deadline): the
+   * parents' best ranking does not depend on the lists, and teachers never
+   * see the declarations. They lock when declarations close.
+   */
+  const listsOpen = (settings) => !phaseAtLeast(settings.phase, "closed") && !(settings.phase === "parents" && deadlinePassed(settings));
+  const LISTS_LOCKED = "Οι λίστες των εκπαιδευτικών κλείδωσαν με το κλείσιμο των δηλώσεων.";
 
   // ---------- auth ----------
 
@@ -194,7 +201,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return json(200, {
       settings: { ...publicSettings, parentPasswordSet: Boolean(parentPasswordHash), teacherPasswordSet: Boolean(teacherPasswordHash) },
       teacherPath: env.TEACHER_PATH ? `/${env.TEACHER_PATH}/` : null,
-      students: students.map(({ am, grade, surname, name, loginException }) => ({ am, grade, surname, name, loginException: Boolean(loginException) })),
+      students: students.map(({ am, grade, surname, name, father, mother, loginException }) => ({ am, grade, surname, name, father: father ?? "", mother: mother ?? "", loginException: Boolean(loginException) })),
       clubs,
       teachers: teachers.map(({ idHash, ...t }) => ({ ...t, hasPersonalId: Boolean(idHash) })),
       teacherLists: lists,
@@ -394,7 +401,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   route("POST", "/api/admin/teacher-lists/import", async (req) => {
     session(req, "admin");
     const settings = await getSettings();
-    if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι λίστες κλείδωσαν με το άνοιγμα των δηλώσεων.");
+    if (!listsOpen(settings)) throw new HttpError(409, LISTS_LOCKED);
     const { files, apply } = await body(req);
     if (!Array.isArray(files) || files.length === 0) throw new HttpError(422, "Επιλέξτε αρχεία.");
     const [clubs, students, lists] = await Promise.all([getClubs(), getStudents(), getTeacherLists()]);
@@ -728,14 +735,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     }));
     return json(200, {
       teacher: { name: teacher.name, surname: teacher.surname, email },
-      phase: settings.phase, canEdit: settings.phase === "teachers", clubs: mine,
+      phase: settings.phase, canEdit: ["teachers", "parents"].includes(settings.phase) && listsOpen(settings), deadline: settings.deadline ?? null, clubs: mine,
     });
   });
 
   route("PUT", "/api/teacher/clubs/:code", async (req, { code }) => {
     const teacher = await teacherSession(req);
     if (!teacher.clubs.includes(Number(code))) throw new HttpError(403, "Ο όμιλος δεν είναι δικός σας.");
-    if ((await getSettings()).phase !== "teachers") throw new HttpError(409, "Οι αλλαγές από εκπαιδευτικούς γίνονται μόνο στη φάση «Εκπαιδευτικοί».");
+    const settings = await getSettings();
+    if (!["teachers", "parents"].includes(settings.phase)) throw new HttpError(409, settings.phase === "setup" ? "Η φάση των εκπαιδευτικών δεν έχει ανοίξει ακόμα." : LISTS_LOCKED);
+    if (!listsOpen(settings)) throw new HttpError(409, LISTS_LOCKED);
     return saveTeacherList(req, code, teacher.email);
   });
 
@@ -749,9 +758,14 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   async function writeTeacherList(code, list, who, capacity) {
     const settings = await getSettings();
-    if (phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι λίστες κλείδωσαν με το άνοιγμα των δηλώσεων.");
+    if (!listsOpen(settings)) throw new HttpError(409, LISTS_LOCKED);
     const club = (await getClubs()).find((c) => String(c.code) === String(code)); // current capacity applied
     if (!club) throw new HttpError(404, "Άγνωστος όμιλος.");
+    // While parents declare, seats may grow but not shrink: the seat check
+    // for the mandatory grades was done when declarations opened.
+    if (settings.phase === "parents" && capacity !== undefined && capacity < club.capacity) {
+      throw new HttpError(409, `Αφού άνοιξαν οι δηλώσεις, οι θέσεις μπορούν μόνο να αυξηθούν (τώρα ${club.capacity}).`);
+    }
     // Only the admin's «Διόρθωση» stores a capacity (overriding the file's);
     // a list saved by a teacher or from a file keeps whatever applies.
     const previous = await store.get(`teacherList:${club.code}`);
