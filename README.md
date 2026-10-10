@@ -144,9 +144,17 @@
 
 ## 6. Εγκατάσταση Β: δικός σας Linux server (Debian / Ubuntu)
 
-Κατάλληλη αν το σχολείο έχει ήδη μηχάνημα προσβάσιμο από το internet (π.χ. το VM του καταλόγου βιβλιοθήκης). Η πλατφόρμα είναι μικρή (μερικά MB μνήμης και δίσκου) και **δεν χρειάζεται βάση δεδομένων**: τα δεδομένα κρατιούνται σε ένα αρχείο.
+Κατάλληλη αν το σχολείο έχει ήδη μηχάνημα προσβάσιμο από το internet (π.χ. το VM του καταλόγου βιβλιοθήκης). Η πλατφόρμα είναι μικρή (20–60 MB μνήμης, λίγα MB στον δίσκο) και **δεν χρειάζεται βάση δεδομένων**: τα δεδομένα κρατιούνται σε ένα αρχείο.
 
-**Προϋποθέσεις:** πρόσβαση με `sudo`· ένα όνομα (π.χ. `omiloi.<σχολείο>.gr`) που δείχνει στο μηχάνημα· Apache ή nginx για HTTPS. **Πάρτε την έγκριση του υπευθύνου του μηχανήματος:** θα φιλοξενεί προσωπικά δεδομένα μαθητών.
+**Προϋποθέσεις:**
+
+- πρόσβαση με `sudo`·
+- ένα όνομα (π.χ. `omiloi.<σχολείο>.gr`) που δείχνει στο μηχάνημα· το ζητάτε από όποιον διαχειρίζεται το domain του σχολείου·
+- Apache (ή nginx) για το HTTPS·
+- ανοιχτές προς το internet **μόνο** οι θύρες 22 (SSH), 80 και 443. Σε cloud (π.χ. nefos.sch.gr) αυτό ρυθμίζεται συνήθως στις «Ομάδες ασφαλείας» (security groups)·
+- **η έγκριση του υπευθύνου του μηχανήματος:** θα φιλοξενεί προσωπικά δεδομένα μαθητών.
+
+Αν το μηχάνημα τρέχει ήδη άλλες υπηρεσίες (π.χ. Koha), διαβάστε **πρώτα** την §6.8.
 
 ### 6.1. Node.js 22
 
@@ -157,23 +165,53 @@ sudo apt install -y nodejs
 node --version        # πρέπει να δείξει v22.x
 ```
 
-(Χρειάζεται Node.js 20 ή νεότερο· η έκδοση των αποθετηρίων του Debian 12 είναι παλαιότερη.)
+Χρειάζεται Node.js 20 ή νεότερο· η έκδοση των αποθετηρίων του Debian 12 είναι παλαιότερη. Με το NodeSource οι ενημερώσεις ασφαλείας του Node.js έρχονται μαζί με τις υπόλοιπες του συστήματος (`apt upgrade`).
+
+**Με λίγο χώρο στον δίσκο** (π.χ. κάτω από 1 GB ελεύθερο): αντί για τα παραπάνω, εγκαταστήστε μόνο το πρόγραμμα `node` (~120 MB, χωρίς `npm`, που δεν χρειάζεται), με έλεγχο γνησιότητας:
+
+```sh
+cd /tmp
+URL=https://nodejs.org/dist/latest-v22.x
+FILE=$(curl -fsSL $URL/SHASUMS256.txt | grep -o 'node-v22\.[0-9.]*-linux-x64\.tar\.xz' | head -1)
+curl -fSLO "$URL/$FILE" \
+ && curl -fsSL $URL/SHASUMS256.txt | grep " $FILE\$" | sha256sum -c - \
+ && sudo tar -xJf "$FILE" -C /usr/local/bin --strip-components=2 --no-same-owner "${FILE%.tar.xz}/bin/node" \
+ && sudo chmod 755 /usr/local/bin/node
+rm -f "/tmp/$FILE"; cd ~
+/usr/local/bin/node --version
+```
+
+- Το `sha256sum -c` πρέπει να γράψει `OK` (ή `ΕΝΤΑΞΕΙ`)· αλλιώς δεν εγκαθίσταται τίποτα.
+- Στην §6.4 το `ExecStart` γίνεται `/usr/local/bin/node --max-old-space-size=80 server/start.mjs`.
+- Αυτό το Node.js **δεν ενημερώνεται μόνο του:** για νέα έκδοση ξανατρέχετε το ίδιο μπλοκ και μετά `sudo systemctl restart omiloi`.
 
 ### 6.2. Κώδικας, χρήστης και φάκελος δεδομένων
 
 ```sh
 sudo adduser --system --group --home /opt/omiloi omiloi
-sudo git clone https://github.com/dimitriosdalagiorgos/Daily-DA.git /opt/omiloi/app
+sudo GIT_TERMINAL_PROMPT=0 git clone --depth 1 --single-branch --branch main \
+  https://github.com/dimitriosdalagiorgos/Daily-DA.git /opt/omiloi/app
 sudo mkdir -p /var/lib/omiloi
 sudo chown omiloi:omiloi /var/lib/omiloi
 sudo chmod 700 /var/lib/omiloi
 ```
 
-(Αν χρησιμοποιείτε δικό σας fork, αλλάξτε τη διεύθυνση του `git clone`.)
+- Ο χρήστης `omiloi` δεν μπορεί να συνδεθεί και γράφει **μόνο** στο `/var/lib/omiloi`. Ο κώδικας ανήκει στον root.
+- `--depth 1`: μόνο η τελευταία έκδοση, χωρίς το ιστορικό (λίγα MB). Το `GIT_TERMINAL_PROMPT=0` κάνει την εντολή να αποτύχει αντί να ζητήσει κωδικό, αν το αποθετήριο είναι ιδιωτικό.
+- Αν χρησιμοποιείτε δικό σας fork, αλλάξτε τη διεύθυνση του `git clone`.
+
+Έλεγχος ότι ο κώδικας είναι πλήρης (περιμένετε το μήνυμα «✗ Ορίστε ADMIN_PASSWORD…», που εδώ σημαίνει επιτυχία):
+
+```sh
+cd /opt/omiloi/app/platform && sudo -u omiloi node server/start.mjs; cd ~
+```
 
 ### 6.3. Ρυθμίσεις
 
+Το αρχείο φτιάχνεται **πρώτα** με δικαιώματα μόνο για τον root, και μετά γράφονται μέσα οι τιμές:
+
 ```sh
+sudo install -m 600 -o root -g root /dev/null /etc/omiloi.env
 sudo nano /etc/omiloi.env
 ```
 
@@ -184,14 +222,15 @@ TEACHER_PATH=e-7kq3m9xa
 ADMIN_PATH=d-x82pfa4q
 DATA_DIR=/var/lib/omiloi
 PORT=3100
+HOST=127.0.0.1
 ```
 
-```sh
-sudo chmod 600 /etc/omiloi.env
-```
-
+- `ADMIN_PASSWORD`: τουλάχιστον 10 χαρακτήρες. Αποφύγετε κενά, εισαγωγικά, `\` και `$`, που μπερδεύουν το systemd.
 - `BASE_URL`: η δημόσια διεύθυνση (χρησιμοποιείται στους συνδέσμους των εκπαιδευτικών).
-- `PORT`: οποιαδήποτε ελεύθερη θύρα· η πλατφόρμα ακούει **μόνο τοπικά** (127.0.0.1) και τη βλέπει μόνο ο Apache/nginx. Προσοχή σε μηχάνημα με Koha: η θύρα 8080 χρησιμοποιείται συνήθως από το Koha — γι' αυτό εδώ 3100.
+- `TEACHER_PATH`, `ADMIN_PATH`: οι κρυφές διευθύνσεις των σελίδων εκπαιδευτικών και διαχείρισης (8–64 λατινικοί χαρακτήρες, ψηφία, `-` ή `_`, διαφορετικές μεταξύ τους). Αν έχετε και εγκατάσταση στο Netlify, μπορείτε να βάλετε τις ίδιες.
+- `PORT`: οποιαδήποτε ελεύθερη θύρα· `HOST=127.0.0.1`: η πλατφόρμα ακούει **μόνο τοπικά** και τη βλέπει μόνο ο Apache/nginx. Προσοχή σε μηχάνημα με Koha: η θύρα 8080 χρησιμοποιείται συχνά από το Koha — γι' αυτό εδώ 3100.
+- Αργότερα αλλάζετε μία τιμή με `sudo nano /etc/omiloi.env` και μετά `sudo systemctl restart omiloi`. **Μην ξαναγράφετε ολόκληρο το αρχείο** με εντολή: θα χάνονταν οι υπόλοιπες ρυθμίσεις.
+- Το αρχείο **δεν** μπαίνει ποτέ στο GitHub και το περιεχόμενό του δεν στέλνεται σε κανέναν. Για να το δείτε χωρίς τον κωδικό: `sudo grep -v '^ADMIN_PASSWORD' /etc/omiloi.env`.
 
 ### 6.4. Αυτόματη εκκίνηση (systemd)
 
@@ -209,68 +248,169 @@ User=omiloi
 Group=omiloi
 WorkingDirectory=/opt/omiloi/app/platform
 EnvironmentFile=/etc/omiloi.env
-ExecStart=/usr/bin/node server/start.mjs
+ExecStart=/usr/bin/node --max-old-space-size=80 server/start.mjs
 Restart=on-failure
+RestartSec=5
+MemoryMax=128M
+OOMScoreAdjust=500
+Nice=5
+UMask=0077
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
 ReadWritePaths=/var/lib/omiloi
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+- `MemoryMax=128M`, `--max-old-space-size=80`: η πλατφόρμα δεν παίρνει ποτέ πάνω από 128 MB· αν τα ξεπεράσει, το systemd την ξαναξεκινά.
+- `OOMScoreAdjust=500`: αν τελειώσει η μνήμη του μηχανήματος, θυσιάζεται **πρώτη** η πλατφόρμα και όχι η βάση δεδομένων ή άλλες υπηρεσίες.
+- `Nice=5`: οι υπόλοιπες υπηρεσίες έχουν προτεραιότητα στον επεξεργαστή.
+- Οι γραμμές `Protect…`, `Private…`, `ReadWritePaths`: η πλατφόρμα μπορεί να γράψει μόνο στο `/var/lib/omiloi`.
+- Με το Node.js της §6.1 «με λίγο χώρο»: `ExecStart=/usr/local/bin/node …`.
+
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now omiloi
-sudo systemctl status omiloi          # «active (running)»
-curl http://127.0.0.1:3100/api/public # {"phase":"setup",…}
+systemctl is-active omiloi                        # active
+curl -s http://127.0.0.1:3100/api/public          # {"phase":"setup",…}
+sudo ss -ltn | grep ':3100 '                      # 127.0.0.1:3100, όχι 0.0.0.0
 ```
 
 Αρχείο καταγραφής: `sudo journalctl -u omiloi -e`.
 
 ### 6.5. Δημόσια πρόσβαση με HTTPS (Apache)
 
+Ο Apache παίρνει μόνος του δωρεάν πιστοποιητικό από το Let's Encrypt και το ανανεώνει αυτόματα, με το ενσωματωμένο `mod_md` (Apache 2.4.30 και νεότερος· δεν χρειάζεται certbot). Πριν ξεκινήσετε, το όνομα πρέπει να δείχνει στο μηχάνημα: `getent hosts omiloi.example.gr`.
+
 ```sh
-sudo a2enmod proxy proxy_http headers ssl
+sudo a2enmod proxy proxy_http headers ssl md
 sudo nano /etc/apache2/sites-available/omiloi.conf
 ```
 
 ```apache
+# Πλατφόρμα ομίλων: HTTPS (Let's Encrypt μέσω mod_md) και προώθηση στο 127.0.0.1:3100.
+MDCertificateAgreement accepted
+MDContactEmail admin@example.gr
+MDRequireHttps temporary
+MDomain omiloi.example.gr
+
 <VirtualHost *:80>
-    ServerName omiloi.example.gr
-    ProxyPreserveHost On
-    ProxyPass        / http://127.0.0.1:3100/
-    ProxyPassReverse / http://127.0.0.1:3100/
+   ServerName omiloi.example.gr
+</VirtualHost>
+
+<VirtualHost *:443>
+   ServerName omiloi.example.gr
+   SSLEngine on
+   ProxyPreserveHost On
+   ProxyPass        / http://127.0.0.1:3100/
+   ProxyPassReverse / http://127.0.0.1:3100/
+   RequestHeader set X-Forwarded-Proto "https"
+   ErrorLog  ${APACHE_LOG_DIR}/omiloi-error.log
+   CustomLog ${APACHE_LOG_DIR}/omiloi-access.log combined
 </VirtualHost>
 ```
+
+- `MDContactEmail`: ένα email επικοινωνίας για το Let's Encrypt (χωρίς αυτό το πιστοποιητικό **δεν** εκδίδεται).
+- `MDRequireHttps temporary`: όποιος ανοίγει `http://` μεταφέρεται στο `https://`. Όταν όλα δουλεύουν για μερικές εβδομάδες, μπορεί να γίνει `permanent`.
+- Οι τρεις πρώτες γραμμές `MD…` ισχύουν για όλο τον Apache. Αν υπάρχουν ήδη σε άλλο αρχείο του μηχανήματος, εδώ αρκεί η γραμμή `MDomain`.
+- Ένα νέο `VirtualHost` με δικό του `ServerName` δεν επηρεάζει τους υπόλοιπους ιστότοπους του μηχανήματος (π.χ. το Koha). Αν όμως το μηχάνημα δεν είχε ως τώρα HTTPS, δείτε την §6.8.
 
 ```sh
 sudo apache2ctl configtest            # «Syntax OK» — αλλιώς μη συνεχίσετε
 sudo a2ensite omiloi
 sudo systemctl reload apache2
-sudo apt install -y certbot python3-certbot-apache
-sudo certbot --apache -d omiloi.example.gr
 ```
 
-Το certbot βγάζει δωρεάν πιστοποιητικό (Let's Encrypt), προσθέτει τη ρύθμιση HTTPS και το ανανεώνει αυτόματα. Ένα νέο `VirtualHost` με δικό του `ServerName` δεν επηρεάζει τους υπόλοιπους ιστότοπους του μηχανήματος (π.χ. το Koha).
+Σε 1–2 λεπτά το αρχείο καταγραφής γράφει ότι το πιστοποιητικό είναι έτοιμο (`AH10059 … has been setup`). Τότε ένα ακόμη ήπιο reload το ενεργοποιεί:
 
-Με **nginx** αντί για Apache, αντίστοιχα: `location / { proxy_pass http://127.0.0.1:3100; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; }` και `certbot --nginx`.
+```sh
+sudo grep -h '\[md:' /var/log/apache2/error.log | tail -3
+sudo systemctl reload apache2
+curl -s https://omiloi.example.gr/api/public   # {"phase":"setup",…}
+```
+
+- Μέχρι να ενεργοποιηθεί, το `https://` απαντά «503», σκόπιμα.
+- Αν δείτε «No contact information», λείπει το `MDContactEmail`.
+- Οι ανανεώσεις ενεργοποιούνται στο επόμενο reload του Apache· στο Debian γίνεται ήδη ένα κάθε μέρα, με την περιστροφή των αρχείων καταγραφής (`/etc/logrotate.d/apache2`).
+
+Με **nginx** αντί για Apache, αντίστοιχα: `location / { proxy_pass http://127.0.0.1:3100; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto https; }` και `sudo apt install certbot python3-certbot-nginx && sudo certbot --nginx -d omiloi.example.gr`. Το certbot μπορεί να χρησιμοποιηθεί και με τον Apache (`python3-certbot-apache`, `certbot --apache`), αν το προτιμάτε από το `mod_md`.
 
 ### 6.6. Αντίγραφα ασφαλείας
 
-Όλα τα δεδομένα είναι στο `/var/lib/omiloi/store.json`. Ένα αντίγραφο την ημέρα, για 7 ημέρες:
+Όλα τα δεδομένα είναι στο `/var/lib/omiloi/store.json`. Ένα αντίγραφο κάθε νύχτα, ένα για κάθε ημέρα της εβδομάδας (`omiloi-1.json` = Δευτέρα … `omiloi-7.json` = Κυριακή, άρα κρατιούνται 7):
 
 ```sh
-sudo crontab -e
+printf '%s\n' '15 2 * * * root [ -f /var/lib/omiloi/store.json ] && install -m 600 /var/lib/omiloi/store.json /var/backups/omiloi-$(date +\%u).json' \
+  | sudo tee /etc/cron.d/omiloi-backup >/dev/null
+sudo chmod 644 /etc/cron.d/omiloi-backup
 ```
 
-```cron
-15 2 * * * cp /var/lib/omiloi/store.json /var/backups/omiloi-$(date +\%a).json && chmod 600 /var/backups/omiloi-*.json
+- Το `%u` (αριθμός ημέρας) δεν εξαρτάται από τη γλώσσα του συστήματος, σε αντίθεση με το `%a`.
+- **Επαναφορά:** `sudo systemctl stop omiloi`, `sudo install -m 600 -o omiloi -g omiloi /var/backups/omiloi-3.json /var/lib/omiloi/store.json` (το αντίγραφο της ημέρας που θέλετε), `sudo systemctl start omiloi`.
+- Τα αντίγραφα είναι στον ίδιο δίσκο. Κρατάτε και ένα **εκτός μηχανήματος** στα σημαντικά σημεία της χρονιάς (π.χ. μετά το κλείσιμο των δηλώσεων και μετά την κατανομή), φυλαγμένο ασφαλώς: περιέχει προσωπικά δεδομένα. Σε cloud, ένα **snapshot του δίσκου** πριν από μεγάλες αλλαγές βοηθά επίσης.
+
+### 6.7. Ενημερώσεις
+
+Η εντολή `omiloi-update` ([`platform/server/omiloi-update.sh`](platform/server/omiloi-update.sh)) φέρνει την τελευταία έκδοση του `main`. Πριν από την ενημέρωση κρατά αντίγραφο των δεδομένων (`/var/backups/omiloi-before-update.json`), και αν η νέα έκδοση δεν ξεκινήσει, επιστρέφει αυτόματα στην προηγούμενη. Εγκατάσταση, μία φορά:
+
+```sh
+sudo ln -sf /opt/omiloi/app/platform/server/omiloi-update.sh /usr/local/sbin/omiloi-update
 ```
 
-Επαναφορά: `sudo systemctl stop omiloi`, αντιγραφή του αντιγράφου στο `/var/lib/omiloi/store.json` (ιδιοκτήτης `omiloi`), `sudo systemctl start omiloi`.
+```sh
+sudo omiloi-update --check     # μόνο έλεγχος: υπάρχει νεότερη έκδοση;
+sudo omiloi-update             # ενημέρωση
+```
+
+Επειδή είναι σύνδεσμος προς το αρχείο του αποθετηρίου, βελτιώσεις της ίδιας της εντολής έρχονται με την επόμενη ενημέρωση. Η νέα έκδοση μπορεί να χρειάζεται νέα ρύθμιση στο `/etc/omiloi.env`· τότε η πλατφόρμα δεν ξεκινά, η εντολή επιστρέφει στην προηγούμενη και δείχνει το μήνυμα (π.χ. «Ορίστε TEACHER_PATH»).
+
+**Μην ενημερώνετε** όσο οι γονείς δηλώνουν ή λίγο πριν την κατανομή, εκτός αν πρόκειται για διόρθωση λάθους.
+
+### 6.8. Μηχάνημα που τρέχει ήδη Koha (ή άλλες υπηρεσίες)
+
+Η πλατφόρμα είναι μικρή, αλλά το μηχάνημα μπορεί να είναι ήδη στο όριο. Ένα Koha 26.05 με MariaDB, RabbitMQ, Zebra, Plack και background workers πιάνει στην πράξη **1,8 GB μνήμης**. Σε VM με 2 GB μνήμης και χωρίς swap τελείωσε η μνήμη και σταμάτησε το Koha. Ελέγξτε πρώτα (μόνο ανάγνωση):
+
+```sh
+df -h /                                   # ελεύθερος χώρος: θέλετε τουλάχιστον 1 GB
+free -m                                   # «available»: θέλετε αρκετές εκατοντάδες MB
+sudo swapon --show                        # κενό = χωρίς swap
+sudo ss -ltn                              # ποιες θύρες είναι πιασμένες (διαλέξτε ελεύθερη για το PORT)
+sudo apache2ctl -S                        # οι ιστότοποι του Apache: δεν τους αγγίζετε
+```
+
+**Χώρος στον δίσκο**, ασφαλείς καθαρισμοί:
+
+- `sudo apt-get clean`: σβήνει αντίγραφα πακέτων που έχουν ήδη εγκατασταθεί (μπορεί να είναι εκατοντάδες MB)·
+- `sudo journalctl --vacuum-size=50M` και, μόνιμα, `SystemMaxUse=100M` σε ένα αρχείο στο `/etc/systemd/journald.conf.d/`·
+- παλιοί πυρήνες: `dpkg -l 'linux-image-*'` και `uname -r`· όσοι **δεν** είναι ο τρέχων φεύγουν με `sudo apt-get purge linux-image-<έκδοση>`·
+- πολύ μεγάλο `/var/log/auth.log`: ελέγξτε αν το SSH έχει μείνει σε κατάσταση αποσφαλμάτωσης (`sudo sshd -T | grep -i loglevel`)· η κανονική τιμή είναι `INFO`.
+
+**Μνήμη:**
+
+- Για Koha και πλατφόρμα μαζί, προτιμήστε **4 GB**. Σε cloud η μνήμη συχνά δεν αυξάνεται στο ίδιο instance: φτιάχνεται νέο instance από τον ίδιο δίσκο, αφού πάρετε snapshot.
+- Swap χωρίς χρήση δίσκου (συμπιεσμένο στη μνήμη):
+
+    ```sh
+    sudo apt-get install -y zram-tools
+    printf 'ALGO=zstd\nPERCENT=25\nPRIORITY=100\n' | sudo tee /etc/default/zramswap
+    sudo systemctl restart zramswap && sudo apt-get clean
+    ```
+
+- Το Koha να μη σβήνει ολόκληρο όταν ο πυρήνας σταματήσει έναν εργάτη του για να ελευθερώσει μνήμη (η προεπιλογή του systemd σταματά όλη την υπηρεσία, και το Koha δεν ξεκινά ξανά μόνο του):
+
+    ```sh
+    sudo mkdir -p /etc/systemd/system/koha-common.service.d
+    printf '[Service]\nOOMPolicy=continue\n' | sudo tee /etc/systemd/system/koha-common.service.d/oom.conf
+    sudo systemctl daemon-reload
+    ```
+
+**HTTPS:** αν οι ιστότοποι του Koha είχαν μόνο `http://`, με το `ssl` ενεργό ο Apache αρχίζει να ακούει και στη θύρα 443, και όποιος γράψει `https://` στη διεύθυνση του Koha βλέπει προειδοποίηση πιστοποιητικού. Αυτό διορθώνεται με HTTPS και για το Koha, με τον ίδιο τρόπο: ένα `MDomain` με τα ονόματα του Koha και, σε **χωριστό** αρχείο, αντίγραφα των ιστότοπων του Koha για `<VirtualHost *:443>` με `SSLEngine on` και `RequestHeader set X-Forwarded-Proto "https"`. Το αρχείο του Koha (`/etc/apache2/sites-available/<instance>.conf`) δεν αλλάζει. Μετά, στο Koha, συμπληρώστε `OPACBaseURL` και `staffClientBaseURL` με `https://…`.
+
+**Θύρες:** σε τέτοια μηχανήματα η βάση (3306) και το RabbitMQ (5672, 61613, 25672, 4369) συχνά ακούν σε όλες τις διευθύνσεις. Βεβαιωθείτε ότι το τείχος προστασίας ή οι «Ομάδες ασφαλείας» του cloud τις κρατούν **κλειστές** από το internet.
 
 ---
 
@@ -295,11 +435,7 @@ sudo crontab -e
 ## 8. Ενημερώσεις
 
 - **Netlify:** στο GitHub, στο fork σας → **Sync fork**, και μετά Netlify → **Deploys → Trigger deploy** (ή αυτόματα, αν η νέα έκδοση περιέχει commit με `[deploy]`· βλ. §5). Κάθε δημοσίευση καταναλώνει credits.
-- **Δικός σας server:**
-
-  ```sh
-  cd /opt/omiloi/app && sudo git pull && sudo systemctl restart omiloi
-  ```
+- **Δικός σας server:** `sudo omiloi-update` (§6.7). Με δικό σας fork, κάντε πρώτα **Sync fork** στο GitHub. Δεν καταναλώνει credits.
 
 Μην ενημερώνετε κατά τη διάρκεια των δηλώσεων ή της κατανομής.
 
