@@ -26,6 +26,7 @@ npm run dev -- --demo --no-mail   # όπως τώρα στο Netlify: χωρίς
 | `src/server/` | API (`app.js`), αποθήκευση (`store.js`), sessions/κωδικοί (`auth.js`), κρυφές διευθύνσεις (`paths.js`) |
 | `src/export/` | Πακέτο για R, αναφορές μαθητή (`story.js`), στατιστικά (`stats.js`), αρχεία λιστών εκπαιδευτικών |
 | `server/start.mjs` | Server παραγωγής για δικό σας μηχάνημα (βλ. README του αποθετηρίου, §6) |
+| `server/omiloi-update.sh` | Ενημέρωση του server παραγωγής από τον `main`, με αυτόματη επιστροφή (`sudo omiloi-update`, README §6.7) |
 | `dev/` | Τοπικός server και δοκιμαστικά δεδομένα |
 | `netlify/functions/api.mjs` | Το ίδιο API στο Netlify, με αποθήκευση Supabase (`src/server/store-supabase.js`, πίνακες: `supabase/schema.sql`) |
 
