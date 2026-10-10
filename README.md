@@ -172,8 +172,9 @@ node --version        # πρέπει να δείξει v22.x
 ```sh
 cd /tmp
 URL=https://nodejs.org/dist/latest-v22.x
-FILE=$(curl -fsSL $URL/SHASUMS256.txt | grep -o 'node-v22\.[0-9.]*-linux-x64\.tar\.xz' | head -1)
-curl -fSLO "$URL/$FILE" \
+case $(uname -m) in x86_64) ARCH=x64 ;; aarch64) ARCH=arm64 ;; *) ARCH=unsupported ;; esac
+FILE=$(curl -fsSL $URL/SHASUMS256.txt | grep -o "node-v22\.[0-9.]*-linux-$ARCH\.tar\.xz" | head -1)
+[ -n "$FILE" ] && curl -fSLO "$URL/$FILE" \
  && curl -fsSL $URL/SHASUMS256.txt | grep " $FILE\$" | sha256sum -c - \
  && sudo tar -xJf "$FILE" -C /usr/local/bin --strip-components=2 --no-same-owner "${FILE%.tar.xz}/bin/node" \
  && sudo chmod 755 /usr/local/bin/node
@@ -182,6 +183,7 @@ rm -f "/tmp/$FILE"; cd ~
 ```
 
 - Το `sha256sum -c` πρέπει να γράψει `OK` (ή `ΕΝΤΑΞΕΙ`)· αλλιώς δεν εγκαθίσταται τίποτα.
+- Επιλέγει μόνο του το αρχείο για τον επεξεργαστή του μηχανήματος (x86-64 ή ARM64)· σε άλλους επεξεργαστές δεν εγκαθίσταται τίποτα.
 - Στην §6.4 το `ExecStart` γίνεται `/usr/local/bin/node --max-old-space-size=80 server/start.mjs`.
 - Αυτό το Node.js **δεν ενημερώνεται μόνο του:** για νέα έκδοση ξανατρέχετε το ίδιο μπλοκ και μετά `sudo systemctl restart omiloi`.
 

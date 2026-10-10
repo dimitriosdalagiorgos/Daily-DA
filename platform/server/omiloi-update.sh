@@ -26,7 +26,12 @@ if [ "$cur" = "$new" ]; then echo "✓ Η πλατφόρμα είναι ήδη �
 echo "Υπάρχει νεότερη έκδοση στο GitHub: $(echo "$new" | cut -c1-7)"
 [ "${1:-}" = "--check" ] && exit 0
 
-[ -f "$D/store.json" ] && install -m 600 "$D/store.json" /var/backups/omiloi-before-update.json
+# Back up to a temporary name first, so a failed copy (e.g. a full disk)
+# neither starts the update nor truncates the previous backup.
+B=/var/backups/omiloi-before-update.json
+if [ -f "$D/store.json" ] && ! { install -m 600 "$D/store.json" "$B.new" && mv -f "$B.new" "$B"; }; then
+  rm -f "$B.new"; echo "✗ Δεν ήταν δυνατό να γίνει αντίγραφο των δεδομένων (γεμάτος δίσκος;). Δεν άλλαξε τίποτα."; exit 1
+fi
 if ! { GIT_TERMINAL_PROMPT=0 git -C "$A" fetch -q --depth 1 origin main && git -C "$A" reset -q --hard FETCH_HEAD; }; then
   echo "✗ Η λήψη απέτυχε. Η πλατφόρμα έμεινε όπως ήταν."; exit 1
 fi
