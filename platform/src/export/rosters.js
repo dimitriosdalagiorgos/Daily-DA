@@ -15,11 +15,16 @@ const byName = (a, b) => el(a.surname, b.surname) || el(a.name, b.name) || el(a.
 
 const GAP_TEXT = { all_rejected: "— δεν χώρεσε", no_preferences: "— χωρίς προτιμήσεις" };
 
-export const WEEK_HEADER = ["ΑΜ", "Τάξη", "Επώνυμο", "Όνομα", "Πατρώνυμο", "Μητρώνυμο", ...DAYS.map((d) => DAY_LABELS[d])];
+/** The «Τμήμα» column appears once the sections file has been uploaded (any student has one). */
+export const hasSections = (students) => students.some((s) => s.section);
+
+/** Header of weekRows(): with «Τμήμα» after «Τάξη» when there are sections. */
+export const weekHeader = (students) =>
+  ["ΑΜ", "Τάξη", ...(hasSections(students) ? ["Τμήμα"] : []), "Επώνυμο", "Όνομα", "Πατρώνυμο", "Μητρώνυμο", ...DAYS.map((d) => DAY_LABELS[d])];
 
 /**
  * One row per student: their details, then the club of each day (or why none).
- * @param {{am: string, grade: string, surname: string, name: string, father?: string, mother?: string}[]} students
+ * @param {{am: string, grade: string, surname: string, name: string, father?: string, mother?: string, section?: string}[]} students
  * @param {{byStudent: Record<string, Record<string, string>>, gaps?: Record<string, Record<string, string>>}} results
  * @param {{code: number|string, name: string}[]} clubs
  * @returns {unknown[][]} data rows (without the header), sorted by grade and name
@@ -31,8 +36,9 @@ export function weekRows(students, results, clubs) {
     if (code) return nameOf.get(String(code)) ?? String(code);
     return GAP_TEXT[results.gaps?.[am]?.[day]] ?? "";
   };
+  const withSection = hasSections(students);
   return [...students].sort(byGradeAndName).map((s) =>
-    [Number(s.am) || s.am, s.grade, s.surname, s.name, s.father ?? "", s.mother ?? "", ...DAYS.map((d) => cell(s.am, d))]);
+    [Number(s.am) || s.am, s.grade, ...(withSection ? [s.section ?? ""] : []), s.surname, s.name, s.father ?? "", s.mother ?? "", ...DAYS.map((d) => cell(s.am, d))]);
 }
 
 /** The students placed in a club (on its first day, where its seats are decided), alphabetically. */
@@ -43,24 +49,26 @@ export function clubMembers(club, students, results) {
 }
 
 export const ROSTER_SHEET = "Παρουσιολόγιο";
-export const ROSTER_HEADER = ["Α/Α", "ΑΜ", "Επώνυμο", "Όνομα", "Πατρώνυμο", "Τάξη"];
+const ROSTER_HEADER = ["Α/Α", "ΑΜ", "Επώνυμο", "Όνομα", "Πατρώνυμο", "Τάξη"];
 
 /**
- * A club's roster for its teacher: the club on top, then its members.
+ * A club's roster for its teacher: the club on top, then its members
+ * (with their section, when the sections file has been uploaded).
  * @param {{code: number|string, name: string, days: string[], capacity: number}} club
  * @param {object[]} members from clubMembers()
  * @param {string[]} [teacherNames]
+ * @param {boolean} [withSection] add «Τμήμα» (pass hasSections(allStudents), so every roster has the same columns)
  * @returns {unknown[][]} rows for a worksheet
  */
-export function rosterRows(club, members, teacherNames = []) {
+export function rosterRows(club, members, teacherNames = [], withSection = hasSections(members)) {
   return [
     ["Όμιλος", `${club.name} (${club.code})`],
     ["Ημέρες", club.days.map((d) => DAY_LABELS[d]).join(" + ")],
     ...(teacherNames.length ? [["Εκπαιδευτικοί", teacherNames.join(", ")]] : []),
     ["Μαθητές", `${members.length} (θέσεις ${club.capacity})`],
     [],
-    ROSTER_HEADER,
-    ...members.map((s, i) => [i + 1, Number(s.am) || s.am, s.surname, s.name, s.father ?? "", s.grade]),
+    [...ROSTER_HEADER, ...(withSection ? ["Τμήμα"] : [])],
+    ...members.map((s, i) => [i + 1, Number(s.am) || s.am, s.surname, s.name, s.father ?? "", s.grade, ...(withSection ? [s.section ?? ""] : [])]),
   ];
 }
 

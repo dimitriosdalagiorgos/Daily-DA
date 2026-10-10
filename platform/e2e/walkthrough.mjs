@@ -335,6 +335,24 @@ try {
   step("admin: history and database status");
   await shot(admin, "08b-admin-status");
 
+  // Sections from the two myschool reports (fictional, for the demo's ΑΜ 9001–9060)
+  const defsPath = join(tmpdir(), `tmimata-${process.pid}.csv`);
+  const sectPath = join(tmpdir(), `mathites-${process.pid}.csv`);
+  writeFileSync(defsPath, "Γενικά στοιχεία τμημάτων;;;;\r\nΑ/Α;Τμήμα;Τάξη;Τύπος τμήματος;Μάθημα\r\n" +
+    ["Α", "Β", "Γ"].flatMap((g, i) => [`${2 * i + 1};${g}1;${g};Γενικής Παιδείας Λυκείου;Ιστορία`, `${2 * i + 2};${g}-ΑΓΓΛΙΚΑ 1;${g};Ξένων Γλωσσών Λυκείου;Αγγλικά`]).join("\r\n"));
+  writeFileSync(sectPath, "Τμήματα μαθητών;;;;;\r\n" + ["Α", "Β", "Γ"].map((g, i) =>
+    `Τάξη Εγγραφής: ;;;${g};;\r\nΑ/Α;Αριθμός μητρώου;Επώνυμο μαθητή;Όνομα μαθητή;Όνομα πατέρα;Τμήματα\r\n` +
+    Array.from({ length: 20 }, (_, k) => `${k + 1};${9001 + 20 * i + k};Χ;Χ;Χ;${g}-ΑΓΓΛΙΚΑ 1, ${g}1`).join("\r\n")).join("\r\n"));
+  await admin.click("summary:has-text('Τμήματα μαθητών')");
+  await admin.setInputFiles("input[aria-label='Αρχεία τμημάτων']", [defsPath, sectPath]);
+  await admin.waitForSelector("#sections-out .msg.ok:has-text('Τμήμα για 60 από τους 60 μαθητές')");
+  await admin.waitForSelector("td:has-text('60 από 60 μαθητές με τμήμα')");
+  await admin.click("role=tab[name='Κατανομή']");
+  await admin.click("role=tab[name='Ανά μαθητή']");
+  await admin.waitForSelector("th:has-text('Τμήμα')");
+  await admin.waitForSelector("tbody td:text-is('Β1')");
+  step("admin: students' sections from the two myschool reports, shown in the week table");
+
   await admin.click("role=tab[name='Βοήθεια']");
   await admin.waitForSelector("h2:has-text('1. Προετοιμασία')");
   await admin.click("role=tab[name='Εκπαιδευτικοί']");

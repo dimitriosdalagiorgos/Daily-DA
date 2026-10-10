@@ -709,3 +709,41 @@ test("reopening declarations from «closed» checks the seats again", async () =
   assert.equal(r.status, 409);
   assert.match(r.data.error, /δεν υπάρχουν αρκετές θέσεις/);
 });
+
+test("students' sections: any phase; matched by ΑΜ and grade; kept over a new student list; cleared by the reset", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  const definitions = [
+    ["Α/Α", "Τμήμα", "Τάξη", "Τύπος τμήματος", "Μάθημα"],
+    ["1", "A1", "Α", "Γενικής Παιδείας Λυκείου", "Ιστορία"],
+    ["2", "Β2", "Β", "Γενικής Παιδείας Λυκείου", "Ιστορία"],
+    ["3", "Β-ΘΕΤ1", "Β", "Θετικές Σπουδές", "Φυσική (ΠΡΣ)"],
+  ];
+  const students = [
+    ["Τάξη Εγγραφής: ", "", "", "Β"],
+    ["Α/Α", "Αριθμός μητρώου", "Επώνυμο μαθητή", "Όνομα μαθητή", "Όνομα πατέρα", "Τμήματα"],
+    ["1", "9001", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "Β-ΘΕΤ1, Β2"],
+    ["2", "9003", "ΔΗΜΟΥ", "ΣΟΦΙΑ", "ΠΕΤΡΟΣ", "Β2"], // Α in the student list
+    ["3", "9999", "ΑΛΛΟΣ", "ΜΑΘΗΤΗΣ", "ΠΑΤΕΡΑΣ", "Β2"],
+  ];
+  let r = await call("PUT", "/api/admin/sections", { token: admin, body: { definitions: [], students } });
+  assert.equal(r.status, 422);
+  r = await call("PUT", "/api/admin/sections", { token: admin, body: { definitions, students, fileNames: ["a.csv", "b.csv"] } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.count, 3);
+  assert.equal(r.data.matched, 1, "only 9001: 9003 is in another grade, 9999 is not in the catalogue");
+  assert.equal(r.data.students, 4);
+  assert.equal(r.data.report.sections, undefined);
+  assert.deepEqual(r.data.report.problems.map((p) => p.level), ["warning", "warning", "info"]);
+  assert.match(r.data.report.problems[0].message, /ΑΜ 9003/);
+
+  const sectionOf = async () => Object.fromEntries((await call("GET", "/api/admin/state", { token: admin })).data.students.map((s) => [s.am, s.section]));
+  assert.deepEqual(await sectionOf(), { 9001: "Β2", 9002: "", 9003: "", 9004: "" });
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  assert.equal((await sectionOf())[9001], "Β2");
+  assert.equal((await call("GET", "/api/admin/state", { token: admin })).data.uploads.sections.count, 3);
+  await call("POST", "/api/admin/reset", { token: admin, body: { confirm: "ΔΙΑΓΡΑΦΗ" } });
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  assert.equal((await sectionOf())[9001], "");
+});

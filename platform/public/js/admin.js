@@ -7,7 +7,8 @@ import { makeZip } from "/lib/export/zip.js";
 import { LIST_SHEET, teacherListFileName, teacherListRows } from "/lib/export/teacherListFile.js";
 import { helpTabs } from "./help.js";
 import { barsWithTarget, columns, fmt, pct, stackedBars, statTile } from "./charts.js";
-import { ROSTER_SHEET, WEEK_HEADER, clubMembers, rosterFileName, rosterRows, weekRows } from "/lib/export/rosters.js";
+import { ROSTER_SHEET, clubMembers, hasSections, rosterFileName, rosterRows, weekHeader, weekRows } from "/lib/export/rosters.js";
+import { sectionsFileKind } from "/lib/import/sections.js";
 
 const api = createApi("admin");
 const app = $("#app");
@@ -284,8 +285,48 @@ function data() {
       return (await api("PUT", "/api/admin/clubs", { clubs, teachers, fileName })).report;
     }, locked),
     el("p", {}, el("a.button", { href: "/templates/omiloi_protypo.xlsx", download: "omiloi_protypo.xlsx" }, "Λήψη κενού προτύπου ομίλων")),
+    sectionsUpload(),
     legacyImport(),
     el("p.small.muted", {}, "Τα αρχεία διαβάζονται στον υπολογιστή σας· στον διακομιστή στέλνονται μόνο τα στοιχεία των πινάκων και ελέγχονται ξανά."));
+}
+
+// Optional: the students' sections, from two myschool reports (both files at once)
+function sectionsUpload() {
+  const out = el("div", { id: "sections-out" });
+  const input = el("input", { type: "file", accept: ".csv", multiple: true, "aria-label": "Αρχεία τμημάτων" });
+  input.addEventListener("change", async () => {
+    const files = [...input.files];
+    if (!files.length) return;
+    show(out, message("info", "Ανάγνωση αρχείων…"));
+    try {
+      const read = await Promise.all(files.map(async (f) => {
+        const rows = parseCsv(decodeCsv(new Uint8Array(await f.arrayBuffer())));
+        return { name: f.name, rows, kind: sectionsFileKind(rows) };
+      }));
+      const definitions = read.find((f) => f.kind === "definitions");
+      const students = read.find((f) => f.kind === "students");
+      const unknown = read.filter((f) => !f.kind).map((f) => `«${f.name}»`);
+      if (unknown.length) throw new Error(`Δεν αναγνωρίστηκε: ${unknown.join(", ")}. Χρειάζονται οι αναφορές «Γενικά Στοιχεία Τμημάτων» και «Τμήματα μαθητών» του myschool, σε CSV.`);
+      if (!definitions || !students) throw new Error(`Επιλέξτε και τα δύο αρχεία μαζί (λείπει το «${definitions ? "Τμήματα μαθητών" : "Γενικά Στοιχεία Τμημάτων"}»). Κρατήστε πατημένο το Ctrl για να διαλέξετε δύο αρχεία.`);
+      const { report, matched, students: catalogue } = await api("PUT", "/api/admin/sections", { definitions: definitions.rows, students: students.rows, fileNames: [definitions.name, students.name] });
+      await refresh();
+      tab = "data";
+      render();
+      $("#sections-out")?.closest("details")?.setAttribute("open", "");
+      $("#sections-out")?.replaceChildren(message("ok", catalogue ? `Τμήμα για ${matched} από τους ${catalogue} μαθητές του καταλόγου (${report.summary.count} μαθητές στο αρχείο).` : `Διαβάστηκαν ${report.summary.count} μαθητές· θα φανούν τα τμήματα όταν ανεβεί ο κατάλογος μαθητών.`), reportView({ problems: report.problems }));
+    } catch (err) {
+      show(out, err.data?.report ? reportView(err.data.report) : message("err", err.message));
+    } finally {
+      input.value = "";
+    }
+  });
+  return el("details.card", {},
+    el("summary", {}, el("strong", {}, "Τμήματα μαθητών (myschool, προαιρετικό)")),
+    el("p", {}, "Για να φαίνεται το τμήμα Γενικής Παιδείας κάθε μαθητή (π.χ. Α1) στους πίνακες, στα παρουσιολόγια και στα αρχεία Excel. ",
+      "Από το myschool εξάγετε σε CSV δύο αναφορές: «Γενικά Στοιχεία Τμημάτων» και «Τμήματα μαθητών». Επιλέξτε και τα δύο αρχεία μαζί (με Ctrl)."),
+    el("p.small.muted", {}, "Δεν επηρεάζει την κατανομή· ανεβαίνει σε οποιαδήποτε φάση. Νέο ανέβασμα αντικαθιστά τα προηγούμενα τμήματα."),
+    el("label", {}, "Αρχεία (.csv)", input),
+    out);
 }
 
 // What is in the database now
@@ -303,6 +344,7 @@ function uploadsStatus() {
     el("h2", { style: "margin-top:0" }, "Τι υπάρχει ήδη στη βάση"),
     el("div.table-wrap", {}, el("table", {}, el("tbody", {},
       row("Κατάλογος μαθητών", state.students.length > 0, state.students.length ? `${state.students.length} μαθητές (${byGrade(Object.fromEntries(["Α", "Β", "Γ"].map((g) => [g, state.students.filter((s) => s.grade === g).length])))})` : "δεν έχει ανέβει", when(u.students)),
+      ...(u.sections ? [row("Τμήματα μαθητών", true, `${state.students.filter((s) => s.section).length} από ${state.students.length} μαθητές με τμήμα`, when(u.sections))] : []),
       row("Όμιλοι και εκπαιδευτικοί", state.clubs.length > 0, state.clubs.length ? `${state.clubs.length} όμιλοι (${state.clubs.filter((c) => c.days.length > 1).length} πολυήμεροι) · ${state.teachers.length} εκπαιδευτικοί` : "δεν έχει ανέβει", when(u.clubs)),
       row("Λίστες εκπαιδευτικών", lists > 0, `${lists} όμιλοι με προτιμώμενους μαθητές`, ""),
       row("Δηλώσεις γονέων", subs.length - imported > 0, `${subs.length - imported} δηλώσεις`, ""),
@@ -361,10 +403,11 @@ function legacyImport() {
 // ---------- Students ----------
 
 function students() {
-  const search = el("input", { type: "search", placeholder: "Αναζήτηση (επώνυμο, όνομα, ΑΜ)", "aria-label": "Αναζήτηση μαθητή" });
+  const search = el("input", { type: "search", placeholder: hasSections(state.students) ? "Αναζήτηση (επώνυμο, όνομα, ΑΜ, τμήμα)" : "Αναζήτηση (επώνυμο, όνομα, ΑΜ)", "aria-label": "Αναζήτηση μαθητή" });
   const filter = el("select", { "aria-label": "Φίλτρο" },
     el("option", { value: "" }, "Όλοι"), el("option", { value: "missing" }, "Χωρίς δήλωση"), el("option", { value: "done" }, "Με δήλωση"), el("option", { value: "exception" }, "Με εξαίρεση σύνδεσης"));
   const body = el("tbody");
+  const withSection = hasSections(state.students);
   const draw = () => {
     const q = search.value.trim().toUpperCase();
     const rows = state.students.filter((s) => {
@@ -372,7 +415,7 @@ function students() {
       if (filter.value === "missing" && sub) return false;
       if (filter.value === "done" && !sub) return false;
       if (filter.value === "exception" && !s.loginException) return false;
-      return !q || `${s.surname} ${s.name} ${s.am}`.toUpperCase().includes(q);
+      return !q || `${s.surname} ${s.name} ${s.am} ${s.section}`.toUpperCase().includes(q);
     });
     body.replaceChildren(...rows.map((s) => {
       const sub = state.submissions[s.am];
@@ -384,7 +427,7 @@ function students() {
         } catch (err) { alert(err.message); cb.checked = !cb.checked; }
       });
       return el("tr", {},
-        el("td.num", {}, s.am), el("td", {}, `${s.surname} ${s.name}`), el("td", {}, s.grade),
+        el("td.num", {}, s.am), el("td", {}, `${s.surname} ${s.name}`), el("td", {}, s.grade), withSection ? el("td", {}, s.section) : null,
         el("td", {}, sub ? el("span", {}, el("span.badge.ok", {}, "✓"), " ", el("span.small", {}, `${formatDateTime(sub.submittedAt)} · ${sub.parentEmail ?? ""}`)) : el("span.badge", {}, "—")),
         el("td", {}, el("label", { style: "margin:0;font-weight:400" }, cb, " μόνο ΑΜ + επώνυμο")));
     }));
@@ -395,7 +438,7 @@ function students() {
   return el("section.card", {},
     el("p.small.muted", {}, "Η «εξαίρεση σύνδεσης» επιτρέπει στον γονέα να συνδεθεί μόνο με ΑΜ και επώνυμο (π.χ. όταν τα ονόματα των γονέων δεν είναι γραμμένα όπως τα ξέρει)."),
     el("div.grid-2", {}, search, filter),
-    el("div.table-wrap", {}, el("table", {}, el("thead", {}, el("tr", {}, el("th.num", {}, "ΑΜ"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"), el("th", {}, "Δήλωση"), el("th", {}, "Σύνδεση"))), body)));
+    el("div.table-wrap", {}, el("table", {}, el("thead", {}, el("tr", {}, el("th.num", {}, "ΑΜ"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"), withSection ? el("th", {}, "Τμήμα") : null, el("th", {}, "Δήλωση"), el("th", {}, "Σύνδεση"))), body)));
 }
 
 // ---------- Clubs ----------
@@ -849,13 +892,14 @@ async function saveSheet(fileName, sheetName, rows, cols) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-const WEEK_COLS = [8, 5, 20, 16, 14, 14, 22, 22, 22, 22, 22];
+const weekCols = () => [8, 5, ...(hasSections(state.students) ? [7] : []), 20, 16, 14, 14, 22, 22, 22, 22, 22];
 
 function weekView(results) {
   const out = el("div");
   const all = weekRows(state.students, results, state.clubs);
+  const header = weekHeader(state.students);
   const grades = [...new Set(state.students.map((s) => s.grade))].sort();
-  const search = el("input", { type: "search", placeholder: "Αναζήτηση (επώνυμο, όνομα, ΑΜ, όμιλος)", "aria-label": "Αναζήτηση στην κατανομή" });
+  const search = el("input", { type: "search", placeholder: header.includes("Τμήμα") ? "Αναζήτηση (επώνυμο, όνομα, ΑΜ, τμήμα, όμιλος)" : "Αναζήτηση (επώνυμο, όνομα, ΑΜ, όμιλος)", "aria-label": "Αναζήτηση στην κατανομή" });
   const grade = el("select", { "aria-label": "Τάξη" }, el("option", { value: "" }, "Όλες οι τάξεις"), grades.map((g) => el("option", { value: g }, `${g} τάξη`)));
   const count = el("p.small.muted");
   const body = el("tbody");
@@ -872,19 +916,19 @@ function weekView(results) {
   grade.addEventListener("change", draw);
   draw();
   const save = el("button", { type: "button" }, "Λήψη (.xlsx)");
-  save.addEventListener("click", () => busy(save, out, () => saveSheet(grade.value ? `katanomi_ana_mathiti_${grade.value}.xlsx` : "katanomi_ana_mathiti.xlsx", "Ανά μαθητή", [WEEK_HEADER, ...visible()], WEEK_COLS)));
+  save.addEventListener("click", () => busy(save, out, () => saveSheet(grade.value ? `katanomi_ana_mathiti_${grade.value}.xlsx` : "katanomi_ana_mathiti.xlsx", "Ανά μαθητή", [header, ...visible()], weekCols())));
   return el("div", {},
     el("p.small.muted", {}, "Ο όμιλος κάθε μαθητή για κάθε ημέρα. Ταξινόμηση: τάξη, επώνυμο, όνομα, πατρώνυμο, μητρώνυμο. Η λήψη περιέχει όσους εμφανίζονται με τα τρέχοντα φίλτρα."),
     el("div.grid-2", {}, search, grade),
     el("div.actions", {}, save, count), out,
-    el("div.table-wrap", {}, el("table", {}, el("thead", {}, el("tr", {}, WEEK_HEADER.map((h, i) => el(i === 0 ? "th.num" : "th", {}, h)))), body)));
+    el("div.table-wrap", {}, el("table", {}, el("thead", {}, el("tr", {}, header.map((h, i) => el(i === 0 ? "th.num" : "th", {}, h)))), body)));
 }
 
-const ROSTER_COLS = [6, 8, 22, 18, 16, 6];
+const rosterCols = () => [6, 8, 22, 18, 16, 6, ...(hasSections(state.students) ? [7] : [])];
 
 function rosterFor(club, results) {
   const teachers = state.teachers.filter((t) => t.clubs.includes(club.code)).map((t) => `${t.name} ${t.surname}`);
-  return rosterRows(club, clubMembers(club, state.students, results), teachers);
+  return rosterRows(club, clubMembers(club, state.students, results), teachers, hasSections(state.students));
 }
 
 function rostersView(results) {
@@ -913,7 +957,7 @@ function rostersView(results) {
   one.addEventListener("click", () => busy(one, out, async () => {
     const club = current();
     // A Latin name for a direct download (some browsers drop Greek ones); the .zip keeps the club names
-    await saveSheet(`parousiologio_${club.code}.xlsx`, ROSTER_SHEET, rosterFor(club, results), ROSTER_COLS);
+    await saveSheet(`parousiologio_${club.code}.xlsx`, ROSTER_SHEET, rosterFor(club, results), rosterCols());
   }));
   const all = el("button", { type: "button", disabled: !clubs.length }, "Όλα τα παρουσιολόγια (.zip)");
   all.addEventListener("click", () => busy(all, out, async () => {
@@ -922,7 +966,7 @@ function rostersView(results) {
     for (const c of clubs) {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(rosterFor(c, results));
-      ws["!cols"] = ROSTER_COLS.map((wch) => ({ wch }));
+      ws["!cols"] = rosterCols().map((wch) => ({ wch }));
       XLSX.utils.book_append_sheet(wb, ws, ROSTER_SHEET);
       files[rosterFileName(c)] = new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" }));
     }
@@ -948,7 +992,7 @@ async function resultsWorkbook(results) {
     return code ? nameOf.get(code) ?? code : REASON[results.gaps[am]?.[d]] ? `— ${REASON[results.gaps[am][d]]}` : "";
   };
   const sorted = [...state.students].sort((a, b) => a.grade.localeCompare(b.grade) || a.surname.localeCompare(b.surname, "el") || a.name.localeCompare(b.name, "el"));
-  const perStudent = [WEEK_HEADER, ...weekRows(state.students, results, state.clubs)];
+  const perStudent = [weekHeader(state.students), ...weekRows(state.students, results, state.clubs)];
   const perClub = [["Κωδικός", "Όμιλος", "Ημέρα", "ΑΜ", "Επώνυμο", "Όνομα", "Τάξη"]];
   for (const c of state.clubs) for (const d of c.days) {
     for (const s of sorted.filter((x) => results.byStudent[x.am]?.[d] === String(c.code))) perClub.push([c.code, c.name, DAY_LABELS[d], s.am, s.surname, s.name, s.grade]);
@@ -970,7 +1014,7 @@ async function resultsWorkbook(results) {
 // ---------- History (platform events) ----------
 
 const EVENT_LABELS = {
-  login: "Σύνδεση διαχείρισης", students_uploaded: "Ανέβασμα καταλόγου μαθητών", clubs_uploaded: "Ανέβασμα ομίλων",
+  login: "Σύνδεση διαχείρισης", students_uploaded: "Ανέβασμα καταλόγου μαθητών", sections_uploaded: "Ανέβασμα τμημάτων μαθητών", clubs_uploaded: "Ανέβασμα ομίλων",
   import_legacy: "Εισαγωγή περσινών δηλώσεων", settings: "Αλλαγή ρυθμίσεων", phase: "Αλλαγή φάσης", login_exception: "Εξαίρεση σύνδεσης",
   teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού",
   parent_login: "Σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
