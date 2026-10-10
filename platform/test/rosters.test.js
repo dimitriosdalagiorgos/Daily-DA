@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WEEK_HEADER, clubMembers, rosterFileName, rosterRows, weekRows } from "../src/export/rosters.js";
+import { clubMembers, rosterFileName, rosterRows, weekHeader, weekRows } from "../src/export/rosters.js";
 
 const students = [
   { am: "3", grade: "Β", surname: "ΑΛΦΑ", name: "ΓΙΩΡΓΟΣ", father: "ΝΙΚΟΣ", mother: "ΜΑΡΙΑ" },
@@ -18,7 +18,7 @@ const results = {
 };
 
 test("the week per student: details, then the club of each day; sorted by grade, surname, name, father", () => {
-  assert.deepEqual(WEEK_HEADER.slice(0, 6), ["ΑΜ", "Τάξη", "Επώνυμο", "Όνομα", "Πατρώνυμο", "Μητρώνυμο"]);
+  assert.deepEqual(weekHeader(students).slice(0, 6), ["ΑΜ", "Τάξη", "Επώνυμο", "Όνομα", "Πατρώνυμο", "Μητρώνυμο"]);
   const rows = weekRows(students, results, clubs);
   assert.deepEqual(rows.map((r) => r[0]), [4, 2, 1, 3], "Α before Β; same name → father's name");
   assert.deepEqual(rows[2], [1, "Α", "ΒΗΤΑ", "ΕΛΕΝΗ", "ΠΕΤΡΟΣ", "ΑΝΝΑ", "Ρομποτική", "Αντιγόνη", "", "Αντιγόνη", ""]);
@@ -32,4 +32,15 @@ test("a club's roster: its members on its first day, alphabetically, with the cl
   assert.deepEqual(rows.slice(0, 4), [["Όμιλος", "Αντιγόνη (20)"], ["Ημέρες", "Τρίτη + Πέμπτη"], ["Εκπαιδευτικοί", "ΜΑΡΙΑ ΘΕΑΤΡΙΚΟΥ"], ["Μαθητές", "2 (θέσεις 3)"]]);
   assert.deepEqual(rows.slice(5), [["Α/Α", "ΑΜ", "Επώνυμο", "Όνομα", "Πατρώνυμο", "Τάξη"], [1, 3, "ΑΛΦΑ", "ΓΙΩΡΓΟΣ", "ΝΙΚΟΣ", "Β"], [2, 1, "ΒΗΤΑ", "ΕΛΕΝΗ", "ΠΕΤΡΟΣ", "Α"]]);
   assert.equal(rosterFileName({ code: 102, name: "Θεατρική παράσταση «Αντιγόνη»" }), "parousiologio_102_Θεατρική_παράσταση_Αντιγόνη.xlsx");
+});
+
+test("with the sections file: «Τμήμα» after «Τάξη» in the week, last in the rosters", () => {
+  const withSections = students.map((s) => ({ ...s, section: { 1: "Α1", 3: "Β2" }[s.am] ?? "" }));
+  assert.deepEqual(weekHeader(withSections).slice(0, 4), ["ΑΜ", "Τάξη", "Τμήμα", "Επώνυμο"]);
+  assert.deepEqual(weekRows(withSections, results, clubs)[2].slice(0, 4), [1, "Α", "Α1", "ΒΗΤΑ"]);
+  const members = clubMembers(clubs[1], withSections, results);
+  const rows = rosterRows(clubs[1], members, [], true);
+  assert.deepEqual(rows.slice(4), [["Α/Α", "ΑΜ", "Επώνυμο", "Όνομα", "Πατρώνυμο", "Τάξη", "Τμήμα"], [1, 3, "ΑΛΦΑ", "ΓΙΩΡΓΟΣ", "ΝΙΚΟΣ", "Β", "Β2"], [2, 1, "ΒΗΤΑ", "ΕΛΕΝΗ", "ΠΕΤΡΟΣ", "Α", "Α1"]]);
+  // A club whose members have no section still gets the column, like the other rosters
+  assert.equal(rosterRows(clubs[0], [], [], true)[4].at(-1), "Τμήμα");
 });

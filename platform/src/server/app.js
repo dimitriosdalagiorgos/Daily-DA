@@ -16,6 +16,7 @@ import { drawLottery } from "../algorithm/lottery.js";
 import { allocateWeek } from "../algorithm/allocate.js";
 import { clubsToRank, validateSubmission, validateTeacherList } from "../algorithm/validate.js";
 import { importStudents } from "../import/students.js";
+import { importSections } from "../import/sections.js";
 import { importClubs, normalizePersonalId, normalizeSimilar } from "../import/clubs.js";
 import { importTeacherLists } from "../import/teacherLists.js";
 import { checkReadiness } from "../import/readiness.js";
@@ -76,6 +77,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   const getSettings = async () => ({ phase: "setup", contact: "", deadline: null, mandatoryGrades: [...GRADES], ...(await store.get("settings")) });
   const getStudents = async () => (await store.get("students")) ?? [];
   const getTeachers = async () => (await store.get("teachers")) ?? [];
+  /** A student's general-education section, if the sections file lists them in the same grade. */
+  const sectionOf = (sections, am, grade) => (sections?.[am]?.grade === grade ? sections[am].section : "");
   const getTeacherLists = async () => Object.fromEntries((await store.list("teacherList:")).map(({ key, value }) => [key.slice(12), value]));
   /** Clubs with the teacher-set capacity applied. */
   const getClubs = async () => {
@@ -194,14 +197,14 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/admin/state", async (req) => {
     session(req, "admin");
-    const [settings, students, clubs, teachers, lists, submissions, results, uploads] = await Promise.all([
-      getSettings(), getStudents(), getClubs(), getTeachers(), getTeacherLists(), getSubmissions(), store.get("results"), store.get("uploads"),
+    const [settings, students, clubs, teachers, lists, submissions, results, uploads, sections] = await Promise.all([
+      getSettings(), getStudents(), getClubs(), getTeachers(), getTeacherLists(), getSubmissions(), store.get("results"), store.get("uploads"), store.get("sections"),
     ]);
     const { parentPasswordHash, teacherPasswordHash, ...publicSettings } = settings;
     return json(200, {
       settings: { ...publicSettings, parentPasswordSet: Boolean(parentPasswordHash), teacherPasswordSet: Boolean(teacherPasswordHash) },
       teacherPath: env.TEACHER_PATH ? `/${env.TEACHER_PATH}/` : null,
-      students: students.map(({ am, grade, surname, name, father, mother, loginException }) => ({ am, grade, surname, name, father: father ?? "", mother: mother ?? "", loginException: Boolean(loginException) })),
+      students: students.map(({ am, grade, surname, name, father, mother, loginException }) => ({ am, grade, surname, name, father: father ?? "", mother: mother ?? "", section: sectionOf(sections, am, grade), loginException: Boolean(loginException) })),
       clubs,
       teachers: teachers.map(({ idHash, ...t }) => ({ ...t, hasPersonalId: Boolean(idHash) })),
       teacherLists: lists,
@@ -252,6 +255,29 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     await logEvent("admin", "students_uploaded", { count: students.length, fileName: fileNameOf(fileName) });
     await recordUpload(["students"], { fileName: fileNameOf(fileName), count: students.length, byGrade: Object.fromEntries(["Α", "Β", "Γ"].map((g) => [g, students.filter((s) => s.grade === g).length])) });
     return json(200, { report: { ...report, problems: [...report.problems, ...notes] }, count: students.length });
+  });
+
+  // Students' sections (myschool «Τμήματα μαθητών»): shown in the admin's
+  // tables and rosters only, so they can be uploaded in any phase. Kept
+  // apart from the students, so a new student list keeps them.
+  route("PUT", "/api/admin/sections", async (req) => {
+    session(req, "admin");
+    const { definitions, students: studentRows, fileNames } = await body(req);
+    const report = importSections(Array.isArray(definitions) ? definitions : [], Array.isArray(studentRows) ? studentRows : []);
+    if (report.problems.some((p) => p.level === "error")) throw new HttpError(422, "Τα αρχεία έχουν σφάλματα.", { report });
+    const students = await getStudents();
+    const notes = [];
+    const missing = students.filter((s) => !sectionOf(report.sections, s.am, s.grade));
+    const otherGrade = students.filter((s) => report.sections[s.am] && report.sections[s.am].grade !== s.grade);
+    const extra = Object.keys(report.sections).filter((am) => !students.some((s) => s.am === am));
+    if (otherGrade.length) notes.push({ level: "warning", message: `${otherGrade.length} μαθητές είναι σε άλλη τάξη στον κατάλογο μαθητών· δεν φαίνεται τμήμα: ΑΜ ${otherGrade.slice(0, 10).map((s) => s.am).join(", ")}${otherGrade.length > 10 ? "…" : ""}.` });
+    if (students.length && missing.length) notes.push({ level: "warning", message: `${missing.length} από τους ${students.length} μαθητές του καταλόγου δεν έχουν τμήμα.` });
+    if (extra.length) notes.push({ level: "info", message: `${extra.length} μαθητές του αρχείου δεν είναι στον κατάλογο μαθητών.` });
+    await store.set("sections", report.sections);
+    const names = Array.isArray(fileNames) ? fileNames.map(fileNameOf).filter(Boolean).join(", ") : "";
+    await logEvent("admin", "sections_uploaded", { count: report.summary.count, fileName: names });
+    await recordUpload(["sections"], { fileName: names, count: report.summary.count });
+    return json(200, { report: { ...report, sections: undefined, problems: [...report.problems, ...notes] }, count: report.summary.count });
   });
 
   route("PATCH", "/api/admin/students/:am", async (req, { am }) => {
@@ -466,7 +492,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       ...(keepSchoolInfo ? { schoolName: settings.schoolName ?? "", contact: settings.contact ?? "" } : {}),
     });
     await Promise.all([
-      ...["students", "clubs", "teachers", "results", "resultsLog", "uploads"].map((key) => store.delete(key)),
+      ...["students", "sections", "clubs", "teachers", "results", "resultsLog", "uploads"].map((key) => store.delete(key)),
       ...["teacherList:", "submission:", "story:"].map((prefix) => store.deletePrefix(prefix)),
       store.deleteLog("outbox"),
       store.deleteLog("events"),
