@@ -345,7 +345,7 @@ try {
     Array.from({ length: 20 }, (_, k) => `${k + 1};${9001 + 20 * i + k};Χ;Χ;Χ;${g}-ΑΓΓΛΙΚΑ 1, ${g}1`).join("\r\n")).join("\r\n"));
   await admin.click("summary:has-text('Τμήματα μαθητών')");
   await admin.setInputFiles("input[aria-label='Αρχεία τμημάτων']", [defsPath, sectPath]);
-  await admin.waitForSelector("#sections-out .msg.ok:has-text('Βρέθηκαν τμήματα για 60 μαθητές')");
+  await admin.waitForSelector("#sections-out .msg.ok:has-text('Τμήμα για 60 από τους 60 μαθητές')");
   await admin.waitForSelector("td:has-text('60 από 60 μαθητές με τμήμα')");
   await admin.click("role=tab[name='Κατανομή']");
   await admin.click("role=tab[name='Ανά μαθητή']");

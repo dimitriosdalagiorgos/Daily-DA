@@ -308,12 +308,12 @@ function sectionsUpload() {
       const unknown = read.filter((f) => !f.kind).map((f) => `«${f.name}»`);
       if (unknown.length) throw new Error(`Δεν αναγνωρίστηκε: ${unknown.join(", ")}. Χρειάζονται οι αναφορές «Γενικά Στοιχεία Τμημάτων» και «Τμήματα μαθητών» του myschool, σε CSV.`);
       if (!definitions || !students) throw new Error(`Επιλέξτε και τα δύο αρχεία μαζί (λείπει το «${definitions ? "Τμήματα μαθητών" : "Γενικά Στοιχεία Τμημάτων"}»). Κρατήστε πατημένο το Ctrl για να διαλέξετε δύο αρχεία.`);
-      const { report } = await api("PUT", "/api/admin/sections", { definitions: definitions.rows, students: students.rows, fileNames: [definitions.name, students.name] });
+      const { report, matched, students: catalogue } = await api("PUT", "/api/admin/sections", { definitions: definitions.rows, students: students.rows, fileNames: [definitions.name, students.name] });
       await refresh();
       tab = "data";
       render();
       $("#sections-out")?.closest("details")?.setAttribute("open", "");
-      $("#sections-out")?.replaceChildren(message("ok", `Βρέθηκαν τμήματα για ${report.summary.count} μαθητές.`), reportView({ problems: report.problems }));
+      $("#sections-out")?.replaceChildren(message("ok", catalogue ? `Τμήμα για ${matched} από τους ${catalogue} μαθητές του καταλόγου (${report.summary.count} μαθητές στο αρχείο).` : `Διαβάστηκαν ${report.summary.count} μαθητές· θα φανούν τα τμήματα όταν ανεβεί ο κατάλογος μαθητών.`), reportView({ problems: report.problems }));
     } catch (err) {
       show(out, err.data?.report ? reportView(err.data.report) : message("err", err.message));
     } finally {

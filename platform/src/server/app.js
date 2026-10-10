@@ -277,7 +277,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const names = Array.isArray(fileNames) ? fileNames.map(fileNameOf).filter(Boolean).join(", ") : "";
     await logEvent("admin", "sections_uploaded", { count: report.summary.count, fileName: names });
     await recordUpload(["sections"], { fileName: names, count: report.summary.count });
-    return json(200, { report: { ...report, sections: undefined, problems: [...report.problems, ...notes] }, count: report.summary.count });
+    // count: rows in the file; matched: catalogue students who now show a section
+    const matched = students.length - missing.length;
+    return json(200, { report: { ...report, sections: undefined, problems: [...report.problems, ...notes] }, count: report.summary.count, matched, students: students.length });
   });
 
   route("PATCH", "/api/admin/students/:am", async (req, { am }) => {

@@ -732,6 +732,8 @@ test("students' sections: any phase; matched by ΑΜ and grade; kept over a new 
   r = await call("PUT", "/api/admin/sections", { token: admin, body: { definitions, students, fileNames: ["a.csv", "b.csv"] } });
   assert.equal(r.status, 200);
   assert.equal(r.data.count, 3);
+  assert.equal(r.data.matched, 1, "only 9001: 9003 is in another grade, 9999 is not in the catalogue");
+  assert.equal(r.data.students, 4);
   assert.equal(r.data.report.sections, undefined);
   assert.deepEqual(r.data.report.problems.map((p) => p.level), ["warning", "warning", "info"]);
   assert.match(r.data.report.problems[0].message, /ΑΜ 9003/);
