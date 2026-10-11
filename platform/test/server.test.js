@@ -152,7 +152,7 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   assert.match(r.data.error, /δεν ταιριάζουν/);
   assert.equal((await call("POST", "/api/parent/login", { body: { password: "wrong", am: "9002" } })).status, 401);
   await login({ am: "123", surname: "Χ" });
-  assert.deepEqual((await store.readLog("events")).filter((e) => e.what === "parent_login_failed").map(({ who, reason }) => [who, reason]),
+  assert.deepEqual((await store.readLog("loginFailures")).filter((e) => e.what === "parent_login_failed").map(({ who, reason }) => [who, reason]),
     [["parent:9002", "names"], ["parent:9002", "code"], ["parent:?", "am"]], "why, and the ΑΜ only if it is the catalog's");
   r = await login({ password: "omiloi2026 ", am: "9002", surname: "Χριστοφορίδης", name: "Άννα", father: "Ιωάννης", mother: "Ελένη" });
   assert.equal(r.status, 200, "a space pasted with the code is forgiven");
@@ -543,12 +543,14 @@ test("teachers' common code + own ΑΜ/ΑΦΜ: only their clubs; the number is n
     assert.match(r.data.error, /κωδικός ή ο ΑΜ\/ΑΦΜ/);
   }
   // The history says why, never what was typed
-  const failed = (await store.readLog("events")).filter((e) => e.what === "teacher_login_failed");
+  const failed = (await store.readLog("loginFailures")).filter((e) => e.what === "teacher_login_failed");
   assert.deepEqual(failed.map(({ who, reason }) => [who, reason]), [["etheatr@sch.gr", "code"], ["teacher:?", "id"], ["teacher:?", "id"]]);
   assert.ok(!JSON.stringify(failed).includes("wrong-code") && !JSON.stringify(failed).includes("999999"));
   // A keyboard left in Greek is noted; spaces pasted around the code are forgiven
   await call("POST", "/api/teacher/code-login", { body: { password: "ομιλοι2026", personalId: "612345" } });
-  assert.equal((await store.readLog("events")).at(-1).greek, true);
+  assert.equal((await store.readLog("loginFailures")).at(-1).greek, true);
+  const history = (await call("GET", "/api/admin/events", { token: admin })).data.events;
+  assert.ok(history.some((e) => e.what === "teacher_login_failed") && history.some((e) => e.what === "clubs_uploaded"), "failures shown with the events, kept apart");
   assert.equal((await call("POST", "/api/teacher/code-login", { body: { password: " omiloi2026\n", personalId: "612345" } })).status, 200);
   // ΑΦΜ typed with its leading zero matches the number Excel kept without it
   r = await call("POST", "/api/teacher/code-login", { body: { password: "omiloi2026", personalId: " 012345678 " } });

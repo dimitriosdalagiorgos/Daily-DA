@@ -109,9 +109,14 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const text = String(password ?? "");
     return verifyPassword(text, hash) || (text.trim() !== text && verifyPassword(text.trim(), hash));
   };
-  /** Why a login failed, for the admin's history; never what was typed. */
-  const logFailedLogin = (who, what, reason, password) =>
-    logEvent(who, what, { reason, ...(reason.includes("code") && GREEK.test(String(password ?? "")) ? { greek: true } : {}) });
+  /**
+   * Why a login failed, for the admin's history; never what was typed. In a
+   * log of its own: anyone can fail a login, and a flood of failures must
+   * not push the real events out of the history.
+   */
+  const logFailedLogin = (who, what, reason, password) => store.append("loginFailures", {
+    at: new Date(now()).toISOString(), who, what, reason, ...(reason.includes("code") && GREEK.test(String(password ?? "")) ? { greek: true } : {}),
+  });
 
   /** What has been uploaded, for the admin's «Αρχεία» overview. */
   const recordUpload = (path, info) => store.update("uploads", (u = {}) => {
@@ -511,6 +516,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       ...["teacherList:", "submission:", "story:"].map((prefix) => store.deletePrefix(prefix)),
       store.deleteLog("outbox"),
       store.deleteLog("events"),
+      store.deleteLog("loginFailures"),
     ]);
     await logEvent("admin", "reset", { keepSchoolInfo: Boolean(keepSchoolInfo) });
     return json(200, { ok: true });
@@ -668,7 +674,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/admin/events", async (req) => {
     session(req, "admin");
-    return json(200, { events: await store.readLog("events", 1000) });
+    const [events, failures] = await Promise.all([store.readLog("events", 1000), store.readLog("loginFailures", 200)]);
+    return json(200, { events: [...events, ...failures].sort((a, b) => a.at.localeCompare(b.at)) });
   });
 
   route("GET", "/api/admin/outbox", async (req) => {
