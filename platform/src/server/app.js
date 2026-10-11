@@ -43,6 +43,8 @@ export function receiptCode(am, submittedAt, preferences) {
   return `${h.slice(0, 4)}-${h.slice(4, 8)}`;
 }
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Greek letters where a Latin code was meant: the keyboard was left in Greek. */
+const GREEK = /[\u0370-\u03ff\u1f00-\u1fff]/;
 const GENERIC_LOGIN_ERROR = "Τα στοιχεία δεν ταιριάζουν με τον κατάλογο του σχολείου. Ελέγξτε τα και δοκιμάστε ξανά.";
 
 class HttpError extends Error {
@@ -99,6 +101,22 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   };
 
   const logEvent = (who, what, detail = {}) => store.append("events", { at: new Date(now()).toISOString(), who, what, ...detail });
+  /**
+   * A common code (parents', teachers'), forgiving spaces around it: they
+   * come along when the code is pasted from an e-mail or a message.
+   */
+  const codeMatches = (password, hash) => {
+    const text = String(password ?? "");
+    return verifyPassword(text, hash) || (text.trim() !== text && verifyPassword(text.trim(), hash));
+  };
+  /**
+   * Why a login failed, for the admin's history; never what was typed. In a
+   * log of its own: anyone can fail a login, and a flood of failures must
+   * not push the real events out of the history.
+   */
+  const logFailedLogin = (who, what, reason, password) => store.append("loginFailures", {
+    at: new Date(now()).toISOString(), who, what, reason, ...(reason.includes("code") && GREEK.test(String(password ?? "")) ? { greek: true } : {}),
+  });
 
   /** What has been uploaded, for the admin's «Αρχεία» overview. */
   const recordUpload = (path, info) => store.update("uploads", (u = {}) => {
@@ -358,13 +376,13 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const { parentPassword, teacherPassword, deadline, contact, schoolName, mandatoryGrades } = await body(req);
     const patch = {};
     if (parentPassword !== undefined) {
-      if (String(parentPassword).length < 6) throw new HttpError(422, "Ο κωδικός γονέων πρέπει να έχει τουλάχιστον 6 χαρακτήρες.");
-      patch.parentPasswordHash = hashPassword(parentPassword);
+      if (String(parentPassword).trim().length < 6) throw new HttpError(422, "Ο κωδικός γονέων πρέπει να έχει τουλάχιστον 6 χαρακτήρες.");
+      patch.parentPasswordHash = hashPassword(String(parentPassword).trim());
     }
     // A new teachers' code also signs out everyone who used the old one.
     if (teacherPassword !== undefined) {
-      if (String(teacherPassword).length < 6) throw new HttpError(422, "Ο κωδικός εκπαιδευτικών πρέπει να έχει τουλάχιστον 6 χαρακτήρες.");
-      patch.teacherPasswordHash = hashPassword(teacherPassword);
+      if (String(teacherPassword).trim().length < 6) throw new HttpError(422, "Ο κωδικός εκπαιδευτικών πρέπει να έχει τουλάχιστον 6 χαρακτήρες.");
+      patch.teacherPasswordHash = hashPassword(String(teacherPassword).trim());
     }
     if (deadline !== undefined) {
       if (deadline !== null && Number.isNaN(Date.parse(deadline))) throw new HttpError(422, "Μη έγκυρη προθεσμία.");
@@ -498,6 +516,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       ...["teacherList:", "submission:", "story:"].map((prefix) => store.deletePrefix(prefix)),
       store.deleteLog("outbox"),
       store.deleteLog("events"),
+      store.deleteLog("loginFailures"),
     ]);
     await logEvent("admin", "reset", { keepSchoolInfo: Boolean(keepSchoolInfo) });
     return json(200, { ok: true });
@@ -655,7 +674,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/admin/events", async (req) => {
     session(req, "admin");
-    return json(200, { events: await store.readLog("events", 1000) });
+    const [events, failures] = await Promise.all([store.readLog("events", 1000), store.readLog("loginFailures", 200)]);
+    return json(200, { events: [...events, ...failures].sort((a, b) => a.at.localeCompare(b.at)) });
   });
 
   route("GET", "/api/admin/outbox", async (req) => {
@@ -729,8 +749,10 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!settings.teacherPasswordHash) throw new HttpError(409, "Η είσοδος με κωδικό δεν έχει ενεργοποιηθεί. Επικοινωνήστε με τη διαχείριση.");
     const id = normalizePersonalId(personalId);
     const teacher = id ? (await getTeachers()).find((t) => t.idHash && t.idHash === personalIdHash(env.SESSION_SECRET, id)) : null;
-    // One answer for a wrong code and an unknown ΑΜ/ΑΦΜ
-    if (!verifyPassword(password, settings.teacherPasswordHash) || !teacher) {
+    // One answer for a wrong code and an unknown ΑΜ/ΑΦΜ; the history tells them apart
+    const codeOk = codeMatches(password, settings.teacherPasswordHash);
+    if (!codeOk || !teacher) {
+      await logFailedLogin(teacher?.email ?? "teacher:?", "teacher_login_failed", [codeOk ? null : "code", teacher ? null : "id"].filter(Boolean).join("+"), password);
       throw new HttpError(401, "Ο κωδικός ή ο ΑΜ/ΑΦΜ δεν είναι σωστός. Αν συνεχίζει, επικοινωνήστε με τη διαχείριση.");
     }
     await logEvent(teacher.email, "teacher_login", { via: "code" });
@@ -824,11 +846,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!phaseAtLeast(settings.phase, "parents")) throw new HttpError(409, "Οι δηλώσεις δεν έχουν ανοίξει ακόμα.");
     const key = String(am ?? "").trim();
     if (!loginByAm.hit(`am:${key}`, now())) throw new HttpError(429, "Πολλές προσπάθειες για αυτόν τον αριθμό μητρώου. Δοκιμάστε σε λίγα λεπτά.");
-    if (!verifyPassword(password, settings.parentPasswordHash)) throw new HttpError(401, GENERIC_LOGIN_ERROR);
+    const codeOk = codeMatches(password, settings.parentPasswordHash);
     const student = (await getStudents()).find((s) => s.am === key);
-    const ok = student && sameName(surname, student.surname) && (student.loginException ||
+    const namesOk = student && sameName(surname, student.surname) && (student.loginException ||
       (givenNameMatches(name, student.name) && givenNameMatches(father, student.father) && givenNameMatches(mother, student.mother)));
-    if (!ok) throw new HttpError(401, GENERIC_LOGIN_ERROR);
+    if (!codeOk || !namesOk) {
+      // The ΑΜ is kept only if it is the catalog's (typos are not logged)
+      const reason = !codeOk ? "code" : student ? "names" : "am";
+      await logFailedLogin(student ? `parent:${key}` : "parent:?", "parent_login_failed", reason, password);
+      throw new HttpError(401, GENERIC_LOGIN_ERROR);
+    }
     loginByAm.reset(`am:${key}`);
     await logEvent(`parent:${key}`, "parent_login");
     return json(200, { token: issue("parent", { am: key }) });

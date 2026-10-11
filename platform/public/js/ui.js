@@ -85,3 +85,39 @@ export async function busy(button, out, fn) {
     button.disabled = false;
   }
 }
+
+// ---------- Code fields ----------
+
+const GREEK = /[Ͱ-Ͽἀ-῿]/;
+
+/**
+ * A code box (parents', teachers') with a «Show» button and warnings for
+ * what hides behind the dots: a keyboard left in Greek, Caps Lock on.
+ * Returns the nodes to put in the label, after its text.
+ */
+export function codeField(input) {
+  const toggle = el("button.small.reveal", { type: "button", "aria-pressed": "false", "aria-controls": input.id }, "Εμφάνιση");
+  toggle.addEventListener("click", () => {
+    const shown = input.type === "password";
+    input.type = shown ? "text" : "password";
+    toggle.textContent = shown ? "Απόκρυψη" : "Εμφάνιση";
+    toggle.setAttribute("aria-pressed", String(shown));
+    input.focus();
+  });
+  const warn = el("span.hint.code-warn", { role: "status", "aria-live": "polite" });
+  let capsLock = false;
+  const check = () => {
+    const notes = [];
+    if (GREEK.test(input.value)) notes.push("Γράφετε με ελληνικά γράμματα. Αν ο κωδικός είναι με λατινικά, αλλάξτε τη γλώσσα του πληκτρολογίου (π.χ. Alt+Shift) και γράψτε τον ξανά.");
+    if (capsLock) notes.push("Είναι αναμμένο το Caps Lock (κεφαλαία).");
+    warn.textContent = notes.join(" ");
+  };
+  const keys = (e) => {
+    if (e.getModifierState) capsLock = e.getModifierState("CapsLock");
+    check();
+  };
+  input.addEventListener("keydown", keys);
+  input.addEventListener("keyup", keys);
+  input.addEventListener("input", check);
+  return [el("span.code-box", {}, input, toggle), warn];
+}
