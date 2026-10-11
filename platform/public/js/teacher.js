@@ -1,4 +1,4 @@
-import { $, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
+import { $, busy, codeField, createApi, el, formatDateTime, message, show } from "./ui.js";
 import { normalizeName } from "/lib/import/names.js";
 import { helpView } from "./help.js";
 
@@ -81,11 +81,12 @@ async function loginView(notice) {
 // Login with the teachers' common code (set by the admin) and the teacher's own ΑΜ or ΑΦΜ
 function codeLoginView(notice, pub) {
   const out = el("div");
-  const password = el("input", { id: "tcode", type: "password", required: true, autocomplete: "current-password", size: 14 });
+  // No autofill: a browser would put the parents' code (same site) or an old one behind the dots
+  const password = el("input", { id: "tcode", type: "password", required: true, autocomplete: "off", size: 14 });
   const personalId = el("input", { id: "tid", type: "text", required: true, inputmode: "numeric", autocomplete: "off", size: 12 });
   const form = el("form.card", {},
     el("div.login-short", {},
-      el("label", { for: "tcode" }, "Κωδικός εκπαιδευτικών", password, el("span.hint.after", {}, "Τον έχει δώσει η διαχείριση της πλατφόρμας.")),
+      el("label", { for: "tcode" }, "Κωδικός εκπαιδευτικών", codeField(password), el("span.hint.after", {}, "Τον έχει δώσει η διαχείριση της πλατφόρμας.")),
       el("label", { for: "tid" }, "ΑΜ ή ΑΦΜ σας", personalId, el("span.hint.after", {}, "Μόνιμοι: αριθμός μητρώου. Αναπληρωτές: ΑΦΜ."))),
     out,
     el("div.actions", {}, el("button.primary", { type: "submit" }, "Σύνδεση")));

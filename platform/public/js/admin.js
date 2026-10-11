@@ -1017,9 +1017,15 @@ const EVENT_LABELS = {
   login: "Σύνδεση διαχείρισης", students_uploaded: "Ανέβασμα καταλόγου μαθητών", sections_uploaded: "Ανέβασμα τμημάτων μαθητών", clubs_uploaded: "Ανέβασμα ομίλων",
   import_legacy: "Εισαγωγή περσινών δηλώσεων", settings: "Αλλαγή ρυθμίσεων", phase: "Αλλαγή φάσης", login_exception: "Εξαίρεση σύνδεσης",
   teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού",
-  parent_login: "Σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
+  teacher_login_failed: "Αποτυχημένη σύνδεση εκπαιδευτικού",
+  parent_login: "Σύνδεση γονέα", parent_login_failed: "Αποτυχημένη σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
 };
 const PHASE_NAMES = Object.fromEntries(PHASES);
+const FAILED_LOGIN = {
+  code: "λάθος κωδικός", id: "άγνωστος ΑΜ/ΑΦΜ", "code+id": "λάθος κωδικός και άγνωστος ΑΜ/ΑΦΜ",
+  am: "άγνωστος ΑΜ μαθητή", names: "τα ονόματα δεν ταιριάζουν",
+};
+const WHO = { "teacher:?": "εκπαιδευτικός (άγνωστος ΑΜ/ΑΦΜ)", "parent:?": "γονέας (άγνωστος ΑΜ)" };
 
 function history() {
   const box = el("div", {}, el("p.muted", {}, "Φόρτωση…"));
@@ -1029,6 +1035,9 @@ function history() {
   const detail = (e) => {
     const { at, who, what, ...rest } = e;
     if (what === "phase") return `${PHASE_NAMES[rest.from] ?? rest.from} → ${PHASE_NAMES[rest.to] ?? rest.to}`;
+    if (what.endsWith("_login_failed")) {
+      return (FAILED_LOGIN[rest.reason] ?? rest.reason) + (rest.greek ? " · ο κωδικός γράφτηκε με ελληνικά γράμματα (πληκτρολόγιο στα ελληνικά;)" : "");
+    }
     return Object.entries(rest).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join(" · ");
   };
   const draw = () => {
@@ -1037,14 +1046,14 @@ function history() {
     box.replaceChildren(el("div.table-wrap", {}, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Πότε"), el("th", {}, "Ποιος"), el("th", {}, "Ενέργεια"), el("th", {}, "Λεπτομέρειες"))),
       el("tbody", {}, shown.map((e) => el("tr", {},
-        el("td.small", {}, formatDateTime(e.at)), el("td.small", {}, String(e.who).replace(/^parent:/, "γονέας ΑΜ ")),
+        el("td.small", {}, formatDateTime(e.at)), el("td.small", {}, WHO[e.who] ?? String(e.who).replace(/^parent:/, "γονέας ΑΜ ")),
         el("td", {}, EVENT_LABELS[e.what] ?? e.what), el("td.small.muted", {}, detail(e))))))));
   };
   filter.addEventListener("change", draw);
   api("GET", "/api/admin/events").then((r) => { events = r.events; draw(); }).catch((err) => box.replaceChildren(message("err", err.message)));
   return el("section.card", {},
     el("h2", { style: "margin-top:0" }, "Ιστορικό ενεργειών"),
-    el("p.small.muted", {}, "Όλες οι ενέργειες στην πλατφόρμα (τελευταίες 1000): ανεβάσματα αρχείων, αλλαγές φάσης, δηλώσεις, κατανομές. Το βήμα-βήμα της κατανομής είναι στο «Audit log κατανομής» (καρτέλα «Κατανομή»)."),
+    el("p.small.muted", {}, "Όλες οι ενέργειες στην πλατφόρμα (τελευταίες 1000): ανεβάσματα αρχείων, αλλαγές φάσης, δηλώσεις, κατανομές, συνδέσεις (και οι αποτυχημένες, με τον λόγο· ό,τι πληκτρολογήθηκε δεν κρατιέται). Το βήμα-βήμα της κατανομής είναι στο «Audit log κατανομής» (καρτέλα «Κατανομή»)."),
     el("div.actions", {}, filter), box);
 }
 

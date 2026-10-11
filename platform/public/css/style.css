@@ -271,7 +271,7 @@ ul.help li { margin: 6px 0; }
 /* Parent login: short boxes for the password and the ΑΜ, side by side */
 label .hint.after { margin-top: 4px; }
 .login-short { display: flex; flex-wrap: wrap; gap: 0 24px; align-items: flex-start; }
-.login-short #password { width: 14rem; max-width: 100%; }
+.login-short #password, .login-short #tcode { width: 14rem; max-width: 100%; }
 .login-short #am { width: 9rem; max-width: 100%; }
 
 /* Parent form: day tabs, locked multi-day clubs */
@@ -337,3 +337,8 @@ button.link { border: 0; background: transparent; padding: 0 6px; min-height: 0;
 .viz-tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .viz-tile strong { font-size: 1.6rem; line-height: 1.2; }
 @media (max-width: 520px) { .viz-row { grid-template-columns: 1fr auto; } .viz-row > .viz-label { grid-column: 1 / -1; } }
+.code-box { display: flex; gap: 6px; align-items: center; max-width: 100%; }
+.code-box input { min-width: 0; }
+.code-box .reveal { flex: none; margin: 0; }
+label .hint.code-warn { color: var(--warn); font-weight: 600; margin-top: 4px; }
+label .hint.code-warn:empty { display: none; }

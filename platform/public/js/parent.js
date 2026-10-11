@@ -1,4 +1,4 @@
-import { $, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
+import { $, busy, codeField, createApi, el, formatDateTime, message, show } from "./ui.js";
 import { createRanker, layoutPinned } from "./ranker.js";
 import { reportView } from "./report.js";
 
@@ -57,8 +57,10 @@ async function loginView(notice) {
   logout.classList.add("hidden");
   const out = el("div");
   // Hints go under the box, so boxes side by side stay in line.
-  const field = (name, label, hint, type = "text", extra = {}) =>
-    el("label", { for: name }, label, el("input", { id: name, name, type, required: true, autocomplete: "off", ...extra }), hint ? el("span.hint.after", {}, hint) : null);
+  const field = (name, label, hint, type = "text", extra = {}) => {
+    const input = el("input", { id: name, name, type, required: true, autocomplete: "off", ...extra });
+    return el("label", { for: name }, label, type === "password" ? codeField(input) : input, hint ? el("span.hint.after", {}, hint) : null);
+  };
   const form = el("form.card", { novalidate: true },
     el("div.login-short", {},
       field("password", "Κωδικός γονέων", "Τον έχει ανακοινώσει το σχολείο.", "password", { autocomplete: "current-password", value: rememberedPassword, size: 12 }),
