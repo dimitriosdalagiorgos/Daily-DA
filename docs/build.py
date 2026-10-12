@@ -7,7 +7,9 @@
 Each manual's «<!-- include: algorithm.md -->» section gets the text of
 docs/algorithm.md; the teachers' manual also gets docs/algorithm-theory.md
 as an appendix. The parents' and teachers' manuals are also copied to
-platform/public/docs/, so the platform's help page can link to them.
+platform/public/docs/, so the platform's help page can link to them, and
+so are the interactive pages (docs/*.html: the worked example and its
+animation), which need no building.
 """
 
 import os
@@ -107,3 +109,5 @@ if __name__ == "__main__":
         if public:
             for ext in ("docx", "pdf"):
                 shutil.copy(DOCS / f"{out_name}.{ext}", PUBLIC / f"{out_name}.{ext}")
+    for page in DOCS.glob("*.html"):
+        shutil.copy(page, PUBLIC / page.name)
