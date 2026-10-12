@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light;box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Προσομοίωση ομίλων χρωμάτων</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,700&family=Commissioner:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a single reading column for the story, wide scrollable figures for the flow diagrams and round queues */
+:root {
+  --bg: #f5f7fa; --surface: #ffffff; --ink: #18202e; --muted: #5b6577; --line: #d9dfe8; --soft: #eceff4;
+  --accent: #3a4a8c;
+  --g: #23935a; --b: #2d68cf; --r: #cf3f3f; --y: #d9a514; --out: #8a93a3;
+  --g-t: #dcf1e5; --b-t: #dde8fb; --r-t: #fbe1e1; --y-t: #fbf0cf; --out-t: #eceef2;
+  --y-ink: #6b5000;
+  --f-display: "Literata", Georgia, "Times New Roman", serif;
+  --f-body: "Commissioner", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121722; --surface: #1a2130; --ink: #e7ebf2; --muted: #9aa4b5; --line: #2e3748; --soft: #222a3a;
+  --accent: #a9b6f0;
+  --g: #3cbf7a; --b: #5b8ef0; --r: #ef6b6b; --y: #f0c23a; --out: #7d8698;
+  --g-t: #173a29; --b-t: #1b2c4f; --r-t: #47201f; --y-t: #40330d; --out-t: #262d3b;
+  --y-ink: #f6d77a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121722; --surface: #1a2130; --ink: #e7ebf2; --muted: #9aa4b5; --line: #2e3748; --soft: #222a3a;
+  --accent: #a9b6f0;
+  --g: #3cbf7a; --b: #5b8ef0; --r: #ef6b6b; --y: #f0c23a; --out: #7d8698;
+  --g-t: #173a29; --b-t: #1b2c4f; --r-t: #47201f; --y-t: #40330d; --out-t: #262d3b;
+  --y-ink: #f6d77a; color-scheme: dark }
+
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 17px; line-height: 1.6; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 80px; }
+.prose { max-width: 70ch; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 700; }
+h2 { font-size: clamp(1.45rem, 3vw, 1.9rem); font-weight: 700; margin-top: 8px; }
+h3 { font-size: 1.15rem; font-weight: 700; }
+p { margin: 0; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+section { display: flex; flex-direction: column; gap: 18px; padding-block: 44px; border-top: 1px solid var(--line); }
+.eyebrow { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--accent); }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 62ch; }
+.mono, .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.hero-bands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 26px; max-width: 520px; }
+.hero-bands span { height: 10px; border-radius: 2px; }
+.muted { color: var(--muted); }
+ul.clean { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+
+/* club chips */
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px 1px 7px; border-radius: 999px; font-size: 0.86em; font-weight: 600; white-space: nowrap; background: var(--soft); }
+.chip::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.chip.G { color: var(--g); background: var(--g-t); } .chip.B { color: var(--b); background: var(--b-t); }
+.chip.R { color: var(--r); background: var(--r-t); } .chip.Y { color: var(--y-ink); background: var(--y-t); }
+.chip.Y::before { background: var(--y); }
+.tag-list { display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 5px; border-radius: 3px; border: 1px solid var(--accent); color: var(--accent); vertical-align: 1px; }
+
+/* tables */
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 0.95rem; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; background: var(--soft); }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: center; }
+
+/* counts */
+.counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.count-card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.bar-row { display: grid; grid-template-columns: 82px 1fr 18px; align-items: center; gap: 8px; font-size: 0.88rem; }
+.bar { height: 12px; border-radius: 2px; }
+
+/* lottery */
+.lottery { display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
+.lot-row { display: grid; grid-template-columns: 150px repeat(8, minmax(64px, 1fr)); gap: 6px; align-items: stretch; min-width: 720px; }
+.lot-row > .lbl { font-size: 0.82rem; color: var(--muted); align-self: center; }
+.lot-cell { border: 1px solid var(--line); border-radius: 6px; padding: 6px 4px; text-align: center; font-size: 0.82rem; line-height: 1.3; background: var(--bg); }
+.lot-cell b { display: block; font-family: var(--f-mono); font-size: 1.05rem; }
+.lot-cell.win b { color: var(--accent); }
+
+/* callout */
+.callout { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; max-width: 78ch; }
+
+/* queue figure (shared with round viewer) */
+.queue { display: flex; flex-direction: column; gap: 4px; }
+.q-item { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); font-size: 0.92rem; }
+.q-item .pos { font-family: var(--f-mono); color: var(--muted); font-size: 0.8rem; }
+.q-item .who { min-width: 0; }
+.q-item .sub { display: block; font-size: 0.78rem; line-height: 1.35; color: var(--muted); }
+.q-cut { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin: 4px 0; }
+.q-cut::before, .q-cut::after { content: ""; flex: 1; border-top: 2px dashed var(--muted); }
+.st { font-size: 0.74rem; font-weight: 700; padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+.st.accepted { background: var(--g-t); color: var(--g); }
+.st.retained { background: var(--soft); color: var(--muted); }
+.st.rejected { background: var(--r-t); color: var(--r); }
+.st.displaced { background: var(--r); color: var(--surface); }
+
+/* flow diagram */
+.flow-shell { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.flow-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.flow-tools .lbl { font-size: 0.82rem; color: var(--muted); margin-right: 4px; }
+button.pill { font: inherit; font-size: 0.85rem; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+button.pill[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.pill:focus-visible, button.nav:focus-visible, .col-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg.flow { display: block; }
+svg.flow text { font-family: var(--f-body); fill: var(--ink); }
+svg.flow .colhead { font-size: 13px; font-weight: 700; }
+svg.flow .colsub { font-size: 11px; fill: var(--muted); }
+svg.flow .boxlbl { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+svg.flow .seatname { font-size: 12.5px; font-weight: 600; }
+svg.flow .seatnum { font-size: 11px; font-family: var(--f-mono); fill: var(--muted); }
+svg.flow .ribbon { transition: opacity .2s; }
+svg.flow.dim .ribbon { opacity: 0.08; }
+svg.flow.dim .ribbon.on { opacity: 0.85; }
+svg.flow.dim .seat { opacity: 0.35; }
+svg.flow.dim .seat.on { opacity: 1; }
+svg.flow .colbg { fill: transparent; }
+svg.flow .colbg.sel { fill: var(--soft); }
+.col-hit { cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 18px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* round viewer */
+.rounds { display: flex; flex-direction: column; gap: 14px; }
+.round-nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button.nav { font: inherit; font-weight: 600; font-size: 0.9rem; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+button.nav:disabled { opacity: 0.4; cursor: default; }
+.round-title { font-family: var(--f-display); font-weight: 700; font-size: 1.15rem; margin-right: auto; }
+.round-say { max-width: 75ch; }
+.club-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.club-card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; border-top: 5px solid var(--club); min-width: 0; }
+.club-card.idle { opacity: 0.6; }
+.club-card h4 { margin: 0; font-size: 1rem; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.club-card h4 small { font-weight: 500; color: var(--muted); font-size: 0.78rem; }
+.club-card .idle-note { font-size: 0.85rem; color: var(--muted); }
+
+/* compare */
+.delta-up { color: var(--g); font-weight: 700; } .delta-down { color: var(--r); font-weight: 700; }
+.takeaways { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.takeaways > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.takeaways b.k { font-family: var(--f-display); font-size: 1.05rem; }
+footer { padding-top: 30px; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { svg.flow .ribbon { transition: none; } }
+@media (max-width: 560px) { body { font-size: 16px; } .wrap { padding-inline: 16px; } }
+</style>
+<style>
+/* animated stage */
+.anim { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.anim-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.anim-step { font-family: var(--f-display); font-weight: 700; font-size: 1.05rem; margin-right: auto; }
+.anim-step small { font-family: var(--f-body); font-weight: 500; color: var(--muted); font-size: 0.85rem; margin-left: 6px; }
+button.nav.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); min-width: 9.5em; }
+.anim-progress { display: flex; gap: 3px; }
+.anim-progress i { flex: 1; height: 4px; border-radius: 2px; background: var(--soft); }
+.anim-progress i.done { background: var(--accent); }
+.stage-scroll { overflow-x: auto; }
+.stage { position: relative; min-width: 640px; }
+.zone-lbl { position: absolute; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.cbox { position: absolute; border: 1.5px solid var(--club); background: var(--club-t); border-radius: 8px; }
+.cbox b { position: absolute; left: 9px; top: 4px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--club-ink); }
+.seat-ph { position: absolute; border: 1.5px dashed var(--club); border-radius: 6px; opacity: 0.45; }
+.lobby { position: absolute; border: 1.5px dashed var(--out); border-radius: 8px; background: var(--out-t); }
+.token, .seat-ph, .cbox, .lobby { box-sizing: border-box; }
+.token { position: absolute; left: 0; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 0 8px; border-radius: 6px; background: var(--surface); border: 1.5px solid var(--line); font-size: 0.86rem; font-weight: 600; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.08);
+  transition: transform .75s cubic-bezier(.3,.7,.2,1), border-color .3s, box-shadow .3s, background-color .3s; z-index: 2; }
+.token .ln { font-family: var(--f-mono); font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+.token .lt { font-size: 0.6rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 3px; margin-left: 2px; }
+.token .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.token.at { border-color: var(--club); }
+.token.lose { border: 2px dashed var(--r); background: var(--r-t); }
+.token.out { border: 2px solid var(--r); }
+.token.win { box-shadow: 0 0 0 3px var(--accent); z-index: 3; }
+.token.final { border-color: var(--club); border-width: 2px; }
+.token .tagx { position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font-size: 0.6rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--r); color: var(--surface); padding: 0 5px; border-radius: 3px; }
+.anim-say { min-height: 6.2em; display: flex; flex-direction: column; gap: 6px; max-width: 80ch; }
+.anim-say p { margin: 0; }
+.anim-say .push { color: var(--r); font-weight: 700; }
+.anim-say .ok { color: var(--g); font-weight: 700; }
+.qline { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 0.9rem; }
+.qline .qn { padding: 0 7px; border-radius: 4px; background: var(--soft); }
+.qline .qn.lose { background: var(--r-t); color: var(--r); text-decoration: line-through; }
+.qline .cut { width: 2px; height: 1.2em; background: var(--muted); margin: 0 4px; }
+@media (prefers-reduced-motion: reduce) { .token { transition: none; } }
+</style>
+<style>
+.viz-shell { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.viz-scroll { border-radius: 8px; background: var(--bg); }
+svg.viz { display: block; height: auto; }
+svg.viz text { font-family: var(--f-body); }
+svg.viz .vcol { fill: transparent; transition: fill .4s; }
+svg.viz .vcol.sel { fill: var(--soft); }
+svg.viz .vhead { font-size: 14px; font-weight: 700; fill: var(--ink); font-family: var(--f-display); }
+svg.viz .vsub { font-size: 11px; fill: var(--muted); }
+svg.viz .vbox { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; }
+svg.viz .vcard rect { fill: var(--surface); stroke-width: 1.6; }
+svg.viz .vname { font-size: 13px; font-weight: 600; fill: var(--ink); }
+svg.viz .vlot { font-size: 11.5px; font-family: var(--f-mono); fill: var(--muted); }
+svg.viz .vcard { transition: opacity .4s; }
+svg.viz .vcard.past { opacity: .5; }
+svg.viz .vcard.moving rect { stroke: var(--accent); stroke-width: 2.2; }
+svg.viz .vcard.winner rect { stroke: var(--accent); stroke-width: 3; }
+svg.viz .vcard.hit rect { stroke: var(--r); stroke-width: 2.4; fill: var(--r-t); }
+svg.viz .vcard.hit { animation: shake .35s 2; }
+svg.viz .vcard.ousted rect { stroke: var(--r); stroke-width: 1.8; }
+svg.viz .vcard.final rect { stroke-width: 2.6; }
+svg.viz .vtrace { fill: none; stroke-width: 9; stroke-linecap: round; opacity: .2; }
+svg.viz .vtrace.red { stroke-width: 3; opacity: .45; stroke-dasharray: 5 5; }
+svg.viz .varrow { fill: none; stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: 9 9; animation: flow .6s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -18; } }
+@keyframes shake { 0%,100% { translate: 0 0; } 25% { translate: -3px 0; } 75% { translate: 3px 0; } }
+.viz-say { min-height: 7.5em; display: flex; flex-direction: column; gap: 6px; max-width: 86ch; }
+.viz-say p { margin: 0; }
+.viz-say p.was { color: var(--muted); }
+.viz-say p.was .chip { opacity: .7; }
+.viz-say p.now { font-size: 1.04rem; }
+.viz-say .push { color: var(--r); font-weight: 700; }
+.viz-say .ok { color: var(--g); font-weight: 700; }
+.viz-say .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); vertical-align: 1px; }
+@media (prefers-reduced-motion: reduce) { svg.viz .varrow, svg.viz .vcard.hit { animation: none; } }
+</style>
+<style>
+svg.viz .vpin .needle { stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; }
+svg.viz .vpin .collar { fill: #8f1d1d; }
+svg.viz .vpin .head { fill: #e0302b; stroke: #8f1d1d; stroke-width: 1; }
+svg.viz .vpin .shine { fill: #fff; opacity: .55; }
+svg.viz .vpin-in { transform-box: fill-box; }
+svg.viz .vcard.thud > rect { animation: thud .32s ease-out; }
+@keyframes thud { 0% { stroke-width: 4; } 100% { stroke-width: 1.6; } }
+svg.viz .vladder .missed, svg.viz .vladder .below { opacity: .28; }
+svg.viz .vladder .got { stroke: var(--ink); stroke-width: 2; }
+svg.viz .vladder .strike { stroke: var(--ink); stroke-width: 1.4; opacity: .7; }
+svg.viz .vladder { animation: pop .35s ease-out both; }
+@keyframes pop { from { opacity: 0; } to { opacity: 1; } }
+svg.viz .vrank { font-size: 12.5px; font-weight: 700; fill: var(--ink); font-family: var(--f-mono); }
+.viz-say .pinned { color: #d42a25; font-weight: 700; }
+.rkbar { display: inline-flex; width: min(360px, 100%); height: 22px; border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
+.rkbar .rk { display: flex; align-items: center; justify-content: center; font-size: 0.74rem; font-weight: 700; color: var(--surface); white-space: nowrap; overflow: hidden; }
+.rk.r1 { background: var(--accent); } .rk.r2 { background: color-mix(in srgb, var(--accent) 72%, var(--bg)); }
+.rk.r3 { background: color-mix(in srgb, var(--accent) 50%, var(--bg)); color: var(--ink); } .rk.r4 { background: color-mix(in srgb, var(--accent) 30%, var(--bg)); color: var(--ink); }
+.open-sim { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--accent); text-decoration: none; border: 1px solid var(--accent); border-radius: 6px; padding: 6px 12px; align-self: flex-start; }
+.open-sim:hover { background: var(--soft); }
+@media (prefers-reduced-motion: reduce) { svg.viz .vladder, svg.viz .vcard.thud > rect { animation: none; } }
+</style>
+<style>
+svg.viz .pq { transition: opacity .35s; }
+svg.viz .pq.missed, svg.viz .pq.below { opacity: .3; }
+svg.viz .pq.got { stroke: var(--ink); stroke-width: 1.5; }
+svg.viz .pqx { stroke: var(--ink); stroke-width: 1.4; stroke-linecap: round; opacity: 0; transition: opacity .35s; }
+svg.viz .pqx.on { opacity: .9; }
+</style>
+</head>
+<body>
+<style>
+html, body { height: 100%; }
+body { overflow: hidden; font-size: 16px; }
+.app { height: 100%; display: grid; grid-template-rows: auto 1fr; gap: 8px; padding-inline: 16px; padding-block: 10px; box-sizing: border-box; }
+.app-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.app-head h1 { font-size: 1.25rem; }
+.app-head .sub { color: var(--muted); font-size: 0.85rem; }
+.scen { display: flex; gap: 6px; margin-left: auto; }
+.viz-shell.fit { min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 8px; padding: 10px 12px; }
+.viz-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+.viz-top .anim-bar { flex: 1 1 520px; }
+.fit .viz-scroll { min-height: 0; overflow: hidden; display: flex; }
+.fit svg.viz { width: 100%; height: 100%; }
+.fit .viz-say { min-height: 0; height: 7.6em; overflow-y: auto; max-width: none; font-size: 0.95rem; padding-right: 6px; }
+.keys { font-size: 0.78rem; color: var(--muted); }
+.keys kbd { font-family: var(--f-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface); }
+button.fs { font: inherit; font-size: 0.85rem; padding: 3px 11px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+@media (max-height: 640px) { .fit .viz-say { height: 5.4em; } .app-head .sub, .keys { display: none; } }
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  .app { height: auto; min-height: 100%; }
+  .fit .viz-scroll { overflow: auto; display: block; }
+  .fit svg.viz { width: auto; height: auto; min-width: var(--minw); }
+  .fit .viz-say { height: auto; max-height: 12em; }
+}
+</style>
+<div class="app">
+  <div class="app-head">
+    <h1>Οι όμιλοι των χρωμάτων</h1>
+    <span class="sub">Gale–Shapley, γύρο-γύρο · 8 μαθήτριες, 4 όμιλοι των 2 θέσεων</span>
+    <span class="keys"><kbd>←</kbd> <kbd>→</kbd> βήμα · <kbd>Space</kbd> αναπαραγωγή</span>
+    <div class="scen" role="group" aria-label="Σενάριο">
+      <button class="pill" type="button" data-s="A" aria-pressed="true">Α · χωρίς λίστες</button>
+      <button class="pill" type="button" data-s="B" aria-pressed="false">Β · με λίστες εκπαιδευτικών</button>
+      <button class="fs" type="button" id="fs">⛶ Πλήρης οθόνη</button>
+    </div>
+  </div>
+  <div class="viz-shell fit" id="stage"></div>
+</div>
+<script>
+const CLUBS = [
+  { code: "G", name: "Πράσινος" },
+  { code: "B", name: "Μπλε" },
+  { code: "R", name: "Κόκκινος" },
+  { code: "Y", name: "Κίτρινος" },
+];
+const CAP = 2;
+const STUDENTS = [
+  { am: "101", name: "Άννα", lot: 3, prefs: ["R", "G", "B", "Y"] },
+  { am: "102", name: "Βάσω", lot: 7, prefs: ["G", "B", "R", "Y"] },
+  { am: "103", name: "Γεωργία", lot: 1, prefs: ["G", "R", "B", "Y"] },
+  { am: "104", name: "Δέσποινα", lot: 5, prefs: ["G", "B", "Y", "R"] },
+  { am: "105", name: "Ελένη", lot: 6, prefs: ["B", "G", "Y", "R"] },
+  { am: "106", name: "Ζωή", lot: 4, prefs: ["G", "B", "R", "Y"] },
+  { am: "107", name: "Ηλέκτρα", lot: 2, prefs: ["Y", "G", "B", "R"] },
+  { am: "108", name: "Θεοδώρα", lot: 8, prefs: ["B", "G", "R", "Y"] },
+];
+const BY_AM = Object.fromEntries(STUDENTS.map((s) => [s.am, s]));
+const CLUB = Object.fromEntries(CLUBS.map((c) => [c.code, c]));
+
+// Student-proposing deferred acceptance, one round at a time.
+function runDA(teacherLists) {
+  const listed = (am, code) => (teacherLists[code] || []).includes(am);
+  const prio = (am, code) => [listed(am, code) ? 0 : 1, BY_AM[am].lot];
+  const cmp = (a, b) => { const pa = prio(a.am, a.code), pb = prio(b.am, b.code); return pa[0] - pb[0] || pa[1] - pb[1]; };
+  const held = Object.fromEntries(CLUBS.map((c) => [c.code, []]));
+  const next = Object.fromEntries(STUDENTS.map((s) => [s.am, 0]));
+  let free = STUDENTS.map((s) => s.am);
+  const rounds = [];
+  for (let n = 1; ; n++) {
+    const proposers = free.filter((am) => next[am] < BY_AM[am].prefs.length);
+    if (!proposers.length) break;
+    const incoming = {};
+    const proposals = [];
+    for (const am of proposers) {
+      const i = next[am]++;
+      const code = BY_AM[am].prefs[i];
+      proposals.push({ am, code, rank: i + 1 });
+      (incoming[code] ||= []).push(am);
+    }
+    free = [];
+    const clubs = {};
+    for (const c of CLUBS) {
+      const code = c.code;
+      if (!incoming[code]) continue;
+      const all = [
+        ...held[code].map((am) => ({ am, code, isNew: false })),
+        ...incoming[code].map((am) => ({ am, code, isNew: true })),
+      ].sort(cmp);
+      const kept = all.slice(0, CAP), out = all.slice(CAP);
+      clubs[code] = {
+        queue: all.map((e, i) => ({
+          am: e.am, isNew: e.isNew, listed: listed(e.am, code),
+          rank: BY_AM[e.am].prefs.indexOf(code) + 1,
+          status: i < CAP ? (e.isNew ? "accepted" : "retained") : (e.isNew ? "rejected" : "displaced"),
+        })),
+      };
+      held[code] = kept.map((e) => e.am);
+      for (const e of out) free.push(e.am);
+    }
+    const state = {};
+    for (const s of STUDENTS) state[s.am] = null;
+    for (const c of CLUBS) for (const am of held[c.code]) state[am] = c.code;
+    const order = {};
+    for (const c of CLUBS) order[c.code] = [...held[c.code]].sort((a, b) => cmp({ am: a, code: c.code }, { am: b, code: c.code }));
+    order.OUT = STUDENTS.filter((s) => state[s.am] === null).map((s) => s.am).sort((a, b) => BY_AM[a].lot - BY_AM[b].lot);
+    rounds.push({ n, proposals, clubs, state, order, out: new Set(free) });
+  }
+  return rounds;
+}
+const SCEN = {
+  A: { lists: {} },
+  B: { lists: { B: ["108", "102"], Y: ["104", "105"] } },
+};
+for (const k in SCEN) SCEN[k].rounds = runDA(SCEN[k].lists);
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs = {}, html) => { const e = document.createElement(tag); for (const a in attrs) e.setAttribute(a, attrs[a]); if (html != null) e.innerHTML = html; return e; };
+const sv = (tag, attrs = {}, text) => { const e = document.createElementNS(NS, tag); for (const a in attrs) e.setAttribute(a, attrs[a]); if (text != null) e.textContent = text; return e; };
+const chip = (code) => `<span class="chip ${code}">${CLUB[code].name}</span>`;
+const ORD = ["1η", "2η", "3η", "4η"];
+const nm = (am) => BY_AM[am].name;
+const STLBL = { accepted: "κρατιέται", retained: "μένει", rejected: "απορρίπτεται", displaced: "εκτοπίζεται" };
+// Sequential replay of each DA round: proposals arrive one at a time (by ΑΜ);
+// a full club keeps its best CAP and pushes out the worst. Same end state per round.
+function simulate(key) {
+  const sc = SCEN[key], rounds = sc.rounds;
+  const listed = (am, code) => (sc.lists[code] || []).includes(am);
+  const pr = (am, code) => [listed(am, code) ? 0 : 1, BY_AM[am].lot];
+  const worse = (a, b, code) => { const x = pr(a, code), y = pr(b, code); return x[0] - y[0] || x[1] - y[1]; };
+  const events = [];
+  const start = STUDENTS.map((s) => s.am).sort((a, b) => BY_AM[a].lot - BY_AM[b].lot);
+  let pos = Object.fromEntries(start.map((am, i) => [am, { col: 0, box: "START", slot: i }]));
+  let seats = Object.fromEntries(CLUBS.map((c) => [c.code, Array(CAP).fill(null)]));
+  const since = {};
+  let maxOut = 1;
+  rounds.forEach((r, k) => {
+    const col = k + 1;
+    const retained = [];
+    for (const c of CLUBS) seats[c.code].forEach((am, i) => am && retained.push({ am, club: c.code, slot: i, from: pos[am] }));
+    events.push({ kind: "round", col, n: r.n, retained });
+    const next = {};
+    for (const x of retained) next[x.am] = { col, box: x.club, slot: x.slot };
+    const out = [];
+    const props = [...r.proposals].sort((a, b) => a.am - b.am);
+    for (const p of props) {
+      const s = seats[p.code];
+      const ev = { kind: "arrive", col, n: r.n, am: p.am, club: p.code, rank: p.rank, from: pos[p.am] };
+      const free = s.indexOf(null);
+      if (free >= 0) {
+        s[free] = p.am; ev.result = "seat"; ev.slot = free;
+        next[p.am] = { col, box: p.code, slot: free }; since[p.am] = r.n;
+      } else {
+        let wi = 0;
+        for (let i = 1; i < CAP; i++) if (worse(s[i], s[wi], p.code) > 0) wi = i;
+        const w = s[wi];
+        ev.others = s.slice();
+        if (worse(p.am, w, p.code) < 0) {
+          ev.result = "push"; ev.slot = wi; ev.pushed = w; ev.pushedSince = since[w]; ev.outSlot = out.length;
+          s[wi] = p.am; out.push(w); since[p.am] = r.n;
+          next[p.am] = { col, box: p.code, slot: wi }; next[w] = { col, box: "OUT", slot: ev.outSlot };
+        } else {
+          ev.result = "bounce"; ev.slot = wi; ev.outSlot = out.length; out.push(p.am);
+          next[p.am] = { col, box: "OUT", slot: ev.outSlot };
+        }
+      }
+      events.push(ev);
+    }
+    maxOut = Math.max(maxOut, out.length);
+    // must match the platform's round result
+    for (const c of CLUBS) {
+      const a = seats[c.code].filter(Boolean).sort().join(), b = [...r.order[c.code]].sort().join();
+      if (a !== b) throw new Error(`mismatch ${key} round ${r.n} ${c.code}: ${a} vs ${b}`);
+    }
+    pos = next;
+  });
+  events.push({ kind: "end", col: rounds.length });
+  return { events, maxOut, cols: rounds.length + 1 };
+}
+// Animated flow: one column per round, clubs stacked vertically; cards travel along glowing arrows.
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const ACC2 = { G: "Πράσινο", B: "Μπλε", R: "Κόκκινο", Y: "Κίτρινο" };
+const ART = (am) => (["Άννα", "Ελένη", "Ηλέκτρα"].includes(nm(am)) ? "την" : "τη");
+const ccol = (box) => box === "OUT" || box === "START" ? "var(--out)" : `var(--${box.toLowerCase()})`;
+const ctint = (box) => box === "OUT" || box === "START" ? "var(--out-t)" : `var(--${box.toLowerCase()}-t)`;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+function buildViz(box, key, opts = {}) {
+  const FIT = !!opts.fit;
+  const sc = SCEN[key];
+  const { events, maxOut, cols } = simulate(key);
+  const listed = (am, code) => (sc.lists[code] || []).includes(am);
+  const ROW = 36, BW = 116, GAP = 74, LBL = 20, BGAP = 14, HEAD = 44, PADX = 8;
+  const boxes = {};
+  let y = HEAD;
+  for (const c of CLUBS) { boxes[c.code] = { y, h: LBL + CAP * ROW + 6 }; y += boxes[c.code].h + BGAP; }
+  y += 10;
+  boxes.OUT = { y, h: LBL + maxOut * ROW + 6 }; y += boxes.OUT.h + 8;
+  const H = Math.max(y, HEAD + LBL + 8 * ROW + 10);
+  boxes.START = { y: HEAD, h: LBL + 8 * ROW + 6 };
+  const RIGHT = 100; // room for the preference ladder next to the final column
+  const W = PADX * 2 + cols * BW + (cols - 1) * GAP + RIGHT;
+  const colX = (c) => PADX + c * (BW + GAP);
+  const center = (p) => [colX(p.col) + BW / 2, boxes[p.box].y + LBL + p.slot * ROW + ROW / 2];
+
+  // chrome
+  const bar = el("div", { class: "anim-bar" });
+  const step = el("span", { class: "anim-step" });
+  const restart = el("button", { class: "nav", type: "button" }, "⟲ Αρχή");
+  const prev = el("button", { class: "nav", type: "button" }, "← Βήμα");
+  const play = el("button", { class: "nav primary", type: "button" }, "▶ Αναπαραγωγή");
+  const next = el("button", { class: "nav", type: "button" }, "Βήμα →");
+  const end = el("button", { class: "nav", type: "button" }, "Τέλος ⇥");
+  bar.append(step, restart, prev, play, next, end);
+  const speeds = el("div", { class: "flow-tools" }, `<span class="lbl">Ταχύτητα:</span>`);
+  let speed = 1;
+  [["Αργά", 1.6], ["Κανονικά", 1], ["Γρήγορα", 0.5]].forEach(([l, v]) => {
+    const b = el("button", { class: "pill", type: "button", "aria-pressed": String(v === 1) }, l);
+    b.addEventListener("click", () => { speed = v; speeds.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); });
+    speeds.append(b);
+  });
+  const prog = el("div", { class: "anim-progress", "aria-hidden": "true" });
+  events.forEach(() => prog.append(el("i")));
+  const scroller = el("div", { class: "scroll viz-scroll" });
+  const svg = sv("svg", { class: "viz", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Κινούμενη κατανομή, σενάριο ${key}` });
+  if (FIT) { svg.setAttribute("preserveAspectRatio", "xMidYMid meet"); svg.style.setProperty("--minw", Math.round(W * 0.62) + "px"); }
+  else { svg.style.width = "100%"; svg.style.minWidth = Math.round(W * 0.72) + "px"; svg.style.maxWidth = Math.round(W * 1.1) + "px"; }
+  scroller.append(svg);
+  const say = el("div", { class: "viz-say", "aria-live": "polite" });
+  if (FIT) { const top = el("div", { class: "viz-top" }); top.append(bar, speeds); box.append(top, prog, scroller, say); }
+  else box.append(bar, speeds, prog, scroller, say);
+
+  // defs: glow filter + arrowheads
+  const defs = sv("defs");
+  defs.innerHTML = `<filter id="glow${key}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>` +
+    ["G", "B", "R", "Y", "X"].map((c) => `<marker id="ah${key}${c}" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:${c === "X" ? "var(--r)" : `var(--${c.toLowerCase()})`}"/></marker>`).join("");
+  svg.append(defs);
+  const L = {}; for (const n of ["bg", "trace", "boxes", "arrows", "cards", "ladder"]) { L[n] = sv("g"); svg.append(L[n]); }
+
+  let gen = 0, cur = 0, playing = false;
+  const cards = {}; // "col:am" -> g
+
+  function drawColumn(c) {
+    const x = colX(c);
+    const bg = sv("rect", { class: "vcol", x: x - 8, y: 2, width: BW + 16, height: H - 4, rx: 10, "data-col": c });
+    L.bg.append(bg);
+    L.boxes.append(sv("text", { class: "vhead", x: x + BW / 2, y: 20, "text-anchor": "middle" }, c === 0 ? "Αρχή" : `Γύρος ${c}`));
+    L.boxes.append(sv("text", { class: "vsub", x: x + BW / 2, y: 35, "text-anchor": "middle" }, c === 0 ? "σειρά λαχνού" : ""));
+    const list = c === 0 ? ["START"] : [...CLUBS.map((k) => k.code), "OUT"];
+    for (const b of list) {
+      const B = boxes[b];
+      L.boxes.append(sv("rect", { x, y: B.y, width: BW, height: B.h, rx: 7, style: `fill:${ctint(b)};stroke:${ccol(b)};stroke-width:1.5;${b === "OUT" ? "stroke-dasharray:4 3" : ""}` }));
+      const lbl = b === "START" ? "ΟΛΕΣ" : b === "OUT" ? "ΑΝΑΜΟΝΗ" : CLUB[b].name.toUpperCase();
+      L.boxes.append(sv("text", { class: "vbox", x: x + 8, y: B.y + 14, style: `fill:${b === "Y" ? "var(--y-ink)" : b === "OUT" || b === "START" ? "var(--muted)" : ccol(b)}` }, lbl));
+      if (b !== "OUT" && b !== "START") for (let i = 0; i < CAP; i++) {
+        L.boxes.append(sv("rect", { x: x + 5, y: B.y + LBL + i * ROW + 2, width: BW - 10, height: ROW - 4, rx: 5, style: `fill:none;stroke:${ccol(b)};stroke-dasharray:3 3;opacity:.5` }));
+      }
+    }
+  }
+  function makeCard(am, p, cls = "", register = true) {
+    const [cx, cy] = center(p);
+    const g = sv("g", { class: "vcard " + cls });
+    const atClub = p.box !== "OUT" && p.box !== "START";
+    g.append(sv("rect", { x: -(BW - 10) / 2, y: -(ROW - 4) / 2, width: BW - 10, height: ROW - 4, rx: 5, style: `stroke:${atClub ? ccol(p.box) : "var(--line)"}` }));
+    g.dataset.am = am;
+    g.append(sv("text", { class: "vname", x: -(BW - 10) / 2 + 7, y: -2 }, nm(am)));
+    g.append(sv("text", { class: "vlot", x: (BW - 10) / 2 - 7, y: -2, "text-anchor": "end" }, String(BY_AM[am].lot)));
+    // the student's four choices, in club colours
+    const pg = sv("g", { class: "vprefs" });
+    BY_AM[am].prefs.forEach((c, j) => {
+      const x = -(BW - 10) / 2 + 7 + j * 12;
+      pg.append(sv("rect", { x, y: 3, width: 9, height: 9, rx: 1.5, class: "pq", style: `fill:${ccol(c)}` }));
+      pg.append(sv("line", { x1: x + 1, y1: 11, x2: x + 8, y2: 4, class: "pqx" }));
+    });
+    g.append(pg);
+    prefState(g, p.box);
+    if (atClub && listed(am, p.box)) g.append(pin());
+    g.setAttribute("transform", `translate(${cx},${cy})`);
+    L.cards.append(g);
+    g.dataset.am = am;
+    if (register) cards[`${p.col}:${am}`] = g;
+    return g;
+  }
+  // club box: earlier choices struck out, this one ringed, later ones faded.
+  // waiting box: every choice up to the last one tried struck out, the rest still open.
+  function prefState(g, box, tried) {
+    const s = BY_AM[g.dataset.am];
+    const idx = CLUB[box] ? s.prefs.indexOf(box) : -1;
+    const t = tried ? s.prefs.indexOf(tried) : -1;
+    const rs = g.querySelectorAll(".pq"), xs = g.querySelectorAll(".pqx");
+    rs.forEach((r, j) => {
+      const st = idx >= 0 ? (j < idx ? "missed" : j === idx ? "got" : "below") : (j <= t ? "missed" : "avail");
+      r.setAttribute("class", "pq " + st);
+      xs[j].setAttribute("class", "pqx" + (st === "missed" ? " on" : ""));
+    });
+  }
+  function pin() {
+    const g = sv("g", { class: "vpin" });
+    g.innerHTML = `<g class="vpin-in"><line x1="0" y1="-2" x2="0" y2="9" class="needle"/><ellipse cx="0" cy="-4" rx="6.5" ry="3" class="collar"/><circle cx="0" cy="-10" r="7" class="head"/><circle cx="-2.4" cy="-12.4" r="2.2" class="shine"/></g>`;
+    g.setAttribute("transform", `translate(${(BW - 10) / 2 - 24},${-(ROW - 4) / 2 + 4})`);
+    return g;
+  }
+  // returns the new pin if one was added
+  function setCardBox(g, p, tried) {
+    const atClub = p.box !== "OUT" && p.box !== "START";
+    prefState(g, p.box, tried);
+    g.querySelector("rect").style.stroke = atClub ? ccol(p.box) : "var(--line)";
+    g.querySelector(".vpin")?.remove();
+    if (atClub && listed(g.dataset.am, p.box)) { const q = pin(); g.append(q); return q; }
+    return null;
+  }
+  async function dropPin(q, my) {
+    if (!q || REDUCED) return;
+    const inner = q.querySelector(".vpin-in");
+    inner.style.transition = "none"; inner.style.transform = "translate(26px,-70px) rotate(35deg)"; inner.style.opacity = "0";
+    void inner.getBoundingClientRect();
+    inner.style.transition = `transform ${D(520)}ms cubic-bezier(.5,0,.75,0), opacity ${D(150)}ms`;
+    inner.style.transform = "translate(0,0) rotate(0deg)"; inner.style.opacity = "1";
+    await wait(D(540));
+    if (my !== gen) return;
+    q.parentNode?.classList.add("thud");
+    await wait(D(320));
+    q.parentNode?.classList.remove("thud");
+  }
+  // final positions, for the preference ladder
+  const finalPos = {};
+  (function () {
+    const lastCol = cols - 1;
+    for (const ev of events) {
+      if (ev.kind === "round" && ev.col === lastCol) for (const r of ev.retained) finalPos[r.am] = { col: lastCol, box: r.club, slot: r.slot };
+      if (ev.kind === "arrive" && ev.col === lastCol) {
+        if (ev.result === "seat" || ev.result === "push") finalPos[ev.am] = { col: lastCol, box: ev.club, slot: ev.slot };
+      }
+    }
+  })();
+  function drawLadder(am, p) {
+    const s = BY_AM[am], got = s.prefs.indexOf(p.box);
+    const [cx, cy] = center(p);
+    const x0 = colX(p.col) + BW + 8, sz = 14, gp = 3;
+    const g = sv("g", { class: "vladder" });
+    s.prefs.forEach((c, j) => {
+      const x = x0 + j * (sz + gp), y = cy - sz / 2;
+      g.append(sv("rect", { x, y, width: sz, height: sz, rx: 2.5, class: j === got ? "got" : j < got ? "missed" : "below", style: `fill:${ccol(c)}` }));
+      if (j < got) g.append(sv("line", { x1: x + 2.5, y1: y + sz - 2.5, x2: x + sz - 2.5, y2: y + 2.5, class: "strike" }));
+    });
+    g.append(sv("text", { x: x0 + 4 * (sz + gp) + 4, y: cy + 4.5, class: "vrank r" + (got + 1) }, ORD[got]));
+    g.append(sv("title", {}, `${s.name}: πήρε την ${ORD[got]} επιλογή της (${CLUB[p.box].name})`));
+    L.ladder.append(g);
+  }
+  function curve([x1, y1], [x2, y2]) {
+    const dx = Math.max(30, (x2 - x1) * 0.5);
+    return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+  }
+  function dropCurve([x1, y1], [x2, y2]) {
+    const bx = x1 + BW * 0.95;
+    return `M${x1},${y1} C${bx},${y1} ${bx},${y2} ${x2},${y2}`;
+  }
+  function bounceCurve([x1, y1], [x2, y2]) {
+    const bx = x1 - 40;
+    return `M${x1},${y1} C${bx},${y1} ${bx},${y2} ${x2},${y2}`;
+  }
+  function trace(d, color, red) {
+    L.trace.append(sv("path", { d, class: "vtrace" + (red ? " red" : ""), style: `stroke:${color}` }));
+  }
+  function glowArrow(d, color, mk) {
+    const p = sv("path", { d, class: "varrow", "marker-end": `url(#ah${key}${mk})`, filter: `url(#glow${key})`, style: `stroke:${color}` });
+    L.arrows.append(p);
+    return p;
+  }
+  async function travel(g, path, ms, my) {
+    const len = path.getTotalLength();
+    const t0 = performance.now();
+    if (REDUCED || ms <= 0) { const pt = path.getPointAtLength(len); g.setAttribute("transform", `translate(${pt.x},${pt.y})`); return; }
+    await new Promise((res) => {
+      const f = (now) => {
+        if (my !== gen) return res();
+        const t = Math.min(1, (now - t0) / ms), pt = path.getPointAtLength(ease(t) * len);
+        g.setAttribute("transform", `translate(${pt.x},${pt.y})`);
+        t < 1 ? requestAnimationFrame(f) : res();
+      };
+      requestAnimationFrame(f);
+    });
+  }
+  const D = (ms) => (REDUCED ? 0 : ms * speed);
+
+  // text for one event
+  const pri = (am, code) => listed(am, code) ? `<span class="tag-list">λίστα</span>` : `λαχνός <span class="mono">${BY_AM[am].lot}</span>`;
+  function describe(e) {
+    if (e.kind === "round") {
+      const head = e.col === 1
+        ? `<b>Γύρος 1.</b> Όλες κάνουν αίτηση στην 1η τους επιλογή. Οι αιτήσεις φτάνουν μία-μία, με τη σειρά του ΑΜ· η σειρά άφιξης δεν αλλάζει το αποτέλεσμα.`
+        : `<b>Γύρος ${e.n}.</b> ${e.retained.length ? `Όσες έχουν θέση την κρατούν <b>προσωρινά</b> και στη νέα στήλη.` : ""} Όσες είναι στην αναμονή κάνουν αίτηση στην επόμενη επιλογή τους.`;
+      return head;
+    }
+    if (e.kind === "end") {
+      const cnt = [0, 0, 0, 0];
+      for (const am in finalPos) cnt[BY_AM[am].prefs.indexOf(finalPos[am].box)]++;
+      const tot = cnt.reduce((a, b) => a + b, 0);
+      const avg = (cnt.reduce((a, n, i) => a + n * (i + 1), 0) / tot).toFixed(2).replace(".", ",");
+      const segs = cnt.map((n, i) => n ? `<span class="rk r${i + 1}" style="flex:${n}">${ORD[i]} · ${n}</span>` : "").join("");
+      return `<b>Τέλος.</b> Δεν υπάρχει καμία νέα αίτηση, οπότε οι θέσεις της τελευταίας στήλης γίνονται <b>οριστικές</b>. Δίπλα σε κάθε κάρτα, τα τετραγωνάκια είναι οι 4 επιλογές της μαθήτριας με τη σειρά, στο χρώμα κάθε ομίλου: το τονισμένο είναι ο όμιλος που πήρε, τα διαγραμμένα όσα ήθελε περισσότερο αλλά δεν χώρεσε.</p><p class="now"><span class="rkbar">${segs}</span> <span class="muted">μέση θέση στη λίστα: ${avg}</span>`;
+    }
+    const who = `<b>${nm(e.am)}</b> (${pri(e.am, e.club)}) → ${chip(e.club)} <span class="muted">${ORD[e.rank - 1]} επιλογή</span>`;
+    const pinNote = listed(e.am, e.club) ? ` Είναι στη λίστα της καθηγήτριας, οπότε <span class="pinned">καρφώνεται</span> στη θέση της: καμία δεν μπορεί να τη σπρώξει έξω.` : "";
+    if (e.result === "seat") return `${who}: υπάρχει <span class="ok">κενή θέση</span> και την παίρνει${listed(e.am, e.club) ? "." : " προσωρινά."}${pinNote}`;
+    const w = e.result === "push" ? e.pushed : e.others[e.slot];
+    const reason = listed(e.am, e.club) && !listed(w, e.club)
+      ? `η ${nm(e.am)} είναι στη λίστα της καθηγήτριας, ενώ η ${nm(w)} όχι`
+      : !listed(e.am, e.club) && listed(w, e.club)
+        ? `η ${nm(w)} είναι στη λίστα της καθηγήτριας`
+        : `${BY_AM[e.am].lot} ${e.result === "push" ? "<" : ">"} ${BY_AM[w].lot}`;
+    if (e.result === "push") {
+      const was = e.pushedSince && e.pushedSince < e.n ? `, παρόλο που ήταν εκεί από τον γύρο ${e.pushedSince}` : "";
+      return `${who}: ο όμιλος είναι γεμάτος. Η πιο αδύναμη εκεί είναι η ${nm(w)} (${pri(w, e.club)}). Επειδή ${reason}, <span class="push">η ${nm(e.am)} σπρώχνει έξω ${ART(w)} ${nm(w)}</span>${was}.${pinNote}`;
+    }
+    return `${who}: ο όμιλος είναι γεμάτος, και ακόμα και η πιο αδύναμη εκεί, η ${nm(w)} (${pri(w, e.club)}), προηγείται (${reason}). <span class="push">Η ${nm(e.am)} απορρίπτεται</span> και περιμένει.`;
+  }
+
+  // apply one event; animate or snap
+  async function apply(e, anim, my) {
+    if (e.kind === "round") {
+      drawColumn(e.col);
+      const moves = e.retained.map((r) => {
+        const to = { col: e.col, box: r.club, slot: r.slot };
+        const d = curve(center(r.from), center(to));
+        trace(d, ccol(r.club));
+        const src = cards[`${r.from.col}:${r.am}`];
+        src && src.classList.add("past");
+        const g = makeCard(r.am, r.from, "", false); setCardBox(g, to);
+        cards[`${e.col}:${r.am}`] = g;
+        const p = sv("path", { d }); p.style.display = "none"; L.arrows.append(p);
+        return { g, p };
+      });
+      if (anim && moves.length) await Promise.all(moves.map((m) => travel(m.g, m.p, D(700), my)));
+      else for (const m of moves) await travel(m.g, m.p, 0, my);
+      moves.forEach((m) => m.p.remove());
+      return;
+    }
+    if (e.kind === "end") {
+      const fin = Object.keys(cards).filter((k) => k.startsWith(`${e.col}:`)).map((k) => cards[k]);
+      fin.forEach((g) => g.classList.add("final"));
+      const ordered = STUDENTS.filter((s) => cards[`${e.col}:${s.am}`]);
+      for (const [i, s] of ordered.entries()) {
+        const p = finalPos[s.am];
+        drawLadder(s.am, p);
+        if (anim) await wait(D(160));
+        if (my !== gen) return;
+      }
+      return;
+    }
+    const to = { col: e.col, box: e.club, slot: e.slot };
+    const color = ccol(e.club);
+    const src = cards[`${e.from.col}:${e.am}`];
+    src && src.classList.add("past");
+    // stop just touching the seated card's left side
+    const edge = [center(to)[0] - (BW - 10) + 6, center(to)[1]];
+    const d = curve(center(e.from), e.result === "seat" ? center(to) : edge);
+    const g = makeCard(e.am, e.from, "moving", false);
+    prefState(g, e.club);
+    if (anim) {
+      const arrow = glowArrow(d, color, e.club);
+      await wait(D(350));
+      if (my !== gen) return;
+      await travel(g, arrow, D(1100), my);
+      arrow.remove();
+    } else { const p = sv("path", { d }); L.arrows.append(p); await travel(g, p, 0, my); p.remove(); }
+    trace(d, color);
+    if (my !== gen) return;
+    if (e.result === "seat") {
+      const q = setCardBox(g, to); g.classList.remove("moving"); cards[`${e.col}:${e.am}`] = g;
+      if (anim) await dropPin(q, my);
+      return;
+    }
+    const outP = { col: e.col, box: "OUT", slot: e.outSlot };
+    if (e.result === "push") {
+      // the newcomer stops at the club's edge, knocks the weaker card out, then takes its seat
+      const victim = cards[`${e.col}:${e.pushed}`];
+      cards[`${e.col}:${e.am}`] = g;
+      const dd = dropCurve(center(to), center(outP));
+      const slide = sv("path", { d: `M${edge[0]},${edge[1]} L${center(to)[0]},${center(to)[1]}` });
+      slide.style.display = "none"; L.arrows.append(slide);
+      if (anim) {
+        g.classList.add("winner");
+        await wait(D(250));
+        victim.classList.add("hit");
+        prefState(victim, "OUT", e.club);
+        await wait(D(500));
+        if (my !== gen) return;
+        const a2 = glowArrow(dd, "var(--r)", "X");
+        await wait(D(250));
+        if (my !== gen) return;
+        const out = travel(victim, a2, D(900), my);
+        await wait(D(220));
+        await travel(g, slide, D(450), my);
+        await out;
+        a2.remove(); g.classList.remove("winner");
+      } else {
+        const p = sv("path", { d: dd }); L.arrows.append(p); await travel(victim, p, 0, my); p.remove();
+        await travel(g, slide, 0, my);
+      }
+      slide.remove();
+      trace(dd, "var(--r)", true);
+      victim.classList.remove("hit"); victim.classList.add("ousted"); setCardBox(victim, outP, e.club);
+      const q = setCardBox(g, to); g.classList.remove("moving");
+      if (anim) await dropPin(q, my);
+      return;
+    }
+    // bounce
+    g.classList.add("hit");
+    prefState(g, "OUT", e.club);
+    const db = bounceCurve(edge, center(outP));
+    if (anim) {
+      await wait(D(450));
+      const a2 = glowArrow(db, "var(--r)", "X");
+      await wait(D(250));
+      await travel(g, a2, D(800), my);
+      a2.remove();
+    } else { const p = sv("path", { d: db }); L.arrows.append(p); await travel(g, p, 0, my); p.remove(); }
+    trace(db, "var(--r)", true);
+    g.classList.remove("hit", "moving"); g.classList.add("ousted"); setCardBox(g, outP, e.club);
+    cards[`${e.col}:${e.am}`] = g;
+  }
+
+  function header(i) {
+    const e = events[Math.max(0, i - 1)];
+    if (i === 0) return `Αρχή<small>πατήστε Αναπαραγωγή ή Βήμα →</small>`;
+    if (e.kind === "end") return `Τέλος<small>${cols - 1} γύροι</small>`;
+    return `Γύρος ${e.n}<small>${e.kind === "round" ? "νέα στήλη" : "αίτηση της " + nm(e.am)}</small>`;
+  }
+  function narrate(i) {
+    // events of the current round up to i
+    let s = i - 1; while (s > 0 && events[s].kind !== "round") s--;
+    const lines = [];
+    if (i === 0) lines.push(`<p>Στην πρώτη στήλη είναι όλες οι μαθήτριες, με τη σειρά του λαχνού τους. Κάθε φορά που ένας όμιλος είναι γεμάτος, η κάρτα που φτάνει συγκρίνεται με την πιο αδύναμη κάρτα του ομίλου: πρώτα μετράει η λίστα της καθηγήτριας <span class="dot"></span>, μετά ο μικρότερος λαχνός.</p>`);
+    else for (let j = s; j < i; j++) lines.push(`<p class="${j === i - 1 ? "now" : "was"}">${describe(events[j])}</p>`);
+    say.innerHTML = lines.join("");
+    if (FIT) say.scrollTop = say.scrollHeight;
+  }
+  function focusCol(i) {
+    const c = i === 0 ? 0 : events[i - 1].col;
+    L.bg.querySelectorAll(".vcol").forEach((r) => r.classList.toggle("sel", +r.dataset.col === c));
+    const rect = L.bg.querySelector(`.vcol[data-col="${c}"]`);
+    if (rect && scroller.scrollWidth > scroller.clientWidth) {
+      const r = rect.getBoundingClientRect(), s = scroller.getBoundingClientRect();
+      if (r.right > s.right - 10 || r.left < s.left) scroller.scrollBy({ left: r.right - s.right + 40, behavior: REDUCED ? "auto" : "smooth" });
+    }
+  }
+  function ui(i) {
+    step.innerHTML = header(i);
+    [...prog.children].forEach((x, n) => x.classList.toggle("done", n < i));
+    prev.disabled = i === 0; next.disabled = end.disabled = i === events.length;
+    narrate(i); focusCol(i);
+  }
+  async function rebuild(i) {
+    const my = ++gen;
+    for (const k in L) L[k].innerHTML = "";
+    for (const k in cards) delete cards[k];
+    drawColumn(0);
+    STUDENTS.forEach((s) => { const g = makeCard(s.am, { col: 0, box: "START", slot: [...STUDENTS].sort((a, b) => a.lot - b.lot).findIndex((x) => x.am === s.am) }); g.dataset.am = s.am; });
+    for (let j = 0; j < i; j++) await apply(events[j], false, my);
+    cur = i; ui(i);
+  }
+  async function forward() {
+    if (cur >= events.length) return false;
+    const my = gen;
+    const e = events[cur];
+    cur++; ui(cur);
+    await apply(e, true, my);
+    return my === gen;
+  }
+  function stop() { playing = false; gen++; play.textContent = "▶ Αναπαραγωγή"; }
+  async function run() {
+    if (cur >= events.length) await rebuild(0);
+    playing = true; play.textContent = "❚❚ Παύση";
+    const my = gen;
+    while (playing && my === gen && cur < events.length) {
+      const ok = await forward();
+      if (!ok || my !== gen) return;
+      await wait(D(events[cur - 1].kind === "round" ? 500 : 900));
+    }
+    if (my === gen) { playing = false; play.textContent = "▶ Αναπαραγωγή"; }
+  }
+  play.addEventListener("click", async () => {
+    if (playing) { const c = cur; stop(); await rebuild(c); } else run();
+  });
+  next.addEventListener("click", async () => {
+    if (playing) { const c = cur; stop(); await rebuild(c); return; }
+    const c = cur; gen++; await rebuild(c); forward();
+  });
+  prev.addEventListener("click", async () => { const c = cur; if (playing) stop(); else gen++; await rebuild(Math.max(0, c - 1)); });
+  restart.addEventListener("click", async () => { stop(); await rebuild(0); });
+  end.addEventListener("click", async () => { stop(); await rebuild(events.length); });
+  rebuild(0);
+  return {
+    stop,
+    key(ev) {
+      if (ev.key === "ArrowRight") next.click();
+      else if (ev.key === "ArrowLeft") prev.click();
+      else if (ev.key === " ") play.click();
+      else if (ev.key === "Home") restart.click();
+      else if (ev.key === "End") end.click();
+      else return false;
+      return true;
+    },
+  };
+}
+(function () {
+  const stage = document.getElementById("stage");
+  let inst = null;
+  function load(k) {
+    inst?.stop();
+    stage.innerHTML = "";
+    inst = buildViz(stage, k, { fit: true });
+    document.querySelectorAll(".scen [data-s]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.s === k)));
+  }
+  document.querySelectorAll(".scen [data-s]").forEach((b) => b.addEventListener("click", () => load(b.dataset.s)));
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest("input, textarea")) return;
+    if (inst && inst.key(e)) e.preventDefault();
+  });
+  const fs = document.getElementById("fs");
+  if (!document.documentElement.requestFullscreen) fs.hidden = true;
+  fs.addEventListener("click", () => {
+    (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => { fs.hidden = true; });
+  });
+  load(location.hash === "#B" ? "B" : "A");
+})();
+</script>
+</body>
+</html>

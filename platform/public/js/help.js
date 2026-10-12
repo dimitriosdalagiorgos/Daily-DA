@@ -142,7 +142,7 @@ export const HELP = {
   },
 };
 
-// The full manuals (docs/build.py copies them to public/docs/)
+// The full manuals and the interactive example (docs/build.py copies them to public/docs/)
 const MANUALS = {
   parent: [["Εγχειρίδιο γονέων", "Egxeiridio_Goneis"]],
   teacher: [["Εγχειρίδιο εκπαιδευτικών", "Egxeiridio_Ekpaideutikoi"]],
@@ -155,7 +155,10 @@ function manualsCard(role) {
     el("p", {}, "Με όλες τις οδηγίες και την εξήγηση του αλγορίθμου κατανομής, για ανάγνωση ή εκτύπωση:"),
     el("ul", {}, MANUALS[role].map(([label, file]) => el("li", {}, `${label}: `,
       el("a", { href: `/docs/${file}.pdf`, target: "_blank" }, "PDF"), " · ",
-      el("a", { href: `/docs/${file}.docx`, download: `${file}.docx` }, "Word")))));
+      el("a", { href: `/docs/${file}.docx`, download: `${file}.docx` }, "Word")))),
+    el("p", {}, "Η κατανομή βήμα-βήμα, με κινούμενο παράδειγμα: ",
+      el("a", { href: "/docs/paradeigma-gale-shapley.html", target: "_blank" }, "Οι όμιλοι των χρωμάτων"), " · ",
+      el("a", { href: "/docs/prosomoiosi-gale-shapley.html", target: "_blank" }, "μόνο η προσομοίωση")));
 }
 
 /** Help for one role: the full manual, then a card per section. */

@@ -16,7 +16,7 @@
 |---|---|
 | `platform/` | Η πλατφόρμα: απλή HTML/JS (`public/`), αλγόριθμος/εισαγωγή/εξαγωγή (`src/algorithm`, `src/import`, `src/export`, κοινά browser–server), API (`src/server/app.js`), Netlify Function, server παραγωγής (`server/start.mjs`), tests, e2e |
 | `R/` | Η ίδια κατανομή offline σε R. Πρέπει να δίνει **ταυτόσημα** αποτελέσματα με την πλατφόρμα |
-| `docs/` | Εγχειρίδια (md → Word/PDF με `docs/build.py`). Αντίγραφα στο `platform/public/docs/` |
+| `docs/` | Εγχειρίδια (md → Word/PDF με `docs/build.py`) και το διαδραστικό παράδειγμα της κατανομής (`*.html`, αυτόνομες σελίδες). Αντίγραφα στο `platform/public/docs/` |
 | `archive/` | Τα παλιά scripts R και **φανταστικά** CSV, μόνο για αναφορά |
 
 Χωρίς εξαρτήσεις npm. Το SheetJS (Excel) φορτώνεται στον browser από `/vendor/xlsx.mjs` ή από το CDN.
