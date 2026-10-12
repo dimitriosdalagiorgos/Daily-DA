@@ -781,6 +781,7 @@ test("deleting a declaration: the parent until the deadline, the admin until the
   assert.equal(await store.get("submission:9001"), undefined);
   assert.equal((await call("GET", "/api/parent/me", { token: parent })).data.submission, null, "the form shows as on the first login");
   assert.ok((await store.readLog("events")).some((e) => e.what === "submission_deleted" && e.who === "parent:9001"));
+  assert.deepEqual(Object.values((await store.readLog("outbox")).at(-1)).slice(0, 2), ["g@example.com", "Διαγραφή δήλωσης ομίλων"], "the parent is told");
   // Not after the deadline
   assert.equal((await declare(parent)).status, 200);
   clock.now = Date.parse("2026-10-11T09:00:00Z");
@@ -795,6 +796,7 @@ test("deleting a declaration: the parent until the deadline, the admin until the
   await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
   assert.equal((await call("DELETE", "/api/admin/submissions/9001", { token: admin })).status, 200);
   assert.deepEqual(Object.keys((await call("GET", "/api/admin/state", { token: admin })).data.submissions), []);
+  assert.match((await store.readLog("outbox")).at(-1).text, /διαγράφηκε από τη διαχείριση/, "the parent is told");
   // Back to declarations: the parent declares again; after the allocation nothing is deleted
   await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } });
   assert.equal((await declare(parent)).status, 200);

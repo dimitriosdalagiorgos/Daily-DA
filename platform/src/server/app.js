@@ -970,9 +970,15 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     session(req, "admin");
     const settings = await getSettings();
     if (phaseAtLeast(settings.phase, "allocated")) throw new HttpError(409, "Η κατανομή έχει γίνει: οι δηλώσεις δεν διαγράφονται. Για αλλαγή, πατήστε «Επιστροφή» μέχρι τη φάση «Κλειστές δηλώσεις».");
-    if (!(await store.get(`submission:${am}`))) throw new HttpError(404, "Δεν υπάρχει δήλωση για αυτόν τον ΑΜ.");
+    const old = await store.get(`submission:${am}`);
+    if (!old) throw new HttpError(404, "Δεν υπάρχει δήλωση για αυτόν τον ΑΜ.");
     await store.delete(`submission:${am}`);
     await logEvent("admin", "submission_deleted", { am });
+    if (old.parent?.email && !old.imported) {
+      const student = (await getStudents()).find((s) => s.am === am);
+      await mail(old.parent.email, "Διαγραφή δήλωσης ομίλων",
+        `Η δήλωση ομίλων${student ? ` για τον/την μαθητή/τρια ${student.surname} ${student.name}` : ""} διαγράφηκε από τη διαχείριση της πλατφόρμας. Για ερωτήσεις, επικοινωνήστε με το σχολείο.`);
+    }
     return json(200, { ok: true });
   });
 
