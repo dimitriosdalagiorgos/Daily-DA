@@ -945,6 +945,43 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return json(200, { submittedAt: at, receipt: receiptCode(am, at, clean) });
   });
 
+  // The parent withdraws the declaration: the student is left without one,
+  // as before the first submission.
+  route("DELETE", "/api/parent/submission", async (req) => {
+    const { am } = session(req, "parent");
+    const settings = await getSettings();
+    if (settings.phase !== "parents") throw new HttpError(409, "Οι δηλώσεις δεν είναι ανοιχτές.");
+    if (deadlinePassed(settings)) throw new HttpError(409, "Η προθεσμία έληξε.");
+    const old = await store.get(`submission:${am}`);
+    if (!old) return json(200, { ok: true });
+    await store.delete(`submission:${am}`);
+    await logEvent(`parent:${am}`, "submission_deleted", { email: old.parent?.email ?? null });
+    if (old.parent?.email && !old.imported) {
+      const student = (await getStudents()).find((s) => s.am === am);
+      await mail(old.parent.email, "Διαγραφή δήλωσης ομίλων",
+        `Η δήλωση ομίλων${student ? ` για τον/την μαθητή/τρια ${student.surname} ${student.name}` : ""} διαγράφηκε. Μπορείτε να κάνετε νέα δήλωση μέχρι την προθεσμία. Αν δεν το κάνατε εσείς, επικοινωνήστε με το σχολείο.`);
+    }
+    return json(200, { ok: true });
+  });
+
+  // The admin deletes one student's declaration (e.g. one made to show the
+  // platform to a parent), until the allocation.
+  route("DELETE", "/api/admin/submissions/:am", async (req, { am }) => {
+    session(req, "admin");
+    const settings = await getSettings();
+    if (phaseAtLeast(settings.phase, "allocated")) throw new HttpError(409, "Η κατανομή έχει γίνει: οι δηλώσεις δεν διαγράφονται. Για αλλαγή, πατήστε «Επιστροφή» μέχρι τη φάση «Κλειστές δηλώσεις».");
+    const old = await store.get(`submission:${am}`);
+    if (!old) throw new HttpError(404, "Δεν υπάρχει δήλωση για αυτόν τον ΑΜ.");
+    await store.delete(`submission:${am}`);
+    await logEvent("admin", "submission_deleted", { am });
+    if (old.parent?.email && !old.imported) {
+      const student = (await getStudents()).find((s) => s.am === am);
+      await mail(old.parent.email, "Διαγραφή δήλωσης ομίλων",
+        `Η δήλωση ομίλων${student ? ` για τον/την μαθητή/τρια ${student.surname} ${student.name}` : ""} διαγράφηκε από τη διαχείριση της πλατφόρμας. Για ερωτήσεις, επικοινωνήστε με το σχολείο.`);
+    }
+    return json(200, { ok: true });
+  });
+
   // ---------- helpers using the routes' data ----------
 
   /**
