@@ -268,6 +268,36 @@ try {
   await parent.waitForSelector("h1:has-text('ΓΕΩΡΓΙΟΥ ΕΛΕΝΗ')");
   step("parent: «another child» keeps only the parents' password");
 
+  // «Επαναφορά της Δευτέρας» brings back the first-visit order; «Διαγραφή
+  // δήλωσης» deletes the saved declaration. Then the same one is made again.
+  if ((await names()).join() !== afterDrag.join()) throw new Error(`saved Monday order not shown: ${await names()}`);
+  parent.once("dialog", (d) => d.accept());
+  await parent.click("button:has-text('Επαναφορά της Δευτέρας')");
+  if ((await names()).join() !== before.join()) throw new Error(`Monday reset failed: ${await names()}`);
+  parent.once("dialog", (d) => d.accept());
+  await parent.click("button:has-text('Διαγραφή δήλωσης')");
+  await parent.waitForSelector(".msg.ok:has-text('Η δήλωση διαγράφηκε')");
+  if (await parent.locator(".receipt").count() || await parent.inputValue("#pname")) throw new Error("declaration still shown after deleting");
+  if ((await names()).join() !== before.join()) throw new Error(`after deleting, Monday is not in the first-visit order: ${await names()}`);
+  step("parent: reset Monday, delete the declaration");
+  await shot(parent, "06b-parent-deleted");
+  for (const [i, club] of afterDrag.entries()) {
+    const j = (await names()).indexOf(club);
+    await mon.locator(`li >> nth=${j}`).locator("input.pos").fill(String(i + 1));
+    await mon.locator(`li >> nth=${j}`).locator("input.pos").press("Enter");
+  }
+  if ((await names()).join() !== afterDrag.join()) throw new Error(`Monday order not restored: ${await names()}`);
+  await parent.click("nav.day-tabs button:has-text('Τρίτη')");
+  await tue.locator("li:has-text('Ποδόσφαιρο') input.pos").fill("1");
+  await tue.locator("li:has-text('Ποδόσφαιρο') input.pos").press("Enter");
+  await parent.fill("#pname", "Γιάννης Γεωργίου");
+  await parent.fill("#pemail", "parent@example.com");
+  await parent.click("nav.day-tabs button:has-text('Δευτέρα')");
+  for (const day of ["Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή"]) await parent.click(`button:has-text('${day} →')`);
+  await parent.click("button:has-text('Υποβολή δήλωσης')");
+  await parent.waitForSelector(".msg.ok:has-text('καταχωρίστηκε')");
+  step("parent: the same declaration submitted again");
+
   // Two more parents via the API, so the allocation has competition
   for (const [am, surname, name, father, mother] of [["9021", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "ΕΛΕΝΗ ΜΑΡΙΑ"], ["9041", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "ΕΛΕΝΗ"]]) {
     const { token } = await api("/api/parent/login", { method: "POST", body: { password: "omiloi2026", am, surname, name, father, mother } });

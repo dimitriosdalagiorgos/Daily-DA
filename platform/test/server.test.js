@@ -762,3 +762,43 @@ test("students' sections: any phase; matched by ΑΜ and grade; kept over a new 
   await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
   assert.equal((await sectionOf())[9001], "");
 });
+
+test("deleting a declaration: the parent until the deadline, the admin until the allocation", async () => {
+  const { call, store, clock } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z" } });
+  for (const phase of ["teachers", "parents"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+  const login = (am, surname, name, father, mother) => call("POST", "/api/parent/login", { body: { password: "omiloi2026", am, surname, name, father, mother } }).then((r) => r.data.token);
+  const parent = await login("9001", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "ΜΑΡΙΑ");
+  const declare = (token) => call("PUT", "/api/parent/submission", { token, body: { parent: { name: "Γ", email: "g@example.com" }, preferences: { mon: ["100", "101"], thu: ["102"] } } });
+
+  // The parent deletes their own declaration
+  assert.equal((await declare(parent)).status, 200);
+  assert.equal((await call("DELETE", "/api/parent/submission")).status, 401, "parents only");
+  assert.equal((await call("DELETE", "/api/parent/submission", { token: parent })).status, 200);
+  assert.equal(await store.get("submission:9001"), undefined);
+  assert.equal((await call("GET", "/api/parent/me", { token: parent })).data.submission, null, "the form shows as on the first login");
+  assert.ok((await store.readLog("events")).some((e) => e.what === "submission_deleted" && e.who === "parent:9001"));
+  // Not after the deadline
+  assert.equal((await declare(parent)).status, 200);
+  clock.now = Date.parse("2026-10-11T09:00:00Z");
+  const late = await login("9001", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "ΜΑΡΙΑ");
+  assert.equal((await call("DELETE", "/api/parent/submission", { token: late })).status, 409);
+  assert.ok(await store.get("submission:9001"));
+
+  // The admin deletes one, until the allocation
+  clock.now = Date.parse("2026-10-01T10:00:00Z");
+  assert.equal((await call("DELETE", "/api/admin/submissions/9001")).status, 401, "admin only");
+  assert.equal((await call("DELETE", "/api/admin/submissions/9002", { token: admin })).status, 404, "no declaration");
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
+  assert.equal((await call("DELETE", "/api/admin/submissions/9001", { token: admin })).status, 200);
+  assert.deepEqual(Object.keys((await call("GET", "/api/admin/state", { token: admin })).data.submissions), []);
+  // Back to declarations: the parent declares again; after the allocation nothing is deleted
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } });
+  assert.equal((await declare(parent)).status, 200);
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
+  assert.equal((await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "1" } })).status, 200);
+  assert.equal((await call("DELETE", "/api/admin/submissions/9001", { token: admin })).status, 409);
+});

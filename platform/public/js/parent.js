@@ -228,6 +228,16 @@ function mainView(me, { justSubmitted = false } = {}) {
         onChange: refreshAll,
       });
       panel.append(rankers[d.day].node);
+      // Back to the order shown on the first visit (not saved until submitted)
+      if (canEdit) {
+        panel.append(el("div.actions", { style: "margin:8px 0 0" }, el("button.small", {
+          type: "button",
+          onclick: () => {
+            if (!confirm(`Επαναφορά της σειράς ${DAY_GEN[d.day]} στην αρχική (τυχαία) σειρά;`)) return;
+            rankers[d.day].setOrder(initialOrder(d.clubs.map((c) => c.code), `${student.am}:${d.day}`));
+          },
+        }, `Επαναφορά ${DAY_GEN[d.day]}`)));
+      }
     } else {
       // Only locked clubs today: the same rows, numbered from 1
       const locked = el("ol.ranker", { "aria-label": `Κλειδωμένοι όμιλοι ${d.label}` });
@@ -271,6 +281,22 @@ function mainView(me, { justSubmitted = false } = {}) {
     nav, panelBox, out, dayActions));
 
   if (canEdit) {
+    // Start over: the saved declaration (if any) is deleted and the form
+    // shows as on the first login.
+    const restart = el("button.small", { type: "button" }, submission ? "Διαγραφή δήλωσης" : "Επαναφορά όλων των ημερών");
+    restart.addEventListener("click", () => busy(restart, out, async () => {
+      if (submission) {
+        if (!confirm("Να διαγραφεί η αποθηκευμένη δήλωση; Το παιδί θα μείνει χωρίς δήλωση, μέχρι να υποβάλετε νέα πριν από την προθεσμία.")) return;
+        await api("DELETE", "/api/parent/submission");
+        mainView(await api("GET", "/api/parent/me"));
+        $("#app").prepend(message("ok", "Η δήλωση διαγράφηκε. Μπορείτε να κάνετε νέα δήλωση μέχρι την προθεσμία."));
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        if (!confirm("Επαναφορά όλων των ημερών στην αρχική (τυχαία) σειρά;")) return;
+        mainView(me);
+      }
+    }));
+    nodes.push(el("div.actions.no-print", {}, restart));
     submit.addEventListener("click", () => busy(submit, out, async () => {
       const unseen = days.filter((d) => !visited.has(d.day) && d.clubs.length).map((d) => d.label);
       if (unseen.length && !confirm(`Δεν έχετε δει τη σειρά για: ${unseen.join(", ")}. Εκεί θα μείνει η τυχαία σειρά. Υποβολή παρ' όλα αυτά;`)) return;

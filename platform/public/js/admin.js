@@ -408,6 +408,20 @@ function students() {
     el("option", { value: "" }, "Όλοι"), el("option", { value: "missing" }, "Χωρίς δήλωση"), el("option", { value: "done" }, "Με δήλωση"), el("option", { value: "exception" }, "Με εξαίρεση σύνδεσης"));
   const body = el("tbody");
   const withSection = hasSections(state.students);
+  // A declaration can be deleted until the allocation (e.g. one made to
+  // show the platform to a parent).
+  const deletable = ["setup", "teachers", "parents", "closed"].includes(state.settings.phase);
+  const deleteButton = (s) => el("button.small", {
+    type: "button", "aria-label": `Διαγραφή δήλωσης ΑΜ ${s.am}`,
+    onclick: async () => {
+      if (!confirm(`Να διαγραφεί η δήλωση του/της ${s.surname} ${s.name} (ΑΜ ${s.am}); Ο μαθητής θα μείνει χωρίς δήλωση.`)) return;
+      try {
+        await api("DELETE", `/api/admin/submissions/${s.am}`);
+        delete state.submissions[s.am];
+        draw();
+      } catch (err) { alert(err.message); }
+    },
+  }, "Διαγραφή");
   const draw = () => {
     const q = search.value.trim().toUpperCase();
     const rows = state.students.filter((s) => {
@@ -428,7 +442,7 @@ function students() {
       });
       return el("tr", {},
         el("td.num", {}, s.am), el("td", {}, `${s.surname} ${s.name}`), el("td", {}, s.grade), withSection ? el("td", {}, s.section) : null,
-        el("td", {}, sub ? el("span", {}, el("span.badge.ok", {}, "✓"), " ", el("span.small", {}, `${formatDateTime(sub.submittedAt)} · ${sub.parentEmail ?? ""}`)) : el("span.badge", {}, "—")),
+        el("td", {}, sub ? el("span", {}, el("span.badge.ok", {}, "✓"), " ", el("span.small", {}, `${formatDateTime(sub.submittedAt)} · ${sub.parentEmail ?? ""}`), deletable ? [" ", deleteButton(s)] : null) : el("span.badge", {}, "—")),
         el("td", {}, el("label", { style: "margin:0;font-weight:400" }, cb, " μόνο ΑΜ + επώνυμο")));
     }));
   };

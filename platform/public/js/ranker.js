@@ -11,7 +11,7 @@ import { el } from "./ui.js";
  * pinned: rows locked at a given position (multi-day clubs on their later
  * days), in display order for equal positions. The free items take the
  * other numbers. Only the free items' order is returned.
- * @returns {{node: HTMLElement, order: () => string[], refresh: () => void}}
+ * @returns {{node: HTMLElement, order: () => string[], refresh: () => void, setOrder: (order: string[]) => void}}
  */
 export function createRanker({ items, order, disabled = false, label, onChange, pinned }) {
   const byCode = new Map(items.map((i) => [i.code, i]));
@@ -137,7 +137,13 @@ export function createRanker({ items, order, disabled = false, label, onChange, 
   }
 
   render();
-  return { node: list, order: () => [...current], refresh: () => render() };
+  const setOrder = (next) => {
+    if (next.length !== current.length || !next.every((c) => byCode.has(c))) return;
+    current = [...next];
+    render();
+    onChange?.([...current]);
+  };
+  return { node: list, order: () => [...current], refresh: () => render(), setOrder };
 }
 
 /**
