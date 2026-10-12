@@ -251,6 +251,19 @@ svg.viz .pq.got { stroke: var(--ink); stroke-width: 1.5; }
 svg.viz .pqx { stroke: var(--ink); stroke-width: 1.4; stroke-linecap: round; opacity: 0; transition: opacity .35s; }
 svg.viz .pqx.on { opacity: .9; }
 </style>
+<style>
+svg.viz .vtaglbl { font-size: 9px; fill: var(--muted); }
+svg.viz .vtag .tname { font-size: 9px; fill: var(--ink); }
+svg.viz .vtag .tneedle { stroke: var(--muted); stroke-width: 1.1; }
+svg.viz .vtag .thead { fill: #e0302b; stroke: #8f1d1d; stroke-width: .6; }
+svg.viz .vtag .tstrike { stroke: var(--ink); stroke-width: 1.1; opacity: 0; }
+svg.viz .vtag { transition: opacity .4s; }
+svg.viz .vtag.faint { opacity: .45; }
+svg.viz .vtag.pinned .tname { fill: var(--ink); }
+svg.viz .vtag.gone .thead { fill: var(--out); stroke: var(--out); }
+svg.viz .vtag.gone .tname { fill: var(--muted); }
+svg.viz .vtag.gone .tstrike { opacity: .8; }
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -305,7 +318,7 @@ svg.viz .pqx.on { opacity: .9; }
     <ul class="clean">
       <li><b>Γιατί δεν απορρίπτει τη Ζωή;</b> Η Ζωή έχει λαχνό 4, καλύτερο από τη Δέσποινα (5) και τη Βάσω (7). Δεν παίζει ρόλο ότι όλες τον έβαλαν 1η επιλογή: εκεί είναι ισότιμες, και αποφασίζει ο λαχνός.</li>
       <li><b>Γιατί να μην περιμένουν και οι τέσσερις;</b> Γιατί οι θέσεις είναι δύο. Η Δέσποινα και η Βάσω δεν χάνουν χρόνο: στον επόμενο γύρο κάνουν αμέσως αίτηση στη 2η επιλογή τους, όπου διεκδικούν ισότιμα με όλες.</li>
-      <li><b>Τι είναι το «προσωρινά»;</b> Η Γεωργία και η Ζωή δεν έχουν ακόμα κλειδώσει. Αν αργότερα έφτανε στον Πράσινο κάποια με λαχνό καλύτερο από το 4, θα έπαιρνε τη θέση της Ζωής. Όπως θα δείτε στο σενάριο Β, αυτό ακριβώς συμβαίνει.</li>
+      <li><b>Τι είναι το «προσωρινά»;</b> Η Γεωργία και η Ζωή δεν έχουν ακόμα κλειδώσει. Αν αργότερα έφτανε στον Πράσινο κάποια με λαχνό καλύτερο από το 4, θα έπαιρνε τη θέση της Ζωής. Αυτό ακριβώς συμβαίνει στο σενάριο Α, στον γύρο 2, στον Μπλε: φτάνει η Βάσω (λαχνός 7) και εκτοπίζει τη Θεοδώρα (λαχνός 8), που ήταν εκεί από τον 1ο γύρο.</li>
       <li>Όποια απορρίπτεται από έναν όμιλο δεν θα χωρούσε εκεί ποτέ: η «γραμμή» ενός ομίλου μόνο ανεβαίνει από γύρο σε γύρο.</li>
     </ul>
   </div>
@@ -328,12 +341,19 @@ svg.viz .pqx.on { opacity: .9; }
   <div class="prose stack">
     <p>Όλα μένουν ίδια (δηλώσεις, λαχνοί). Αλλάζουν μόνο δύο λίστες:</p>
     <ul class="clean">
-      <li>Η καθηγήτρια του <span class="chip B">Μπλε</span> επιλέγει τη <b>Θεοδώρα</b> και τη <b>Βάσω</b>.</li>
+      <li>Η καθηγήτρια του <span class="chip B">Μπλε</span> επιλέγει τη <b>Θεοδώρα</b> και τη <b>Δέσποινα</b>.</li>
       <li>Η καθηγήτρια του <span class="chip Y">Κίτρινου</span> επιλέγει τη <b>Δέσποινα</b> και την <b>Ελένη</b>.</li>
     </ul>
-    <p>Η λίστα δίνει προτεραιότητα <b>πάνω από τον λαχνό</b>, αλλά μόνο αν η μαθήτρια κάνει αίτηση σε αυτόν τον όμιλο. Δεν της δίνει θέση αυτόματα.</p>
+    <p>Η Δέσποινα είναι <b>σε δύο λίστες</b>. Η λίστα δίνει προτεραιότητα <b>πάνω από τον λαχνό</b>, αλλά μόνο αν η μαθήτρια κάνει αίτηση σε αυτόν τον όμιλο. Δεν της δίνει θέση αυτόματα, και δεν αλλάζει τη σειρά των επιλογών της.</p>
   </div>
-  <p class="prose">Η κόκκινη <b>πινέζα</b> καρφώνει στη θέση της όποια μαθήτρια είναι στη λίστα της καθηγήτριας του ομίλου: καμία δεν μπορεί να τη σπρώξει έξω.</p>
+  <div class="prose stack">
+    <p>Στην επικεφαλίδα κάθε ομίλου με λίστα φαίνονται τα ονόματα της λίστας με μια μικρή πινέζα. Δεν είναι θέσεις: ο όμιλος έχει πάντα 2 θέσεις, και μια μαθήτρια χωρίς λίστα μπορεί να πάρει προσωρινά μια ελεύθερη θέση.</p>
+    <ul class="clean">
+      <li><b>Αχνή πινέζα:</b> η μαθήτρια δεν ήρθε ακόμα· αν έρθει, προηγείται.</li>
+      <li><b>Κόκκινη πινέζα:</b> ήρθε και <b>καρφώθηκε</b> στη θέση της· καμία δεν μπορεί να τη σπρώξει έξω.</li>
+      <li><b>Διαγραμμένο όνομα:</b> καρφώθηκε σε άλλον όμιλο που προτιμά, άρα δεν θα έρθει ποτέ· η προτεραιότητά της εδώ δεν παίζει πια ρόλο.</li>
+    </ul>
+  </div>
   <a class="open-sim" href="prosomoiosi-gale-shapley.html#B" target="_blank" rel="noopener">Άνοιγμα της προσομοίωσης σε δική της σελίδα ↗</a>
   <div class="viz-shell" data-viz="B"></div>
   <h3>Λεπτομέρειες γύρου</h3>
@@ -342,13 +362,14 @@ svg.viz .pqx.on { opacity: .9; }
 
 <section>
   <div class="eyebrow">6 · Σύγκριση</div>
-  <h2>Δύο λίστες άλλαξαν τη θέση έξι μαθητριών</h2>
+  <h2>Τι άλλαξαν οι δύο λίστες</h2>
   <div class="scroll"><table id="compare"></table></div>
   <div class="takeaways">
-    <div><b class="k">Αλυσιδωτή αντίδραση</b><p>Οι λίστες του Μπλε εκτόπισαν την Ελένη. Η Ελένη πήγε στον Κίτρινο, όπου μαζί με τη Δέσποινα εκτόπισαν την Ηλέκτρα. Η Ηλέκτρα, με λαχνό 2, εκτόπισε τη Ζωή από τον Πράσινο.</p></div>
+    <div><b class="k">Η λίστα δεν ξεπερνά την επιλογή της μαθήτριας</b><p>Η Δέσποινα είναι στη λίστα και του Μπλε και του Κίτρινου. Πηγαίνει στον Μπλε, γιατί αυτόν έβαλε ψηλότερα (2η, τον Κίτρινο 3η). Η θέση της στον Κίτρινο δεν «χάνεται»: την κρατά η Ηλέκτρα, που είχε τον Κίτρινο 1η επιλογή.</p></div>
+    <div><b class="k">Η λίστα προστατεύει</b><p>Η Θεοδώρα έχει τον χειρότερο λαχνό (8). Χωρίς λίστα κατέληξε στην 4η επιλογή της· με τη λίστα του Μπλε παίρνει την 1η.</p></div>
+    <div><b class="k">Η λίστα νικά και την 1η επιλογή</b><p>Η Ελένη είχε τον Μπλε 1ο. Η Δέσποινα, που ήταν στη λίστα του και τον είχε 2ο, πήρε τη θέση της στον γύρο 2.</p></div>
     <div><b class="k">Η λίστα δίνει προτεραιότητα, όχι θέση</b><p>Η Ελένη ήταν στη λίστα του Κίτρινου, αλλά πήγε εκεί μόνο όταν δεν χώρεσε στις δύο πρώτες επιλογές της. Η σειρά των γονέων εξακολουθεί να ισχύει.</p></div>
-    <div><b class="k">Η λίστα νικά και την 1η επιλογή</b><p>Η Ηλέκτρα είχε τον Κίτρινο 1ο. Δύο μαθήτριες της λίστας, που τον είχαν 3ο, πήραν τις θέσεις.</p></div>
-    <div><b class="k">Η σειρά επιλογής δεν δίνει προτεραιότητα</b><p>Στο σενάριο Α, η Δέσποινα (Μπλε 2η, λαχνός 5) εκτόπισε τη Θεοδώρα (Μπλε 1η, λαχνός 8).</p></div>
+    <div><b class="k">Η σειρά επιλογής δεν δίνει προτεραιότητα</b><p>Στο σενάριο Α, η Θεοδώρα είχε τον Μπλε 1η επιλογή (λαχνός 8), αλλά χάνει τη θέση της από μαθήτριες που τον είχαν 2η με καλύτερο λαχνό: πρώτα τη Βάσω (7) και τελικά τη Δέσποινα (5).</p></div>
     <div><b class="k">Οι γύροι είναι μόνο τρόπος υπολογισμού</b><p>Όποια σειρά κι αν ακολουθηθεί στις αιτήσεις, το τελικό αποτέλεσμα είναι το ίδιο (Gale &amp; Shapley, 1962· McVitie &amp; Wilson, 1970).</p></div>
   </div>
 </section>
@@ -428,7 +449,7 @@ function runDA(teacherLists) {
 }
 const SCEN = {
   A: { lists: {} },
-  B: { lists: { B: ["108", "102"], Y: ["104", "105"] } },
+  B: { lists: { B: ["108", "104"], Y: ["104", "105"] } },
 };
 for (const k in SCEN) SCEN[k].rounds = runDA(SCEN[k].lists);
 const NS = "http://www.w3.org/2000/svg";
@@ -693,6 +714,7 @@ function simulate(key) {
 // Animated flow: one column per round, clubs stacked vertically; cards travel along glowing arrows.
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const ACC2 = { G: "Πράσινο", B: "Μπλε", R: "Κόκκινο", Y: "Κίτρινο" };
+const GEN2 = { G: "Πράσινου", B: "Μπλε", R: "Κόκκινου", Y: "Κίτρινου" };
 const ART = (am) => (["Άννα", "Ελένη", "Ηλέκτρα"].includes(nm(am)) ? "την" : "τη");
 const ccol = (box) => box === "OUT" || box === "START" ? "var(--out)" : `var(--${box.toLowerCase()})`;
 const ctint = (box) => box === "OUT" || box === "START" ? "var(--out-t)" : `var(--${box.toLowerCase()}-t)`;
@@ -707,15 +729,19 @@ function buildViz(box, key, opts = {}) {
   const ROW = 36, BW = 116, GAP = 74, LBL = 20, BGAP = 14, HEAD = 44, PADX = 8;
   const boxes = {};
   let y = HEAD;
-  for (const c of CLUBS) { boxes[c.code] = { y, h: LBL + CAP * ROW + 6 }; y += boxes[c.code].h + BGAP; }
+  const LISTH = 14; // extra header line with the teacher's list
+  for (const c of CLUBS) {
+    const lbl = LBL + ((sc.lists[c.code] || []).length ? LISTH : 0);
+    boxes[c.code] = { y, lbl, h: lbl + CAP * ROW + 6 }; y += boxes[c.code].h + BGAP;
+  }
   y += 10;
-  boxes.OUT = { y, h: LBL + maxOut * ROW + 6 }; y += boxes.OUT.h + 8;
+  boxes.OUT = { y, lbl: LBL, h: LBL + maxOut * ROW + 6 }; y += boxes.OUT.h + 8;
   const H = Math.max(y, HEAD + LBL + 8 * ROW + 10);
-  boxes.START = { y: HEAD, h: LBL + 8 * ROW + 6 };
+  boxes.START = { y: HEAD, lbl: LBL, h: LBL + 8 * ROW + 6 };
   const RIGHT = 100; // room for the preference ladder next to the final column
   const W = PADX * 2 + cols * BW + (cols - 1) * GAP + RIGHT;
   const colX = (c) => PADX + c * (BW + GAP);
-  const center = (p) => [colX(p.col) + BW / 2, boxes[p.box].y + LBL + p.slot * ROW + ROW / 2];
+  const center = (p) => [colX(p.col) + BW / 2, boxes[p.box].y + boxes[p.box].lbl + p.slot * ROW + ROW / 2];
 
   // chrome
   const bar = el("div", { class: "anim-bar" });
@@ -766,10 +792,43 @@ function buildViz(box, key, opts = {}) {
       L.boxes.append(sv("rect", { x, y: B.y, width: BW, height: B.h, rx: 7, style: `fill:${ctint(b)};stroke:${ccol(b)};stroke-width:1.5;${b === "OUT" ? "stroke-dasharray:4 3" : ""}` }));
       const lbl = b === "START" ? "ΟΛΕΣ" : b === "OUT" ? "ΑΝΑΜΟΝΗ" : CLUB[b].name.toUpperCase();
       L.boxes.append(sv("text", { class: "vbox", x: x + 8, y: B.y + 14, style: `fill:${b === "Y" ? "var(--y-ink)" : b === "OUT" || b === "START" ? "var(--muted)" : ccol(b)}` }, lbl));
+      if ((sc.lists[b] || []).length) drawTags(c, b);
       if (b !== "OUT" && b !== "START") for (let i = 0; i < CAP; i++) {
-        L.boxes.append(sv("rect", { x: x + 5, y: B.y + LBL + i * ROW + 2, width: BW - 10, height: ROW - 4, rx: 5, style: `fill:none;stroke:${ccol(b)};stroke-dasharray:3 3;opacity:.5` }));
+        L.boxes.append(sv("rect", { x: x + 5, y: B.y + B.lbl + i * ROW + 2, width: BW - 10, height: ROW - 4, rx: 5, style: `fill:none;stroke:${ccol(b)};stroke-dasharray:3 3;opacity:.5` }));
       }
     }
+  }
+  // The teacher's list in each club's header: faint (not here yet), pinned
+  // (seated here), gone (pinned in a club she ranks higher, so never coming).
+  const tagState = {}; // "club:am" -> state
+  const tagEls = {}; // "col:club:am" -> g
+  function drawTags(c, club) {
+    const B = boxes[club], x0 = colX(c) + 7, y = B.y + LBL + 6;
+    L.boxes.append(sv("text", { class: "vtaglbl", x: colX(c) + BW - 7, y: B.y + 14, "text-anchor": "end" }, "λίστα"));
+    let x = x0;
+    for (const am of sc.lists[club]) {
+      const g = sv("g", { class: "vtag " + (tagState[`${club}:${am}`] || "faint") });
+      g.append(sv("line", { x1: x + 3, y1: y - 1, x2: x + 3, y2: y + 4, class: "tneedle" }));
+      g.append(sv("circle", { cx: x + 3, cy: y - 2.5, r: 3, class: "thead" }));
+      const t = sv("text", { x: x + 8, y: y + 3, class: "tname" }, nm(am));
+      g.append(t);
+      L.boxes.append(g);
+      const w = t.getComputedTextLength ? t.getComputedTextLength() : nm(am).length * 5;
+      g.append(sv("line", { x1: x + 7, y1: y, x2: x + 9 + w, y2: y, class: "tstrike" }));
+      tagEls[`${c}:${club}:${am}`] = g;
+      x += w + 12;
+    }
+  }
+  function setTag(col, club, am, state) {
+    tagState[`${club}:${am}`] = state;
+    const g = tagEls[`${col}:${club}:${am}`];
+    if (g) g.setAttribute("class", "vtag " + state);
+  }
+  // a listed student seated in her club is pinned there for good; her other lists no longer matter
+  function pinTags(col, am, club) {
+    if (!listed(am, club)) return;
+    setTag(col, club, am, "pinned");
+    for (const other in sc.lists) if (other !== club && listed(am, other)) setTag(col, other, am, "gone");
   }
   function makeCard(am, p, cls = "", register = true) {
     const [cx, cy] = center(p);
@@ -811,7 +870,7 @@ function buildViz(box, key, opts = {}) {
   function pin() {
     const g = sv("g", { class: "vpin" });
     g.innerHTML = `<g class="vpin-in"><line x1="0" y1="-2" x2="0" y2="9" class="needle"/><ellipse cx="0" cy="-4" rx="6.5" ry="3" class="collar"/><circle cx="0" cy="-10" r="7" class="head"/><circle cx="-2.4" cy="-12.4" r="2.2" class="shine"/></g>`;
-    g.setAttribute("transform", `translate(${(BW - 10) / 2 - 24},${-(ROW - 4) / 2 + 4})`);
+    g.setAttribute("transform", `translate(${(BW - 10) / 2 - 24},2)`);
     return g;
   }
   // returns the new pin if one was added
@@ -898,6 +957,9 @@ function buildViz(box, key, opts = {}) {
   const D = (ms) => (REDUCED ? 0 : ms * speed);
 
   // text for one event
+  events.forEach((ev, i) => (ev.idx = i));
+  // was this student pinned (seated in a club whose list has her) before event idx?
+  const pinnedBy = (am, idx) => events.some((ev, k) => k < idx && ev.kind === "arrive" && ev.am === am && ev.result !== "bounce" && listed(am, ev.club));
   const pri = (am, code) => listed(am, code) ? `<span class="tag-list">λίστα</span>` : `λαχνός <span class="mono">${BY_AM[am].lot}</span>`;
   function describe(e) {
     if (e.kind === "round") {
@@ -915,8 +977,18 @@ function buildViz(box, key, opts = {}) {
       return `<b>Τέλος.</b> Δεν υπάρχει καμία νέα αίτηση, οπότε οι θέσεις της τελευταίας στήλης γίνονται <b>οριστικές</b>. Δίπλα σε κάθε κάρτα, τα τετραγωνάκια είναι οι 4 επιλογές της μαθήτριας με τη σειρά, στο χρώμα κάθε ομίλου: το τονισμένο είναι ο όμιλος που πήρε, τα διαγραμμένα όσα ήθελε περισσότερο αλλά δεν χώρεσε.</p><p class="now"><span class="rkbar">${segs}</span> <span class="muted">μέση θέση στη λίστα: ${avg}</span>`;
     }
     const who = `<b>${nm(e.am)}</b> (${pri(e.am, e.club)}) → ${chip(e.club)} <span class="muted">${ORD[e.rank - 1]} επιλογή</span>`;
-    const pinNote = listed(e.am, e.club) ? ` Είναι στη λίστα της καθηγήτριας, οπότε <span class="pinned">καρφώνεται</span> στη θέση της: καμία δεν μπορεί να τη σπρώξει έξω.` : "";
-    if (e.result === "seat") return `${who}: υπάρχει <span class="ok">κενή θέση</span> και την παίρνει${listed(e.am, e.club) ? "." : " προσωρινά."}${pinNote}`;
+    const others = Object.keys(sc.lists).filter((c) => c !== e.club && listed(e.am, c));
+    const pinNote = listed(e.am, e.club)
+      ? (e.result === "push"
+          ? ` Τώρα είναι <span class="pinned">καρφωμένη</span> στη θέση της: καμία δεν μπορεί να τη σπρώξει έξω.`
+          : ` Είναι στη λίστα της καθηγήτριας, οπότε <span class="pinned">καρφώνεται</span> στη θέση της: καμία δεν μπορεί να τη σπρώξει έξω.`) +
+        others.map((c) => ` Είναι και στη λίστα του ${GEN2[c]}, αλλά τον έχει πιο χαμηλά: εκεί δεν θα πάει ποτέ, οπότε το όνομά της <b>διαγράφεται</b> από τη λίστα του και η προτεραιότητά της εκεί δεν παίζει πια ρόλο.`).join("")
+      : "";
+    const waiting = (sc.lists[e.club] || []).filter((am) => !pinnedBy(am, e.idx));
+    const tempNote = !listed(e.am, e.club) && waiting.length
+      ? ` Η θέση είναι προσωρινή: αν έρθει ${waiting.map(nm).join(" ή ")} από τη λίστα και ο όμιλος είναι γεμάτος, θα προηγηθεί.`
+      : "";
+    if (e.result === "seat") return `${who}: υπάρχει <span class="ok">κενή θέση</span> και την παίρνει${listed(e.am, e.club) ? "." : " προσωρινά."}${pinNote}${tempNote}`;
     const w = e.result === "push" ? e.pushed : e.others[e.slot];
     const reason = listed(e.am, e.club) && !listed(w, e.club)
       ? `η ${nm(e.am)} είναι στη λίστα της καθηγήτριας, ενώ η ${nm(w)} όχι`
@@ -951,6 +1023,7 @@ function buildViz(box, key, opts = {}) {
       return;
     }
     if (e.kind === "end") {
+      for (const club in sc.lists) for (const am of sc.lists[club]) if ((tagState[`${club}:${am}`] || "faint") === "faint") setTag(e.col, club, am, "gone");
       const fin = Object.keys(cards).filter((k) => k.startsWith(`${e.col}:`)).map((k) => cards[k]);
       fin.forEach((g) => g.classList.add("final"));
       const ordered = STUDENTS.filter((s) => cards[`${e.col}:${s.am}`]);
@@ -982,6 +1055,7 @@ function buildViz(box, key, opts = {}) {
     if (my !== gen) return;
     if (e.result === "seat") {
       const q = setCardBox(g, to); g.classList.remove("moving"); cards[`${e.col}:${e.am}`] = g;
+      pinTags(e.col, e.am, e.club);
       if (anim) await dropPin(q, my);
       return;
     }
@@ -1016,6 +1090,7 @@ function buildViz(box, key, opts = {}) {
       trace(dd, "var(--r)", true);
       victim.classList.remove("hit"); victim.classList.add("ousted"); setCardBox(victim, outP, e.club);
       const q = setCardBox(g, to); g.classList.remove("moving");
+      pinTags(e.col, e.am, e.club);
       if (anim) await dropPin(q, my);
       return;
     }
@@ -1045,7 +1120,7 @@ function buildViz(box, key, opts = {}) {
     // events of the current round up to i
     let s = i - 1; while (s > 0 && events[s].kind !== "round") s--;
     const lines = [];
-    if (i === 0) lines.push(`<p>Στην πρώτη στήλη είναι όλες οι μαθήτριες, με τη σειρά του λαχνού τους. Κάθε φορά που ένας όμιλος είναι γεμάτος, η κάρτα που φτάνει συγκρίνεται με την πιο αδύναμη κάρτα του ομίλου: πρώτα μετράει η λίστα της καθηγήτριας <span class="dot"></span>, μετά ο μικρότερος λαχνός.</p>`);
+    if (i === 0) lines.push(`<p>Στην πρώτη στήλη είναι όλες οι μαθήτριες, με τη σειρά του λαχνού τους. Κάθε φορά που ένας όμιλος είναι γεμάτος, η κάρτα που φτάνει συγκρίνεται με την πιο αδύναμη κάρτα του ομίλου: πρώτα μετράει η λίστα της καθηγήτριας, μετά ο μικρότερος λαχνός.${Object.keys(sc.lists).length ? " Τα ονόματα της λίστας φαίνονται με μια μικρή πινέζα στην επικεφαλίδα του ομίλου· δεν είναι θέσεις, ο όμιλος έχει πάντα 2." : ""}</p>`);
     else for (let j = s; j < i; j++) lines.push(`<p class="${j === i - 1 ? "now" : "was"}">${describe(events[j])}</p>`);
     say.innerHTML = lines.join("");
     if (FIT) say.scrollTop = say.scrollHeight;
@@ -1069,6 +1144,8 @@ function buildViz(box, key, opts = {}) {
     const my = ++gen;
     for (const k in L) L[k].innerHTML = "";
     for (const k in cards) delete cards[k];
+    for (const k in tagState) delete tagState[k];
+    for (const k in tagEls) delete tagEls[k];
     drawColumn(0);
     STUDENTS.forEach((s) => { const g = makeCard(s.am, { col: 0, box: "START", slot: [...STUDENTS].sort((a, b) => a.lot - b.lot).findIndex((x) => x.am === s.am) }); g.dataset.am = s.am; });
     for (let j = 0; j < i; j++) await apply(events[j], false, my);
