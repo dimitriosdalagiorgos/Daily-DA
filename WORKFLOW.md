@@ -175,11 +175,11 @@ sudo omiloi-update             # ενημέρωση
 
 Το κινούμενο παράδειγμα («Οι όμιλοι των χρωμάτων») είναι δύο αυτόνομες σελίδες στο [`docs/`](docs/): η κύρια σελίδα και η προσομοίωση σε δική της σελίδα, που προσαρμόζεται στο παράθυρο. Τα ονόματα είναι φανταστικά. Για να τις δείξετε, π.χ. σε ενημέρωση γονέων:
 
-- **Από το GitHub, χωρίς τίποτα άλλο** (μετά το merge): ανοίξτε στο Chrome
-    - `https://raw.githack.com/dimitriosdalagiorgos/Daily-DA/main/docs/paradeigma-gale-shapley.html`
-    - `https://raw.githack.com/dimitriosdalagiorgos/Daily-DA/main/docs/prosomoiosi-gale-shapley.html` (με `#B` στο τέλος ανοίγει στο σενάριο Β)
+- **Από το GitHub Pages** (ενεργό από τις 12/10/2026, χωρίς credits): ανοίξτε στο Chrome
+    - `https://dimitriosdalagiorgos.github.io/Daily-DA/paradeigma-gale-shapley.html`
+    - `https://dimitriosdalagiorgos.github.io/Daily-DA/prosomoiosi-gale-shapley.html` (με `#B` στο τέλος ανοίγει στο σενάριο Β)
 
-    Το raw.githack.com είναι δωρεάν υπηρεσία τρίτων που δείχνει αρχεία του GitHub ως σελίδες.
+    Το GitHub Pages δημοσιεύει τον φάκελο `docs/` του `main` και ενημερώνεται μόνο του 1–2 λεπτά μετά από κάθε merge. Ρύθμιση: GitHub → **Settings** → **Pages** → Branch **main**, φάκελος **/docs**. Ό,τι μπαίνει στο `docs/` γίνεται δημόσιο, γι' αυτό εκεί **ποτέ** στοιχεία του σχολείου ή μαθητών.
 - **Από την πλατφόρμα:** «Βοήθεια» → «Οι όμιλοι των χρωμάτων». Στο Netlify εμφανίζεται μετά την επόμενη δημοσίευση· στο VM μετά από `sudo omiloi-update` (§7.1).
 - **Χωρίς internet:** κατεβάστε τα δύο αρχεία στον ίδιο φάκελο (GitHub → το αρχείο → κουμπί λήψης, «Download raw file») και ανοίξτε το `paradeigma-gale-shapley.html` με το Chrome. Λειτουργούν και offline, με τη γραμματοσειρά του συστήματος.
 
