@@ -99,7 +99,7 @@ Netlify → **Project configuration** → **Environment variables**. Εκεί ζ
 - Είναι **ξεχωριστή εγκατάσταση, με δικά της δεδομένα**. Δεν βλέπει το Supabase, και ό,τι γίνεται στη μία δεν φαίνεται στην άλλη.
 - Μέχρι να αποφασίσετε ότι η χρονιά θα τρέξει εκεί, **μη δίνετε τη διεύθυνσή της** σε γονείς ή εκπαιδευτικούς.
 - Οι κρυφές διευθύνσεις είναι οι ίδιες με του Netlify. Ο κωδικός διαχείρισης είναι αυτός που ορίστηκε στο VM.
-- Πώς στήθηκε: [`README.md`](README.md) §6.
+- Πώς στήθηκε: [`README.md`](README.md) §6. Τα δεδομένα είναι σε **δεύτερο δίσκο** (volume), στο `/srv/data/omiloi/store.json`, γιατί ο κύριος δίσκος του VM δεν μεγάλωνε· βλ. README §6.8, «Δεδομένα σε χωριστό δίσκο».
 
 Στο VM συνδέεστε με SSH, με το κλειδί σας. Όλες οι εντολές παρακάτω γράφονται εκεί.
 
@@ -135,11 +135,12 @@ sudo omiloi-update             # ενημέρωση
 |---|---|---|
 | Δεδομένα της πλατφόρμας | `/var/backups/omiloi-1.json` (Δευτέρα) … `omiloi-7.json` (Κυριακή) | κάθε νύχτα, αυτόματα |
 | Δεδομένα πριν από ενημέρωση | `/var/backups/omiloi-before-update.json` | σε κάθε `omiloi-update` |
-| Ολόκληρος ο δίσκος (μαζί με το Koha) | snapshot στο nefos.sch.gr | με το χέρι, πριν από μεγάλες αλλαγές |
+| Δίσκος δεδομένων (`/srv/data`: η πλατφόρμα) | snapshot στο nefos.sch.gr | με το χέρι, στα σημαντικά σημεία της χρονιάς |
+| Κύριος δίσκος (σύστημα και Koha) | snapshot στο nefos.sch.gr | με το χέρι, πριν από μεγάλες αλλαγές |
 
 **Αντίγραφο στον υπολογιστή σας**, στα σημαντικά σημεία της χρονιάς (μετά το κλείσιμο των δηλώσεων, μετά την κατανομή):
 
-1. Στο VM: `sudo install -m 600 -o "$USER" /var/lib/omiloi/store.json ~/omiloi-$(date +%F).json`
+1. Στο VM: `sudo install -m 600 -o "$USER" /srv/data/omiloi/store.json ~/omiloi-$(date +%F).json`
 2. Στον υπολογιστή σας, σε νέο παράθυρο PowerShell: `scp <χρήστης>@<διεύθυνση του VM>:omiloi-*.json $HOME\Documents\` (ή με το WinSCP).
 3. Στο VM: `rm -i ~/omiloi-*.json`
 
@@ -148,11 +149,11 @@ sudo omiloi-update             # ενημέρωση
 **Snapshot στο nefos.sch.gr** (το Koha και η πλατφόρμα κλείνουν για λίγα λεπτά):
 
 1. **Compute → Instances** → βελάκι στη γραμμή του VM → **Shut Off Instance**· περιμένετε **Shutoff**.
-2. **Volumes** → βελάκι δίπλα στο **Edit Volume** → **Create Snapshot** → όνομα με την ημερομηνία → **Create**.
+2. **Volumes** → στη γραμμή του δίσκου που θέλετε (ο κύριος ή ο δίσκος δεδομένων), βελάκι δίπλα στο **Edit Volume** → **Create Snapshot** → όνομα με την ημερομηνία → **Create**.
 3. **Volume Snapshots**: περιμένετε **Διαθέσιμο**. Σβήστε το παλαιότερο snapshot, γιατί πιάνει χώρο από το όριο του project.
 4. **Instances** → **Start Instance**.
 
-Στο nefos **μην πατάτε ποτέ** «Delete Volumes» ή «Change Volume Type» στον δίσκο του VM.
+Στο nefos **μην πατάτε ποτέ** «Delete Volumes», «Change Volume Type» ή «Manage Attachments → Detach» σε **κανέναν** από τους δύο δίσκους του VM. Ένα snapshot του δίσκου δεδομένων, αν το κάνετε ποτέ νέο volume, **δεν** προσαρτάται στο ίδιο VM: θα είχε το ίδιο όνομα δίσκου (`LABEL`) με τον τωρινό.
 
 ### 7.4. Ό,τι δεν ενημερώνεται μόνο του
 
@@ -166,8 +167,9 @@ sudo omiloi-update             # ενημέρωση
 | Η πλατφόρμα δεν ανοίγει | `systemctl is-active omiloi`. Αν δεν γράφει `active`: `sudo systemctl restart omiloi`. Αν δεν διορθωθεί, στείλτε στο Claude τις γραμμές του `sudo journalctl -u omiloi -n 20 --no-pager`. |
 | Το Koha δεν ανοίγει | `sudo systemctl restart koha-common` και, αν χρειαστεί, `sudo systemctl restart apache2`. |
 | Λάθος σε κάποια σελίδα της πλατφόρμας | `sudo tail -20 /var/log/apache2/omiloi-error.log` και `sudo journalctl -u omiloi -n 20 --no-pager` στο Claude. |
-| Δεν υπάρχει χώρος («No space left on device») | `df -h /`· στείλτε το αποτέλεσμα στο Claude πριν σβήσετε οτιδήποτε. |
-| Θέλετε να γυρίσετε τα δεδομένα σε προηγούμενη ημέρα | Βλ. [`README.md`](README.md) §6.6, «Επαναφορά». |
+| Η πλατφόρμα δεν ξεκινά μετά από επανεκκίνηση του VM | `findmnt /srv/data`. Αν δεν εμφανίζει τίποτα, ο δίσκος δεδομένων δεν συνδέθηκε (η πλατφόρμα σκόπιμα δεν ξεκινά χωρίς αυτόν): `sudo mount /srv/data` και `sudo systemctl start omiloi`. Αν δεν διορθωθεί, στείλτε στο Claude τα αποτελέσματα. |
+| Δεν υπάρχει χώρος («No space left on device») | `df -h / /srv/data`· στείλτε το αποτέλεσμα στο Claude πριν σβήσετε οτιδήποτε. |
+| Θέλετε να γυρίσετε τα δεδομένα σε προηγούμενη ημέρα | `sudo systemctl stop omiloi`, `sudo install -m 600 -o omiloi -g omiloi /var/backups/omiloi-3.json /srv/data/omiloi/store.json` (το αντίγραφο της ημέρας που θέλετε: 1 = Δευτέρα … 7 = Κυριακή), `sudo systemctl start omiloi`. |
 
 Στα αποτελέσματα που στέλνετε στο Claude, **σβήνετε** κωδικούς, κρυφές διευθύνσεις και στοιχεία μαθητών.
 
