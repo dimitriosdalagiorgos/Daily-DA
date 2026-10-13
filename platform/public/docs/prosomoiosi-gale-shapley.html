@@ -264,6 +264,9 @@ svg.viz .vtag.gone .thead { fill: var(--out); stroke: var(--out); }
 svg.viz .vtag.gone .tname { fill: var(--muted); }
 svg.viz .vtag.gone .tstrike { opacity: .8; }
 </style>
+<style>
+#combos td.why { white-space: normal; min-width: 260px; color: var(--muted); }
+</style>
 </head>
 <body>
 <style>
@@ -378,7 +381,7 @@ function runDA(teacherLists) {
 }
 const SCEN = {
   A: { lists: {} },
-  B: { lists: { B: ["108", "104"], Y: ["104", "105"] } },
+  B: { lists: { B: ["108", "104"], R: ["103"], Y: ["104", "105"] } },
 };
 for (const k in SCEN) SCEN[k].rounds = runDA(SCEN[k].lists);
 const NS = "http://www.w3.org/2000/svg";
@@ -707,7 +710,12 @@ function buildViz(box, key, opts = {}) {
       const tot = cnt.reduce((a, b) => a + b, 0);
       const avg = (cnt.reduce((a, n, i) => a + n * (i + 1), 0) / tot).toFixed(2).replace(".", ",");
       const segs = cnt.map((n, i) => n ? `<span class="rk r${i + 1}" style="flex:${n}">${ORD[i]} · ${n}</span>` : "").join("");
-      return `<b>Τέλος.</b> Δεν υπάρχει καμία νέα αίτηση, οπότε οι θέσεις της τελευταίας στήλης γίνονται <b>οριστικές</b>. Δίπλα σε κάθε κάρτα, τα τετραγωνάκια είναι οι 4 επιλογές της μαθήτριας με τη σειρά, στο χρώμα κάθε ομίλου: το τονισμένο είναι ο όμιλος που πήρε, τα διαγραμμένα όσα ήθελε περισσότερο αλλά δεν χώρεσε.</p><p class="now"><span class="rkbar">${segs}</span> <span class="muted">μέση θέση στη λίστα: ${avg}</span>`;
+      const unused = [];
+      for (const club in sc.lists) for (const am of sc.lists[club]) {
+        const at = finalPos[am] && finalPos[am].box;
+        if (at && at !== club && !pinnedBy(am, e.idx)) unused.push(`Η ${nm(am)} ήταν στη λίστα του ${GEN2[club]}, αλλά πήρε τον ${ACC2[at]}, την ${ORD[BY_AM[am].prefs.indexOf(at)]} επιλογή της, που τον βάζει ψηλότερα: η λίστα δεν της στέρησε τίποτα, και το όνομά της διαγράφεται τώρα.`);
+      }
+      return `<b>Τέλος.</b> Δεν υπάρχει καμία νέα αίτηση, οπότε οι θέσεις της τελευταίας στήλης γίνονται <b>οριστικές</b>.${unused.length ? " " + unused.join(" ") : ""} Δίπλα σε κάθε κάρτα, τα τετραγωνάκια είναι οι 4 επιλογές της μαθήτριας με τη σειρά, στο χρώμα κάθε ομίλου: το τονισμένο είναι ο όμιλος που πήρε, τα διαγραμμένα όσα ήθελε περισσότερο αλλά δεν χώρεσε.</p><p class="now"><span class="rkbar">${segs}</span> <span class="muted">μέση θέση στη λίστα: ${avg}</span>`;
     }
     const who = `<b>${nm(e.am)}</b> (${pri(e.am, e.club)}) → ${chip(e.club)} <span class="muted">${ORD[e.rank - 1]} επιλογή</span>`;
     const others = Object.keys(sc.lists).filter((c) => c !== e.club && listed(e.am, c));
@@ -719,7 +727,7 @@ function buildViz(box, key, opts = {}) {
       : "";
     const waiting = (sc.lists[e.club] || []).filter((am) => !pinnedBy(am, e.idx));
     const tempNote = !listed(e.am, e.club) && waiting.length
-      ? ` Η θέση είναι προσωρινή: αν έρθει ${waiting.map(nm).join(" ή ")} από τη λίστα και ο όμιλος είναι γεμάτος, θα προηγηθεί.`
+      ? ` Η θέση είναι προσωρινή: αν έρθει ${waiting.map((am) => "η " + nm(am)).join(" ή ")} από τη λίστα και ο όμιλος είναι γεμάτος, θα προηγηθεί.`
       : "";
     if (e.result === "seat") return `${who}: υπάρχει <span class="ok">κενή θέση</span> και την παίρνει${listed(e.am, e.club) ? "." : " προσωρινά."}${pinNote}${tempNote}`;
     const w = e.result === "push" ? e.pushed : e.others[e.slot];
