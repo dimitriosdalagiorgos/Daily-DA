@@ -16,6 +16,9 @@
 // Optional:
 //   SESSION_SECRET        if missing, a random one is created once and kept
 //                         in the database
+//   MOVED_TO              after moving to a server of one's own, its address
+//                         (https://…): every page redirects there (build) and
+//                         the API refuses with that address. Needs a deploy.
 
 import { randomBytes } from "node:crypto";
 import { createApp } from "../../src/server/app.js";
@@ -52,6 +55,10 @@ async function getHandler() {
 }
 
 export default async (request) => {
+  // The platform moved to a server of its own (MOVED_TO, see
+  // scripts/build.mjs): pages redirect there; this answers tabs left open.
+  const movedTo = process.env.MOVED_TO?.replace(/\/$/, "");
+  if (movedTo) return problem(410, `Η πλατφόρμα μεταφέρθηκε στη διεύθυνση ${movedTo} . Ανοίξτε την εκεί.`);
   try {
     const h = await getHandler();
     if (typeof h !== "function") return problem(503, h.missing);

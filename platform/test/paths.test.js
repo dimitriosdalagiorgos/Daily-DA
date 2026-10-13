@@ -35,3 +35,23 @@ test("build: the role pages only at their hidden addresses; stops without them",
     if (existsSync(dist)) rmSync(dist, { recursive: true, force: true });
   }
 });
+
+test("build: MOVED_TO redirects every address to the new server, and must be just an address", () => {
+  const root = new URL("..", import.meta.url).pathname;
+  const script = join(root, "scripts", "build.mjs");
+  const dist = join(root, "dist");
+  const env = { PATH: process.env.PATH, TEACHER_PATH: "e-build1234", ADMIN_PATH: "d-build1234" };
+  try {
+    const bad = spawnSync(process.execPath, [script], { env: { ...env, MOVED_TO: "https://omiloi.example.gr/x" }, encoding: "utf8" });
+    assert.notEqual(bad.status, 0);
+    assert.match(bad.stderr, /MOVED_TO/);
+    const ok = spawnSync(process.execPath, [script], { env: { ...env, MOVED_TO: "https://omiloi.example.gr/" }, encoding: "utf8" });
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(readFileSync(join(dist, "_redirects"), "utf8"), "/*  https://omiloi.example.gr/:splat  301!\n");
+    const plain = spawnSync(process.execPath, [script], { env, encoding: "utf8" });
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.ok(!existsSync(join(dist, "_redirects")));
+  } finally {
+    if (existsSync(dist)) rmSync(dist, { recursive: true, force: true });
+  }
+});
