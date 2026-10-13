@@ -4,7 +4,9 @@
 // The teachers' and admin's pages go only to their hidden addresses
 // (TEACHER_PATH, ADMIN_PATH — Netlify environment variables; see
 // src/server/paths.js); without them the build stops.
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+// MOVED_TO (optional): after moving to a server of one's own, every
+// address redirects there.
+import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ROLE_PAGES, rolePaths } from "../src/server/paths.js";
@@ -28,4 +30,16 @@ for (const [role, file] of Object.entries(ROLE_PAGES)) {
 }
 for (const part of ["algorithm", "import", "export"]) cpSync(join(root, "src", part), join(dist, "lib", part), { recursive: true });
 cpSync(join(root, "templates"), join(dist, "templates"), { recursive: true });
+// After moving to a server of one's own: every address redirects there, with
+// the same path (hidden addresses included; browsers keep the #token of
+// teachers' login links). The API answers from netlify/functions/api.mjs.
+if (process.env.MOVED_TO) {
+  const to = process.env.MOVED_TO.trim().replace(/\/$/, "");
+  if (!/^https:\/\/[^/\s]+$/.test(to)) {
+    console.error(`✗ MOVED_TO: μόνο η διεύθυνση, π.χ. https://omiloi.example.gr (δόθηκε «${to}»).`);
+    process.exit(1);
+  }
+  writeFileSync(join(dist, "_redirects"), `/*  ${to}/:splat  301!\n`);
+  console.log(`Redirecting everything to ${to}`);
+}
 console.log(`Built ${dist}`);

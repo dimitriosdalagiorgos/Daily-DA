@@ -102,5 +102,27 @@ export function createSupabaseStore({ url, key, fetch: fetchImpl = globalThis.fe
       const { rows } = await call("GET", `/log?kind=${eq(kind)}&select=data&order=id.desc&limit=${Number(limit)}`);
       return rows.map((r) => r.data).reverse();
     },
+    /**
+     * Everything, in the JSON file store's layout ({key: value} plus
+     * "log:<kind>": [items, oldest first]), for moving to a server of one's
+     * own (server/import-supabase.mjs). Paged by key / id, since PostgREST
+     * caps how many rows one request returns.
+     */
+    async exportAll({ pageSize = 500 } = {}) {
+      const out = {};
+      for (let after = null; ;) {
+        const { rows } = await call("GET", `/kv?select=key,value&order=key&limit=${pageSize}${after === null ? "" : `&key=gt.${encodeURIComponent(after)}`}`);
+        for (const r of rows) out[r.key] = r.value;
+        if (rows.length < pageSize) break;
+        after = rows.at(-1).key;
+      }
+      for (let after = 0; ;) {
+        const { rows } = await call("GET", `/log?select=id,kind,data&order=id&limit=${pageSize}&id=gt.${after}`);
+        for (const r of rows) (out[`log:${r.kind}`] ??= []).push(r.data);
+        if (rows.length < pageSize) break;
+        after = rows.at(-1).id;
+      }
+      return out;
+    },
   };
 }

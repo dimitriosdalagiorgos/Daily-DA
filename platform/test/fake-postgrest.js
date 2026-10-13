@@ -12,6 +12,7 @@ export function createFakePostgrest({ key = "sb_secret_test" } = {}) {
   const matches = (row, filters) => filters.every(([col, op, val]) => {
     const v = row[col];
     if (op === "eq") return String(v) === val;
+    if (op === "gt") return typeof v === "number" ? v > Number(val) : String(v) > val;
     if (op === "in") {
       const items = [...val.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"|([^,]+)/g)].map((m) => (m[1] !== undefined ? m[1].replace(/\\(.)/g, "$1") : m[2]));
       return items.includes(String(v));
