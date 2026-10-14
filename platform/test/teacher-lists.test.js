@@ -24,15 +24,15 @@ test("per-club file: only the club's grades, sorted; the code on top", () => {
 test("per-club file: marked rows are the list (any mark)", () => {
   const rows = teacherListRows(clubs[0], students);
   rows[6][0] = "x"; rows[8][0] = "✓";
-  assert.deepEqual(readTeacherListRows(rows, { clubs, students }), { lists: [{ code: 102, ams: ["9001", "9002"] }], problems: [], warnings: [] });
+  assert.deepEqual(readTeacherListRows(rows, { clubs, students }), { lists: [{ code: 102, ams: ["9001", "9002"], blocked: [], closed: false }], problems: [], warnings: [] });
 });
 
 test("per-club file: nothing marked → the rows left are the list; untouched → empty list with a warning", () => {
   const rows = teacherListRows(clubs[0], students);
   const kept = [...rows.slice(0, 6), rows[7]]; // teacher deleted the other rows
-  assert.deepEqual(readTeacherListRows(kept, { clubs, students }).lists, [{ code: 102, ams: ["9003"] }]);
+  assert.deepEqual(readTeacherListRows(kept, { clubs, students }).lists, [{ code: 102, ams: ["9003"], blocked: [], closed: false }]);
   const untouched = readTeacherListRows(rows, { clubs, students });
-  assert.deepEqual(untouched.lists, [{ code: 102, ams: [] }]);
+  assert.deepEqual(untouched.lists, [{ code: 102, ams: [], blocked: [], closed: false }]);
   assert.match(untouched.warnings[0], /Δεν σημειώθηκε/);
 });
 
@@ -57,4 +57,32 @@ test("several files: checks per club, duplicate clubs, replacing an existing lis
   const twice = importTeacherLists([{ fileName: "a.xlsx", rows: ok }, { fileName: "a2.xlsx", rows: ok }], { clubs, students });
   assert.match(twice[1].problems.at(-1), /υπάρχει και στο αρχείο «a\.xlsx»/);
   assert.ok(tooMany);
+});
+
+test("per-club file: «ΟΧΙ» excludes, «Κλειστή λίστα: ΝΑΙ» closes the list; the saved list comes back pre-marked", () => {
+  const rows = teacherListRows(clubs[0], students, ["9003"], { blocked: ["9002"] });
+  assert.deepEqual(rows[4], ["Κλειστή λίστα", "ΟΧΙ"]);
+  assert.deepEqual(rows.slice(6).map((r) => r[0]), ["", "Χ", "ΟΧΙ"]);
+  assert.deepEqual(readTeacherListRows(rows, { clubs, students }).lists, [{ code: 102, ams: ["9003"], blocked: ["9002"], closed: false }]);
+  rows[6][0] = "όχι";
+  assert.deepEqual(readTeacherListRows(rows, { clubs, students }).lists[0].blocked, ["9001", "9002"], "accents and case ignored");
+
+  const closed = teacherListRows(clubs[0], students, ["9003"], { closed: true, blocked: ["9002"] });
+  assert.deepEqual(closed[4], ["Κλειστή λίστα", "ΝΑΙ"]);
+  assert.deepEqual(closed.slice(6).map((r) => r[0]), ["", "Χ", ""], "closed: no ΟΧΙ needed");
+  assert.deepEqual(readTeacherListRows(closed, { clubs, students }).lists, [{ code: 102, ams: ["9003"], blocked: [], closed: true }]);
+});
+
+test("older per-club files (no «Κλειστή λίστα» row) leave the closed setting alone", () => {
+  const rows = teacherListRows(clubs[0], students);
+  rows[4] = [];
+  rows[7][0] = "Χ";
+  assert.deepEqual(readTeacherListRows(rows, { clubs, students }).lists, [{ code: 102, ams: ["9003"], blocked: [] }]);
+});
+
+test("one table for many clubs: «ΟΧΙ» rows are exclusions; a student both listed and excluded is a problem", () => {
+  const rows = [["Κωδικός ομίλου", "ΑΜ", "Επιλογή"], [102, 9001, "Χ"], [102, 9002, "ΟΧΙ"], [105, 9004, "ΟΧΙ"]];
+  assert.deepEqual(readTeacherListRows(rows, { clubs, students }).lists, [{ code: 102, ams: ["9001"], blocked: ["9002"] }, { code: 105, ams: [], blocked: ["9004"] }]);
+  const both = importTeacherLists([{ fileName: "a.xlsx", rows: [["Κωδικός ομίλου", "ΑΜ", "Επιλογή"], [102, 9001, "Χ"], [102, 9001, "ΟΧΙ"]] }], { clubs, students });
+  assert.match(both[0].problems.join(" "), /και στη λίστα και στους αποκλεισμένους/);
 });

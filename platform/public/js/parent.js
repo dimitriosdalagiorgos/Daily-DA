@@ -207,8 +207,14 @@ function mainView(me, { justSubmitted = false } = {}) {
         d.locked.length ? el("span.block", {}, `Οι όμιλοι με 🔒 είναι διπλοί/τριπλοί όμιλοι που βάλατε σε σειρά σε προηγούμενη ημέρα. Μπαίνουν αυτόματα στην ίδια θέση και δεν μετακινούνται από εδώ· αν αλλάξετε τη θέση τους εκείνη την ημέρα, αλλάζει και εδώ.`) : null));
     }
     if (d.clubs.length) {
-      const saved = submission?.preferences?.[d.day];
-      const order = saved ?? initialOrder(d.clubs.map((c) => c.code), `${student.am}:${d.day}`);
+      // A club a teacher stopped excluding after this submission: kept order, new ones last
+      const codes = d.clubs.map((c) => c.code);
+      const saved = submission?.preferences?.[d.day]?.filter((c) => codes.includes(c));
+      const added = saved ? codes.filter((c) => !saved.includes(c)) : [];
+      const order = saved ? [...saved, ...added] : initialOrder(codes, `${student.am}:${d.day}`);
+      if (added.length && canEdit) {
+        panel.append(message("warn", `Μετά τη δήλωσή σας προστέθηκε ${added.length === 1 ? "ο όμιλος" : "οι όμιλοι"} ${added.map((c) => `«${d.clubs.find((x) => x.code === c).name}»`).join(", ")} στο τέλος της σειράς ${DAY_GEN[d.day]}. Μετακινήστε ${added.length === 1 ? "τον" : "τους"} αν θέλετε και πατήστε «Αποθήκευση αλλαγών»· αλλιώς δεν θα ληφθ${added.length === 1 ? "εί" : "ούν"} υπόψη.`));
+      }
       const items = d.clubs.map((c) => {
         const notes = [];
         if (c.days.length > 1) {

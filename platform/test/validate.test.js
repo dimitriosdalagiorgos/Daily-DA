@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clubsToRank, validateClubs, validateSubmission, validateTeacherList } from "../src/algorithm/index.js";
+import { clubsToRank, excludedFor, exclusionsOf, validateClubs, validateSubmission, validateTeacherList } from "../src/algorithm/index.js";
 
 const clubs = [
   { code: 100, name: "Αντιγόνη", days: ["mon", "thu"], grades: ["Β", "Γ"], capacity: 20 },
@@ -51,4 +51,28 @@ test("teacher list: capacity, grade and unknown students", () => {
   assert.ok(problems.some((p) => /χωρητικότητα/.test(p)));
   assert.ok(problems.some((p) => /ΑΜ 2 είναι στην τάξη Α/.test(p)));
   assert.ok(problems.some((p) => /Άγνωστος ΑΜ 9/.test(p)));
+});
+
+test("exclusions: ⛔ students, or everyone not on a closed list (of the club's grades)", () => {
+  const students = [{ am: "1", grade: "Β" }, { am: "2", grade: "Β" }, { am: "3", grade: "Α" }, { am: "4", grade: "Γ" }];
+  const lists = {
+    100: { ams: ["1"], closed: true, blocked: ["2"] }, // Β, Γ: everyone but 1
+    101: { ams: [], blocked: ["3"] },
+    102: { ams: ["2"] },
+  };
+  assert.deepEqual(exclusionsOf(clubs, lists, students), { 100: ["2", "4"], 101: ["3"] });
+  const ex = exclusionsOf(clubs, lists, students);
+  assert.deepEqual(clubsToRank(clubs, "Β", "mon", excludedFor(ex, "2")), ["101"], "club 100 hidden from student 2");
+  assert.deepEqual(validateSubmission(clubs, { am: "2", grade: "Β" }, { mon: [101], tue: [103], thu: [102] }, ex), []);
+  assert.match(validateSubmission(clubs, { am: "2", grade: "Β" }, { mon: [101, 100], tue: [103], thu: [102] }, ex)[0], /δεν επιτρέπονται \(100\)/);
+});
+
+test("teacher list with ⛔: known students of the club's grades, not also on the list", () => {
+  const students = new Map([["1", { grade: "Β" }], ["2", { grade: "Α" }], ["3", { grade: "Β" }]]);
+  assert.deepEqual(validateTeacherList(clubs[0], ["1"], students, ["3"]), []);
+  const problems = validateTeacherList(clubs[0], ["1"], students, ["1", "2", "9", "3", "3"]);
+  assert.ok(problems.some((p) => /και στη λίστα και στους αποκλεισμένους/.test(p)));
+  assert.ok(problems.some((p) => /ΑΜ 2 είναι στην τάξη Α/.test(p)));
+  assert.ok(problems.some((p) => /Άγνωστος ΑΜ 9/.test(p)));
+  assert.ok(problems.some((p) => /αποκλεισμένος μαθητής εμφανίζεται δύο φορές/.test(p)));
 });

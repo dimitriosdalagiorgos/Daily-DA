@@ -10,6 +10,11 @@
 //
 // Order does not matter: a list holds at most as many students as seats,
 // so every listed student who applies fits.
+//
+// Exclusions: «ΟΧΙ» (or «-», «⛔») in «Επιλογή» excludes the student (⛔),
+// any other mark lists them (⭐). In layout 1 a «Κλειστή λίστα | ΝΑΙ» row
+// on top makes the list closed (everyone not marked is excluded); without
+// that row (older files) the closed setting stays as it was.
 
 import { validateTeacherList } from "../algorithm/validate.js";
 import { cellInteger, cellText, findHeader, headerKey } from "./table.js";
@@ -20,10 +25,15 @@ const FIELDS = {
   am: ["ΑΜ", "Α.Μ.", "Αριθμός Μητρώου", "Αρ. Μητρώου", "RegistryNr"],
 };
 const CODE_LABEL = headerKey("Κωδικός ομίλου");
+const CLOSED_LABEL = headerKey("Κλειστή λίστα");
+const BLOCK_MARKS = new Set(["ΟΧΙ", "OXI", "NO", "-", "–", "⛔", "Ο", "O", "0"].map(headerKey));
+const YES = new Set(["ΝΑΙ", "NAI", "YES", "Χ", "X", "✓", "1"].map(headerKey));
+/** «ΟΧΙ» and the like: the student is excluded. */
+export const isBlockMark = (value) => BLOCK_MARKS.has(headerKey(value));
 
 /**
  * @param {unknown[][]} rows the sheet
- * @returns {{lists: {code: number, ams: string[]}[], problems: string[], warnings: string[]}}
+ * @returns {{lists: {code: number, ams: string[], blocked?: string[], closed?: boolean}[], problems: string[], warnings: string[]}}
  */
 export function readTeacherListRows(rows, { clubs, students }) {
   const problems = [];
@@ -33,6 +43,8 @@ export function readTeacherListRows(rows, { clubs, students }) {
   const { headerRow, columns } = amHeader;
   const body = rows.slice(headerRow + 1).filter((r) => cellText(r?.[columns.am]) !== "");
   const isMarked = (r) => "pick" in columns && cellText(r[columns.pick]) !== "";
+  const isBlocked = (r) => isMarked(r) && isBlockMark(r[columns.pick]);
+  const amOf = (r) => String(cellInteger(r[columns.am]) ?? cellText(r[columns.am]));
 
   // Layout 2: a club code on every row
   if ("code" in columns) {
@@ -41,9 +53,10 @@ export function readTeacherListRows(rows, { clubs, students }) {
     for (const r of chosen) {
       const code = cellInteger(r[columns.code]);
       if (code === null) { problems.push(`Μη έγκυρος κωδικός ομίλου «${cellText(r[columns.code])}».`); continue; }
-      (byCode.get(code) ?? byCode.set(code, []).get(code)).push(String(cellInteger(r[columns.am]) ?? cellText(r[columns.am])));
+      const entry = byCode.get(code) ?? byCode.set(code, { ams: [], blocked: [] }).get(code);
+      (isBlocked(r) ? entry.blocked : entry.ams).push(amOf(r));
     }
-    return { lists: [...byCode].map(([code, ams]) => ({ code, ams })), problems, warnings };
+    return { lists: [...byCode].map(([code, { ams, blocked }]) => ({ code, ams, ...(blocked.length ? { blocked } : {}) })), problems, warnings };
   }
 
   // Layout 1: the code in a «Κωδικός ομίλου | 102» row above the table
@@ -51,9 +64,14 @@ export function readTeacherListRows(rows, { clubs, students }) {
   const code = codeRow ? cellInteger(codeRow[1]) : null;
   if (code === null) return { lists: [], problems: ["Δεν βρέθηκε ο κωδικός ομίλου στην κορυφή του αρχείου («Κωδικός ομίλου»)."], warnings };
   const club = clubs.find((c) => c.code === code);
+  const closedRow = rows.slice(0, headerRow).find((r) => headerKey(r?.[0]) === CLOSED_LABEL);
+  const closed = closedRow ? YES.has(headerKey(closedRow[1])) : undefined;
   let chosen;
+  let blocked = [];
   if (body.some(isMarked)) {
-    chosen = body.filter(isMarked);
+    chosen = body.filter((r) => isMarked(r) && !isBlocked(r));
+    blocked = body.filter(isBlocked);
+    if (closed && blocked.length) warnings.push("Κλειστή λίστα: τα «ΟΧΙ» δεν χρειάζονται, αποκλείονται όλοι όσοι δεν έχουν Χ.");
   } else {
     const eligible = students.filter((s) => club?.grades.includes(s.grade)).length;
     if (club && body.length >= eligible) {
@@ -63,7 +81,11 @@ export function readTeacherListRows(rows, { clubs, students }) {
       chosen = body; // the teacher deleted the rows they did not want
     }
   }
-  return { lists: [{ code, ams: chosen.map((r) => String(cellInteger(r[columns.am]) ?? cellText(r[columns.am]))) }], problems, warnings };
+  if (closed && !chosen.length) warnings.push("Κλειστή λίστα χωρίς μαθητές: ο όμιλος δεν θα δεχτεί κανέναν.");
+  return {
+    lists: [{ code, ams: chosen.map(amOf), blocked: closed ? [] : blocked.map(amOf), ...(closed !== undefined ? { closed } : {}) }],
+    problems, warnings,
+  };
 }
 
 /**
@@ -82,19 +104,19 @@ export function importTeacherLists(files, { clubs, students, lists = {} }) {
       results.push({ fileName, code: null, ams: [], problems: read.problems, warnings: read.warnings });
       continue;
     }
-    for (const { code, ams } of read.lists) {
+    for (const { code, ams, blocked, closed } of read.lists) {
       const club = clubs.find((c) => c.code === code);
       const problems = [...read.problems];
       const warnings = [...read.warnings];
       if (!club) problems.push(`Άγνωστος όμιλος ${code}.`);
-      else problems.push(...validateTeacherList(club, ams, studentsByAm));
+      else problems.push(...validateTeacherList(club, ams, studentsByAm, blocked ?? []));
       if (seen.has(code)) problems.push(`Ο όμιλος ${code} υπάρχει και στο αρχείο «${seen.get(code)}».`);
       seen.set(code, fileName);
       const existing = lists[code]?.ams ?? [];
       if (club && existing.length && problems.length === 0) {
         warnings.push(`Ο όμιλος έχει ήδη λίστα ${existing.length} μαθητών${lists[code].updatedBy && lists[code].updatedBy !== "admin" ? ` (από ${lists[code].updatedBy})` : ""}· θα αντικατασταθεί.`);
       }
-      results.push({ fileName, code, clubName: club?.name ?? "", capacity: club?.capacity ?? null, ams, problems, warnings });
+      results.push({ fileName, code, clubName: club?.name ?? "", capacity: club?.capacity ?? null, ams, ...(blocked ? { blocked } : {}), ...(closed !== undefined ? { closed } : {}), problems, warnings });
     }
   }
   return results;

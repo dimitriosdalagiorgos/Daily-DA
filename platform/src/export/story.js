@@ -11,6 +11,7 @@ export const GAP_REASONS = {
   all_rejected: "δεν χώρεσε",
   no_preferences: "χωρίς προτιμήσεις",
   not_offered: "δεν υπάρχει όμιλος για την τάξη του",
+  excluded: "αποκλεισμός από τους εκπαιδευτικούς",
 };
 
 /**
@@ -40,6 +41,7 @@ export function describeEvent(e, nameOf, daysOf = () => []) {
     }
     case "CLUB_DROPPED":
       if (e.reason === "day_conflict") return `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα: γίνεται και σε ημέρα όπου έχει ήδη όμιλο.`;
+      if (e.reason === "excluded") return `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα: ο εκπαιδευτικός του δεν δέχεται τον μαθητή.`;
       if (e.reason === "similar") return `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα: έχει ήδη παρεμφερή όμιλο σε προηγούμενη ημέρα.`;
       return `Ο όμιλος ${club} αφαιρέθηκε από τη λίστα αυτής της ημέρας: η κατανομή του έγινε την πρώτη του ημέρα.`;
     case "FINAL":
@@ -85,17 +87,24 @@ export function storiesByStudent(logByDay, nameOf, daysOf) {
 
 /**
  * Why each student has no club on a day: all_rejected / no_preferences /
- * not_offered (no club for their grade that day).
+ * not_offered (no club for their grade that day) / excluded (every club
+ * for their grade that day excludes them).
+ * @param {Record<string, string[]>} [exclusions] club code → excluded ΑΜ
  * @returns {Record<string, Record<string, string>>} am → day → reason
  */
-export function gapReasons(results, students, clubs) {
+export function gapReasons(results, students, clubs, exclusions = {}) {
   const offered = (day, grade) => clubs.some((c) => c.days.includes(day) && c.grades.includes(grade));
+  // Clubs the student could rank that day (multi-day ones on their first day)
+  const allExclude = (day, s) => {
+    const rankable = clubs.filter((c) => c.days[0] === day && c.grades.includes(s.grade));
+    return rankable.length > 0 && rankable.every((c) => (exclusions[String(c.code)] ?? []).includes(s.am));
+  };
   const reasons = {};
   for (const day of DAYS) {
     const unassigned = new Map((results.days[day]?.unassigned ?? []).map((u) => [u.am, u.reason]));
     for (const s of students) {
       if (results.byStudent[s.am]?.[day]) continue;
-      const reason = !offered(day, s.grade) ? "not_offered" : unassigned.get(s.am) ?? "no_preferences";
+      const reason = !offered(day, s.grade) ? "not_offered" : allExclude(day, s) ? "excluded" : unassigned.get(s.am) ?? "no_preferences";
       (reasons[s.am] ??= {})[day] = reason;
     }
   }

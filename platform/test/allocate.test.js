@@ -287,6 +287,37 @@ test("similar clubs: a double club counts once, and later similar clubs are drop
   assert.deepEqual(r.byStudent["1"], { mon: "301", tue: null, wed: "301", thu: null, fri: "303" });
 });
 
+test("exclusions: an excluded student skips the club, which may keep empty seats; mandatory grades do not override", () => {
+  const r = allocateWeek({
+    students: [{ am: "1", grade: "Α" }, { am: "2", grade: "Β" }, { am: "3", grade: "Β" }],
+    clubs: [club(10, ["mon"], 3), club(11, ["mon"], 1)],
+    preferences: { 1: { mon: [10, 11] }, 2: { mon: [10, 11] }, 3: { mon: [10, 11] } },
+    exclusions: { 10: ["2", "3"] }, // e.g. a closed list with only student 1
+    lottery: lotteryOf("3", "2", "1"),
+    mandatoryGrades: ["Β"],
+  });
+  assert.equal(seatOf(r, "mon", "1"), "10");
+  assert.equal(seatOf(r, "mon", "3"), "11");
+  assert.equal(seatOf(r, "mon", "2"), null, "club 10 keeps two empty seats; 2 is left out");
+  assert.deepEqual(r.days.mon.unassigned, [{ am: "2", reason: UNASSIGNED_REASONS.ALL_REJECTED }]);
+  assert.deepEqual(r.days.mon.log.find((e) => e.am === "2"), { day: "mon", round: 0, event: EVENTS.CLUB_DROPPED, am: "2", club: "10", reason: "excluded" });
+  // Ranks are renumbered: club 11 is the 1st choice left
+  assert.equal(r.days.mon.assignments.find((a) => a.am === "3").rank, 1);
+  assert.equal(r.days.mon.assignments.find((a) => a.am === "3").originalRank, 2);
+});
+
+test("exclusions: a multi-day club excluded on its first day stays out of the later days too", () => {
+  const r = allocateWeek({
+    students: [{ am: "1", grade: "Α" }],
+    clubs: [club(20, ["mon", "thu"], 5), club(21, ["thu"], 5)],
+    preferences: { 1: { mon: [20], thu: [20, 21] } },
+    exclusions: { 20: ["1"] },
+    lottery: lotteryOf("1"),
+  });
+  assert.deepEqual(r.byStudent["1"], { mon: null, tue: null, wed: null, thu: "21", fri: null });
+  assert.throws(() => allocateWeek({ students: [], clubs: [], preferences: {}, exclusions: { 99: [] }, lottery: new Map() }), /άγνωστο όμιλο 99/);
+});
+
 // ---------- Property test: stability on random instances ----------
 
 function priorityKey(input, am, code, rank) {
@@ -342,6 +373,14 @@ test("random instances: capacities respected, no multi-day clash, and every day'
   const rng = seededRandom("stability");
   for (let n = 0; n < 300; n++) {
     const input = randomInstance(rng);
+    // Teachers' exclusions on some clubs (never on their own list)
+    input.exclusions = {};
+    for (const c of input.clubs) {
+      if (rng() < 0.7) continue;
+      const pool = input.students.filter((s) => c.grades.includes(s.grade) && !(input.teacherLists[c.code] ?? []).includes(s.am));
+      input.exclusions[c.code] = pool.filter(() => rng() < 0.4).map((s) => s.am);
+    }
+    const isExcluded = (am, code) => (input.exclusions[code] ?? []).includes(am);
     const r = allocateWeek(input);
     const byCode = new Map(input.clubs.map((c) => [String(c.code), c]));
 
@@ -351,6 +390,9 @@ test("random instances: capacities respected, no multi-day clash, and every day'
       const count = new Map();
       for (const a of assignments) count.set(a.club, (count.get(a.club) ?? 0) + 1);
       for (const [code, k] of count) assert.ok(k <= byCode.get(code).capacity, `capacity ${code} on ${day}`);
+      // nobody sits in a club that excludes them; drops for exclusions are real
+      for (const a of assignments) assert.ok(!isExcluded(a.am, a.club), `${a.am} excluded from ${a.club}`);
+      for (const e of log.filter((x) => x.reason === "excluded")) assert.ok(isExcluded(e.am, e.club));
       // a carried seat means the same club was assigned on the club's first day
       for (const a of assignments.filter((x) => x.via === "carried")) {
         assert.equal(r.byStudent[a.am][byCode.get(a.club).days[0]], a.club);

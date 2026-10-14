@@ -18,6 +18,13 @@
 // student's lists on the following days (like a day clash) and the remaining
 // clubs are renumbered.
 //
+// Teachers' exclusions (⛔, or a closed list = everyone not on the list):
+// an excluded student is not acceptable to the club at all. The club
+// leaves the student's lists before the allocation (like a day clash), so
+// it may keep seats empty, and the student may end up without a club.
+// Excluding students only removes them from a club's acceptable set, so DA
+// stays stable and strategy-proof for students.
+//
 // Multi-day clubs (2 or 3 days) take part only in the allocation of their
 // first day. Students placed there keep the seat on the club's later days
 // and sit out those days' allocations. Everyone else simply loses the club
@@ -28,6 +35,7 @@
 //   clubs:        [{ code, name, days: ["mon", "thu"], grades: ["Α", "Β"], capacity, similar? }]
 //   preferences:  { [am]: { [day]: [clubCode, ...] } }   best first
 //   teacherLists: { [clubCode]: [am, ...] }              teacher's order
+//   exclusions:   { [clubCode]: [am, ...] }              students the club does not accept
 //   lottery:      Map<am, number>                        from drawLottery()
 //   mandatoryGrades: ["Α", ...]                          grades placed first
 
@@ -42,7 +50,7 @@ export const EVENTS = {
   REJECTED: "REJECTED", // new proposal turned away
   DISPLACED: "DISPLACED", // seat from an earlier round lost to higher priority
   CARRIED: "CARRIED", // seat on a later day of a multi-day club
-  CLUB_DROPPED: "CLUB_DROPPED", // multi-day club removed from a later-day list
+  CLUB_DROPPED: "CLUB_DROPPED", // club removed from a list (later day, clash, similar, excluded)
   NO_MORE_PROPOSALS: "NO_MORE_PROPOSALS",
 };
 
@@ -149,7 +157,7 @@ function deferredAcceptance(dayClubs, lists, priorityOf, log) {
  *   byStudent: Record<string, Record<string, string|null>>,
  * }}
  */
-export function allocateWeek({ students, clubs, preferences, teacherLists = {}, lottery, mandatoryGrades = [] }) {
+export function allocateWeek({ students, clubs, preferences, teacherLists = {}, exclusions = {}, lottery, mandatoryGrades = [] }) {
   const clubsByCode = indexClubs(clubs);
   const studentsByAm = new Map();
   for (const s of students) {
@@ -163,6 +171,12 @@ export function allocateWeek({ students, clubs, preferences, teacherLists = {}, 
   for (const [code, ams] of Object.entries(teacherLists)) {
     if (!clubsByCode.has(String(code))) throw new Error(`Λίστα εκπαιδευτικού για άγνωστο όμιλο ${code}.`);
     teacherPos.set(String(code), new Map(ams.map((am, i) => [String(am), i + 1])));
+  }
+
+  const excluded = new Map();
+  for (const [code, ams] of Object.entries(exclusions)) {
+    if (!clubsByCode.has(String(code))) throw new Error(`Αποκλεισμοί για άγνωστο όμιλο ${code}.`);
+    excluded.set(String(code), new Set(ams.map(String)));
   }
 
   // am → Map(day → code) for seats already fixed by multi-day clubs
@@ -209,6 +223,11 @@ export function allocateWeek({ students, clubs, preferences, teacherLists = {}, 
         if (club.days[0] !== day) {
           // Later day of a multi-day club: its allocation already happened.
           log({ round: 0, event: EVENTS.CLUB_DROPPED, am, club: code, reason: "later_day" });
+          continue;
+        }
+        if (excluded.get(code)?.has(am)) {
+          // The club's teacher does not accept the student.
+          log({ round: 0, event: EVENTS.CLUB_DROPPED, am, club: code, reason: "excluded" });
           continue;
         }
         if (club.days.some((d) => committed.get(am).has(d))) {

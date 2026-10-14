@@ -13,7 +13,7 @@ export const byGradeAndName = (a, b) =>
 /** Surname, name, father's name (a roster lists the club's members alphabetically). */
 const byName = (a, b) => el(a.surname, b.surname) || el(a.name, b.name) || el(a.father, b.father);
 
-const GAP_TEXT = { all_rejected: "— δεν χώρεσε", no_preferences: "— χωρίς προτιμήσεις" };
+const GAP_TEXT = { all_rejected: "— δεν χώρεσε", no_preferences: "— χωρίς προτιμήσεις", excluded: "— αποκλεισμός" };
 
 /** The «Τμήμα» column appears once the sections file has been uploaded (any student has one). */
 export const hasSections = (students) => students.some((s) => s.section);

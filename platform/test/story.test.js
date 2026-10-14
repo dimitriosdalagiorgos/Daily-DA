@@ -44,6 +44,14 @@ test("why a student has no club on a day", () => {
   assert.equal(gaps["1"].fri, "not_offered", "no club at all that day");
 });
 
+test("no club because every club of the day excludes the student", () => {
+  const exclusions = Object.fromEntries(clubs.filter((c) => c.days[0] === "mon").map((c) => [c.code, ["3"]]));
+  const r = allocateWeek({ students, clubs, preferences: { 1: { mon: ["10"] } }, exclusions, lottery });
+  assert.equal(gapReasons(r, students, clubs, exclusions)["3"].mon, "excluded");
+  assert.equal(gapReasons(r, students, clubs)["3"].mon, "no_preferences");
+  assert.match(describeEvent({ event: "CLUB_DROPPED", club: "10", reason: "excluded" }, () => "Σκάκι"), /δεν δέχεται/);
+});
+
 test("story: a seat kept over several rounds is told once, then made final", () => {
   // 10 has one seat, held by 1; 11 and 12 have none, so 2 (round 2) and 3 (round 3) end up applying to 10
   const cl = [10, 11, 12].map((code) => ({ code, name: `Όμιλος ${code}`, days: ["mon"], grades: ["Α"], capacity: code === 10 ? 1 : 0 }));

@@ -302,6 +302,23 @@ label.inline { display: inline-flex; gap: 6px; align-items: center; font-weight:
 label.check-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 6px 12px; font-weight: 400; margin: 0; cursor: pointer; }
 label.check-row:hover { background: var(--surface-2); }
 label.check-row input { width: 18px; height: 18px; }
+/* Teacher's list: one row per student, three states ⭐ / ○ / ⛔ */
+.tri-row { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 5px 12px; }
+.tri-row:hover { background: var(--surface-2); }
+.tri-row.wish { background: var(--primary-soft); }
+.tri-row.out .tri-name { color: var(--muted); text-decoration: line-through; }
+.tri { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.tri button { min-height: 32px; min-width: 38px; padding: 2px 8px; border: 0; border-radius: 0; background: transparent; font-size: 1rem; line-height: 1; }
+.tri button + button { border-left: 1px solid var(--border); }
+.tri button[aria-pressed="false"] { filter: grayscale(1); opacity: 0.55; }
+.tri button[aria-pressed="false"]:not(:disabled):hover { filter: none; opacity: 1; }
+.tri button[aria-pressed="true"].s-wish { background: var(--primary); color: var(--primary-ink); }
+.tri button[aria-pressed="true"].s-none { background: var(--surface-2); }
+.tri button[aria-pressed="true"].s-out { background: var(--err); color: #fff; }
+.mode { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 10px; }
+.mode label { font-weight: 400; }
+.list-summary { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 6px 0; }
+.badge.err { background: var(--err-soft); color: var(--err); }
 .chip { display: inline-flex; align-items: center; gap: 2px; background: var(--surface-2); border-radius: 999px; padding: 1px 4px 1px 10px; margin: 2px 2px; }
 button.link { border: 0; background: transparent; padding: 0 6px; min-height: 0; color: var(--muted); }
 
