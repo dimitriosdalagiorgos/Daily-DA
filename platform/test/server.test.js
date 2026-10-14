@@ -656,6 +656,8 @@ test("a new clubs file: its capacity wins over an earlier «Διόρθωση»; 
   state = (await call("GET", "/api/admin/state", { token: admin })).data;
   assert.equal(state.clubs.find((c) => c.code === 101).capacity, 3, "the correction stays");
   await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { ams: ["9003", "9001"] } });
+  // ⛔ for 9002 (Β) stays; none for Α students can stay once Α leaves the club
+  await call("PUT", "/api/admin/teacher-lists/102", { token: admin, body: { ams: [], blocked: ["9002"] } });
   // New file: 101 now 4 seats and grade Β only
   const changed = CLUB_ROWS.map((row) => (row[0] === 101 ? [101, "Ρομποτική", "Δευτέρα", "", "", "Β", 4, "", ""] : row));
   r = await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: changed, teachers: TEACHER_ROWS } });
@@ -664,6 +666,12 @@ test("a new clubs file: its capacity wins over an earlier «Διόρθωση»; 
   state = (await call("GET", "/api/admin/state", { token: admin })).data;
   assert.equal(state.clubs.find((c) => c.code === 101).capacity, 4, "the file's capacity");
   assert.deepEqual(state.teacherLists["101"].ams, ["9001"]);
+  assert.deepEqual(state.teacherLists["102"].blocked, ["9002"]);
+  // Algebra (Β) to Α only: its ⛔ for a Β student is dropped, not kept hidden
+  const toA = CLUB_ROWS.map((row) => (row[0] === 102 ? [102, "Άλγεβρα", "Πέμπτη", "", "", "Α", 5, "", ""] : row));
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: toA, teachers: TEACHER_ROWS } });
+  state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual(state.teacherLists["102"].blocked, []);
 });
 
 test("reset with hundreds of declarations: a few requests to Supabase, and «setup» first", async () => {

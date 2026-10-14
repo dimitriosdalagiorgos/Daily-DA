@@ -138,6 +138,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
         return;
       }
     }
+    if (state === NONE && closed) return;
     if (state === OUT) {
       const refused = rows.filter((s) => !canBeOut(s.am));
       if (refused.length) {
@@ -149,10 +150,12 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     show(out, null);
     update();
   };
+  // In a closed list there are no ○: everyone without ⭐ is ⛔
+  const bulkNone = el("button.small", { type: "button", onclick: () => bulk(NONE) }, "○ Ουδέτεροι");
   const bulkButtons = el("div.actions", { style: "margin:4px 0 8px" },
     el("span.small", {}, "Σε όσους εμφανίζονται:"),
     el("button.small", { type: "button", onclick: () => bulk(WISH) }, "⭐ Προτίμηση"),
-    el("button.small", { type: "button", onclick: () => bulk(NONE) }, "○ Ουδέτεροι"),
+    bulkNone,
     el("button.small", { type: "button", onclick: () => bulk(OUT) }, "⛔ Αποκλεισμός"));
   // The two shortcuts of the request: wish list → closed list, and the reverse
   const shortcuts = el("div.actions", { style: "margin:4px 0" });
@@ -235,6 +238,8 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     openRadio.checked = !closed;
     closedRadio.checked = closed;
     openRadio.disabled = closedRadio.disabled = !canEdit;
+    bulkNone.disabled = closed;
+    bulkNone.title = closed ? "Σε κλειστή λίστα δεν υπάρχουν ουδέτεροι· κάντε πρώτα τη λίστα ανοιχτή." : "";
     renderSummary();
     renderShortcuts();
     renderList();
