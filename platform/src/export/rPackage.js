@@ -5,6 +5,7 @@
 //   clubs.csv          code, name, days ("mon;thu"), grades ("Α;Β"), capacity, similar (group word or empty)
 //   preferences.csv    RegistryNr, day, rank, club_code
 //   teacher_lists.csv  club_code, position, RegistryNr
+//   exclusions.csv     club_code, RegistryNr (students the club does not accept)
 //   mandatory_grades.csv grade (grades placed first, after the teacher's list)
 //   lottery.csv        RegistryNr, lottery_number
 //   seed.txt           the published seed
@@ -21,7 +22,7 @@ export const toCsv = (header, rows) => [header, ...rows].map((r) => r.map(csvCel
 /**
  * @returns {Record<string, string>} file name → contents
  */
-export function buildRPackage({ students, clubs, preferences, teacherLists = {}, lottery, seed, mandatoryGrades = [] }) {
+export function buildRPackage({ students, clubs, preferences, teacherLists = {}, exclusions = {}, lottery, seed, mandatoryGrades = [] }) {
   const files = {};
   files["students.csv"] = toCsv(["RegistryNr", "Surname", "Name", "grade"],
     students.map((s) => [s.am, s.surname ?? "", s.name ?? "", s.grade]));
@@ -36,6 +37,8 @@ export function buildRPackage({ students, clubs, preferences, teacherLists = {},
   files["preferences.csv"] = toCsv(["RegistryNr", "day", "rank", "club_code"], prefRows);
   files["teacher_lists.csv"] = toCsv(["club_code", "position", "RegistryNr"],
     Object.entries(teacherLists).flatMap(([code, ams]) => ams.map((am, i) => [code, i + 1, am])));
+  files["exclusions.csv"] = toCsv(["club_code", "RegistryNr"],
+    Object.entries(exclusions).flatMap(([code, ams]) => ams.map((am) => [code, am])));
   files["mandatory_grades.csv"] = toCsv(["grade"], mandatoryGrades.map((g) => [g]));
   if (lottery) {
     files["lottery.csv"] = toCsv(["RegistryNr", "lottery_number"], [...lottery].map(([am, n]) => [am, n]));

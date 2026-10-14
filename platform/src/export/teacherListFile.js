@@ -1,7 +1,9 @@
 // The per-club file a teacher fills in (one sheet, «Λίστα»): the club on
 // top, then every student of the club's grades with an empty «Επιλογή»
 // column. The teacher marks the students they prefer (any mark, e.g. Χ),
-// up to the club's seats. Read back by src/import/teacherLists.js.
+// up to the club's seats, and «ΟΧΙ» for students the club does not accept;
+// «Κλειστή λίστα: ΝΑΙ» accepts only the marked students. Read back by
+// src/import/teacherLists.js.
 
 export const LIST_SHEET = "Λίστα";
 export const LIST_HEADER = ["Επιλογή", "ΑΜ", "Επώνυμο", "Όνομα", "Τάξη"];
@@ -9,11 +11,13 @@ export const LIST_HEADER = ["Επιλογή", "ΑΜ", "Επώνυμο", "Όνο�
 /**
  * @param {{code: number, name: string, grades: string[], capacity: number, days: string[]}} club
  * @param {{am: string, surname: string, name: string, grade: string}[]} students
- * @param {string[]} [chosen] ΑΜ already on the club's list (pre-marked)
+ * @param {string[]} [chosen] ΑΜ already on the club's list (pre-marked Χ)
+ * @param {{blocked?: string[], closed?: boolean}} [list] the rest of the saved list (pre-marked ΟΧΙ)
  * @returns {unknown[][]} rows for a worksheet
  */
-export function teacherListRows(club, students, chosen = []) {
+export function teacherListRows(club, students, chosen = [], { blocked = [], closed = false } = {}) {
   const marked = new Set(chosen.map(String));
+  const out = new Set(closed ? [] : blocked.map(String));
   const eligible = students
     .filter((s) => club.grades.includes(s.grade))
     .sort((a, b) => a.grade.localeCompare(b.grade, "el") || a.surname.localeCompare(b.surname, "el") || a.name.localeCompare(b.name, "el"));
@@ -21,10 +25,10 @@ export function teacherListRows(club, students, chosen = []) {
     ["Κωδικός ομίλου", club.code],
     ["Όμιλος", club.name],
     ["Θέσεις", club.capacity],
-    ["Οδηγίες", `Βάλτε Χ στη στήλη «Επιλογή» δίπλα στους μαθητές που προτιμάτε — έως ${club.capacity}. Μην αλλάζετε τον κωδικό ομίλου ούτε τους ΑΜ. Εναλλακτικά: σβήστε τις γραμμές των μαθητών που δεν θέλετε.`],
-    [],
+    ["Οδηγίες", `Βάλτε Χ στη στήλη «Επιλογή» δίπλα στους μαθητές που προτιμάτε — έως ${club.capacity} — και ΟΧΙ σε όσους ο όμιλος δεν δέχεται. Με «Κλειστή λίστα: ΝΑΙ» ο όμιλος δέχεται μόνο όσους έχουν Χ. Μην αλλάζετε τον κωδικό ομίλου ούτε τους ΑΜ.`],
+    ["Κλειστή λίστα", closed ? "ΝΑΙ" : "ΟΧΙ"],
     LIST_HEADER,
-    ...eligible.map((s) => [marked.has(s.am) ? "Χ" : "", Number(s.am) || s.am, s.surname, s.name, s.grade]),
+    ...eligible.map((s) => [marked.has(s.am) ? "Χ" : out.has(s.am) ? "ΟΧΙ" : "", Number(s.am) || s.am, s.surname, s.name, s.grade]),
   ];
 }
 

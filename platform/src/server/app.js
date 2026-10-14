@@ -14,7 +14,7 @@ import { DAYS, DAY_LABELS } from "../algorithm/days.js";
 import { GRADES } from "../algorithm/validate.js";
 import { drawLottery } from "../algorithm/lottery.js";
 import { allocateWeek } from "../algorithm/allocate.js";
-import { clubsToRank, validateSubmission, validateTeacherList } from "../algorithm/validate.js";
+import { clubsToRank, excludedFor, exclusionsOf, validateSubmission, validateTeacherList } from "../algorithm/validate.js";
 import { importStudents } from "../import/students.js";
 import { importSections } from "../import/sections.js";
 import { importClubs, normalizePersonalId, normalizeSimilar } from "../import/clubs.js";
@@ -88,6 +88,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const lists = await getTeacherLists();
     return clubs.map((c) => ({ ...c, capacity: lists[c.code]?.capacity ?? c.capacity }));
   };
+  /** Club code → students its teacher does not accept (⛔ or closed list). */
+  const getExclusions = async (clubs, students) => exclusionsOf(clubs ?? (await getClubs()), await getTeacherLists(), students ?? (await getStudents()));
   const getSubmissions = async () => Object.fromEntries((await store.list("submission:")).map(({ key, value }) => [key.slice(11), value]));
   /**
    * Clubs stay fixed once parents have declared, even if the admin goes back
@@ -228,7 +230,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       teacherLists: lists,
       submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}) }])),
       uploads: uploads ?? {},
-      readiness: students.length && clubs.length ? checkReadiness(students, clubs, settings) : [],
+      readiness: students.length && clubs.length ? checkReadiness(students, clubs, settings, exclusionsOf(clubs, lists, students)) : [],
       results: results ? { seed: results.seed, at: results.at } : null,
     });
   });
@@ -339,8 +341,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
         continue;
       }
       const ams = (value.ams ?? []).filter((am) => club.grades.includes(gradeOf.get(am)));
+      const blocked = (value.blocked ?? []).filter((am) => club.grades.includes(gradeOf.get(am)));
       const { capacity: _old, ...rest } = value;
-      await store.set(key, { ...rest, ams });
+      await store.set(key, { ...rest, ams, ...(value.blocked ? { blocked } : {}) });
       if (ams.length < (value.ams ?? []).length) {
         reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${value.ams.length - ams.length} μαθητές βγήκαν, γιατί δεν είναι πια στις τάξεις του ομίλου.` }];
       }
@@ -427,7 +430,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (missing.length) throw new HttpError(409, `Για αυτή τη φάση χρειάζονται: ${missing.join(", ")}.`);
     if (check && phase === "parents") {
       // Enough seats for the mandatory grades, or declarations do not open.
-      const errors = checkReadiness(students, clubs, settings).filter((p) => p.level === "error");
+      const errors = checkReadiness(students, clubs, settings, await getExclusions(clubs, students)).filter((p) => p.level === "error");
       if (errors.length) {
         throw new HttpError(409, "Οι δηλώσεις δεν μπορούν να ανοίξουν: δεν υπάρχουν αρκετές θέσεις για τις τάξεις με υποχρεωτική ένταξη. Αυξήστε χωρητικότητες ή προσθέστε ομίλους.", { problems: errors.map((p) => p.message) });
       }
@@ -452,10 +455,18 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!Array.isArray(files) || files.length === 0) throw new HttpError(422, "Επιλέξτε αρχεία.");
     const [clubs, students, lists] = await Promise.all([getClubs(), getStudents(), getTeacherLists()]);
     const report = importTeacherLists(files.map((f) => ({ fileName: fileNameOf(f.fileName), rows: f.rows })), { clubs, students, lists });
+    if (settings.phase === "parents") {
+      for (const r of report) {
+        const club = clubs.find((c) => c.code === r.code);
+        if (!club || r.problems.length) continue;
+        const added = addedExclusions(club, lists[club.code], { ...lists[club.code], ams: r.ams, blocked: r.blocked ?? lists[club.code]?.blocked, closed: r.closed ?? lists[club.code]?.closed }, students);
+        if (added.length) r.problems.push(`Αφού άνοιξαν οι δηλώσεις, οι αποκλεισμοί μπορούν μόνο να αφαιρεθούν: το αρχείο αποκλείει ${added.length} ακόμα μαθητές.`);
+      }
+    }
     const ok = report.every((r) => r.problems.length === 0);
     if (apply) {
       if (!ok) throw new HttpError(422, "Κάποια αρχεία έχουν σφάλματα· διορθώστε τα και ξαναδοκιμάστε.", { report });
-      for (const r of report) await writeTeacherList(r.code, r.ams, "admin-file");
+      for (const r of report) await writeTeacherList(r.code, r.ams, "admin-file", undefined, { blocked: r.blocked, closed: r.closed });
       await logEvent("admin", "teacher_lists_imported", { clubs: report.map((r) => r.code), files: files.length });
     }
     return json(200, { report, ok, saved: Boolean(apply) });
@@ -586,7 +597,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!results) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
     const [students, clubs] = await Promise.all([getStudents(), getClubs()]);
     const nameOf = new Map(clubs.map((c) => [String(c.code), c.name]));
-    const gaps = gapReasons(results, students, clubs);
+    const gaps = gapReasons(results, students, clubs, await getExclusions(clubs, students));
     const cell = (s, d) => {
       const code = results.byStudent[s.am]?.[d];
       if (code) return nameOf.get(code) ?? code;
@@ -655,11 +666,11 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
           code, c.name, DAY_LABELS[d], d === c.days[0] ? "κατανομή" : `από ${DAY_LABELS[c.days[0]]}`, c.capacity, enrolled.length,
           c.capacity ? Math.round((1000 * enrolled.length) / c.capacity) / 10 : "", rankedBy, count("PROPOSAL"), count("ACCEPTED"),
           count("REJECTED") + count("DISPLACED"), ranks.length ? (ranks.reduce((a, b) => a + b, 0) / ranks.length).toFixed(2) : "",
-          (input.teacherLists[code] ?? []).length,
+          (input.teacherLists[code] ?? []).length, (input.exclusions[code] ?? []).length,
         ]);
       }
     }
-    return csvResponse(["Κωδικός", "Όμιλος", "Ημέρα", "Τρόπος", "Χωρητικότητα", "Τοποθετήθηκαν", "Πληρότητα %", "Τον δήλωσαν", "Αιτήσεις", "Αποδοχές", "Απορρίψεις", "Μέση θέση προτίμησης", "Επιλογές εκπαιδευτικού"], rows, "synopsi_omilon.csv");
+    return csvResponse(["Κωδικός", "Όμιλος", "Ημέρα", "Τρόπος", "Χωρητικότητα", "Τοποθετήθηκαν", "Πληρότητα %", "Τον δήλωσαν", "Αιτήσεις", "Αποδοχές", "Απορρίψεις", "Μέση θέση προτίμησης", "Επιλογές εκπαιδευτικού", "Αποκλεισμοί εκπαιδευτικού"], rows, "synopsi_omilon.csv");
   });
 
   // One student's allocation, step by step (as the R <day>_report_<student>.txt).
@@ -669,7 +680,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!results) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
     const student = students.find((s) => s.am === am);
     if (!student) throw new HttpError(404, "Άγνωστος ΑΜ.");
-    return json(200, studentReport(student, results, story ?? {}, clubs));
+    return json(200, studentReport(student, results, story ?? {}, clubs, await getExclusions(clubs, students)));
   });
 
   route("GET", "/api/admin/events", async (req) => {
@@ -774,14 +785,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   route("GET", "/api/teacher/me", async (req) => {
     const teacher = await teacherSession(req);
     const { email } = teacher;
-    const [settings, teachers, clubs, students, lists] = await Promise.all([getSettings(), getTeachers(), getClubs(), getStudents(), getTeacherLists()]);
+    const [settings, teachers, clubs, students, lists, sections] = await Promise.all([getSettings(), getTeachers(), getClubs(), getStudents(), getTeacherLists(), store.get("sections")]);
     const mine = clubs.filter((c) => teacher.clubs.includes(c.code)).map((c) => ({
       ...c,
       list: lists[c.code]?.ams ?? [],
+      blocked: lists[c.code]?.blocked ?? [],
+      closed: Boolean(lists[c.code]?.closed),
       updatedBy: lists[c.code]?.updatedBy ?? null,
       updatedAt: lists[c.code]?.updatedAt ?? null,
       coTeachers: teachers.filter((t) => t.email !== email && t.clubs.includes(c.code)).map((t) => `${t.name} ${t.surname}`),
-      eligible: students.filter((s) => c.grades.includes(s.grade)).map(({ am, surname, name, grade }) => ({ am, surname, name, grade })),
+      eligible: students.filter((s) => c.grades.includes(s.grade)).map(({ am, surname, name, grade }) => ({ am, surname, name, grade, section: sectionOf(sections, am, grade) })),
     }));
     return json(200, {
       teacher: { name: teacher.name, surname: teacher.surname, email },
@@ -801,12 +814,20 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   // The capacity is set by the admin only (the clubs file, or «Όμιλοι» →
   // «Διόρθωση»); teachers and the bulk import change only the list.
   async function saveTeacherList(req, code, who) {
-    const { capacity, ams } = await body(req);
-    const entry = await writeTeacherList(code, (Array.isArray(ams) ? ams : []).map(String), who, who === "admin" ? capacity : undefined);
+    const { capacity, ams, blocked, closed } = await body(req);
+    const entry = await writeTeacherList(code, (Array.isArray(ams) ? ams : []).map(String), who, who === "admin" ? capacity : undefined, {
+      blocked: Array.isArray(blocked) ? blocked.map(String) : undefined,
+      closed: closed === undefined ? undefined : Boolean(closed),
+    });
     return json(200, { list: entry });
   }
 
-  async function writeTeacherList(code, list, who, capacity) {
+  /**
+   * Save a club's list: ⭐ `list` (up to the seats), and, if given, the ⛔
+   * `blocked` students and `closed` (only the listed students are accepted).
+   * Left out (the admin's «Διόρθωση», older clients) they stay as they were.
+   */
+  async function writeTeacherList(code, list, who, capacity, { blocked, closed } = {}) {
     const settings = await getSettings();
     if (!listsOpen(settings)) throw new HttpError(409, LISTS_LOCKED);
     const club = (await getClubs()).find((c) => String(c.code) === String(code)); // current capacity applied
@@ -822,18 +843,48 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const override = capacity !== undefined ? capacity : previous?.capacity;
     if (capacity === undefined) capacity = club.capacity;
     if (!Number.isInteger(capacity) || capacity <= 0 || capacity > 500) throw new HttpError(422, "Η χωρητικότητα πρέπει να είναι θετικός ακέραιος.");
-    const studentsByAm = new Map((await getStudents()).map((s) => [s.am, s]));
-    const problems = validateTeacherList({ ...club, capacity }, list, studentsByAm);
+    const isClosed = closed ?? Boolean(previous?.closed);
+    // A closed list excludes everyone else: separate ⛔ would say nothing more.
+    // An old ⛔ that is now on the list leaves the ⛔ (e.g. the admin's «Διόρθωση»).
+    const out = isClosed ? [] : (blocked ?? previous?.blocked ?? []).filter((am) => blocked !== undefined || !list.includes(am));
+    const students = await getStudents();
+    const studentsByAm = new Map(students.map((s) => [s.am, s]));
+    const problems = validateTeacherList({ ...club, capacity }, list, studentsByAm, out);
     if (problems.length) throw new HttpError(422, problems.join(" "), { problems });
-    const entry = { ...(override !== undefined ? { capacity } : {}), ams: list, updatedBy: who, updatedAt: new Date(now()).toISOString() };
+    const entry = {
+      ...(override !== undefined ? { capacity } : {}), ams: list,
+      ...(out.length ? { blocked: out } : {}), ...(isClosed ? { closed: true } : {}),
+      updatedBy: who, updatedAt: new Date(now()).toISOString(),
+    };
+    // While parents declare, exclusions may be lifted but not added: the
+    // parents' forms leave out the clubs that exclude their child.
+    const before = new Set(exclusionsOf([club], { [club.code]: previous ?? {} }, students)[club.code] ?? []);
+    const after = exclusionsOf([club], { [club.code]: entry }, students)[club.code] ?? [];
+    if (settings.phase === "parents") {
+      const added = addedExclusions(club, previous, entry, students);
+      if (added.length) {
+        throw new HttpError(409, `Αφού άνοιξαν οι δηλώσεις, οι αποκλεισμοί μπορούν μόνο να αφαιρεθούν: ${added.length} ${added.length === 1 ? "μαθητής θα αποκλειόταν" : "μαθητές θα αποκλείονταν"} τώρα.`);
+      }
+    }
+    const lifted = [...before].filter((am) => !after.includes(am));
     await store.set(`teacherList:${club.code}`, entry);
-    await logEvent(who, "teacher_list", { club: club.code, capacity, count: list.length });
+    await logEvent(who, "teacher_list", { club: club.code, capacity, count: list.length, excluded: after.length, ...(isClosed ? { closed: true } : {}) });
     // Tell the club's teachers (except the one who saved).
     for (const t of (await getTeachers()).filter((t) => t.clubs.includes(club.code) && t.email !== who)) {
       await mail(t.email, `Αλλαγή στον όμιλο «${club.name}»`,
-        `Η λίστα μαθητών του ομίλου «${club.name}» άλλαξε από ${who === "admin" || who === "admin-file" ? "τον διαχειριστή" : who}.\nΘέσεις: ${capacity}, μαθητές στη λίστα: ${list.length}.`);
+        `Η λίστα μαθητών του ομίλου «${club.name}» άλλαξε από ${who === "admin" || who === "admin-file" ? "τον διαχειριστή" : who}.\nΘέσεις: ${capacity}, μαθητές στη λίστα: ${list.length}${isClosed ? " (κλειστή λίστα)" : after.length ? `, αποκλεισμένοι: ${after.length}` : ""}.`);
     }
-    return entry;
+    // Lifted while parents declare: who already declared has not ranked the club
+    const declared = settings.phase === "parents" && lifted.length
+      ? (await Promise.all(lifted.map((am) => store.get(`submission:${am}`)))).filter(Boolean).length
+      : 0;
+    return { ...entry, liftedAfterSubmission: declared };
+  }
+
+  /** Students a new version of a club's list excludes that the old one did not. */
+  function addedExclusions(club, previous, next, students) {
+    const before = new Set(exclusionsOf([club], { [club.code]: previous ?? {} }, students)[club.code] ?? []);
+    return (exclusionsOf([club], { [club.code]: next }, students)[club.code] ?? []).filter((am) => !before.has(am));
   }
 
   // --- parent ---
@@ -863,20 +914,22 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("GET", "/api/parent/me", async (req) => {
     const { am } = session(req, "parent");
-    const [settings, students, clubs, submission, results] = await Promise.all([
-      getSettings(), getStudents(), getClubs(), store.get(`submission:${am}`), store.get("results"),
+    const [settings, students, clubs, submission, results, lists] = await Promise.all([
+      getSettings(), getStudents(), getClubs(), store.get(`submission:${am}`), store.get("results"), getTeacherLists(),
     ]);
     const story = settings.phase === "published" && results ? await store.get(`story:${am}`) : null;
     const student = students.find((s) => s.am === am);
     if (!student) throw new HttpError(401, "Ο μαθητής δεν υπάρχει πια στον κατάλογο.");
     const byCode = new Map(clubs.map((c) => [String(c.code), c]));
     const publicClub = (c) => ({ code: String(c.code), name: c.name, description: c.description ?? "", days: c.days, ...(c.similar ? { similar: c.similar } : {}) });
+    // Clubs whose teacher excludes the student are not shown at all
+    const isExcluded = excludedFor(exclusionsOf(clubs, lists, [student]), am);
     const days = DAYS.map((day) => ({
       day,
       label: DAY_LABELS[day],
-      clubs: clubsToRank(clubs, student.grade, day).map((code) => publicClub(byCode.get(code))),
+      clubs: clubsToRank(clubs, student.grade, day, isExcluded).map((code) => publicClub(byCode.get(code))),
       // Multi-day clubs ranked on an earlier day: shown locked.
-      locked: clubs.filter((c) => c.days.indexOf(day) > 0 && c.grades.includes(student.grade))
+      locked: clubs.filter((c) => c.days.indexOf(day) > 0 && c.grades.includes(student.grade) && !isExcluded(String(c.code)))
         .map((c) => ({ ...publicClub(c), firstDay: c.days[0], firstDayLabel: DAY_LABELS[c.days[0]] })),
     })).filter((d) => d.clubs.length || d.locked.length);
     const published = settings.phase === "published" && results;
@@ -900,7 +953,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       result: published
         ? Object.fromEntries(DAYS.map((d) => [d, results.byStudent[am]?.[d] ? publicClub(byCode.get(results.byStudent[am][d])) : null]))
         : null,
-      report: published ? studentReport(student, results, story ?? {}, clubs) : null,
+      report: published ? studentReport(student, results, story ?? {}, clubs, exclusionsOf(clubs, lists, [student])) : null,
     });
   });
 
@@ -918,7 +971,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const student = students.find((s) => s.am === am);
     if (!student) throw new HttpError(401, "Ο μαθητής δεν υπάρχει πια στον κατάλογο.");
     const clean = Object.fromEntries(DAYS.map((d) => [d, (preferences?.[d] ?? []).map(String)]).filter(([, l]) => l.length));
-    const problems = validateSubmission(clubs, student, clean);
+    const problems = validateSubmission(clubs, student, clean, await getExclusions(clubs, [student]));
     if (problems.length) throw new HttpError(422, problems.join(" "), { problems });
 
     const at = new Date(now()).toISOString();
@@ -1014,6 +1067,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   async function allocationInput(seed) {
     const [students, clubs, lists, submissions, settings] = await Promise.all([getStudents(), getClubs(), getTeacherLists(), getSubmissions(), getSettings()]);
     return {
+      exclusions: exclusionsOf(clubs, lists, students),
       mandatoryGrades: settings.mandatoryGrades,
       students: students.map(({ am, grade, surname, name }) => ({ am, grade, surname, name })),
       clubs,
@@ -1024,8 +1078,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
   }
 
   /** Per day: club or reason, and the steps that led there. */
-  function studentReport(student, results, story, clubs) {
-    const gaps = gapReasons(results, [student], clubs)[student.am] ?? {};
+  function studentReport(student, results, story, clubs, exclusions = {}) {
+    const gaps = gapReasons(results, [student], clubs, exclusions)[student.am] ?? {};
     const lottery = new Map(results.lottery).get(student.am) ?? null;
     const nameOf = new Map(clubs.map((c) => [String(c.code), c.name]));
     return {
@@ -1052,8 +1106,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       for (const a of results.days[d].assignments) counts[a.club] = (counts[a.club] ?? 0) + 1;
       byDayClub[d] = counts;
     }
-    const gaps = gapReasons(results, input.students, input.clubs);
-    const gapCounts = Object.fromEntries(DAYS.map((d) => [d, { all_rejected: 0, no_preferences: 0, not_offered: 0 }]));
+    const gaps = gapReasons(results, input.students, input.clubs, input.exclusions);
+    const gapCounts = Object.fromEntries(DAYS.map((d) => [d, { all_rejected: 0, no_preferences: 0, excluded: 0, not_offered: 0 }]));
     for (const byDay of Object.values(gaps)) for (const [d, reason] of Object.entries(byDay)) gapCounts[d][reason]++;
     return {
       seed: results.seed,
