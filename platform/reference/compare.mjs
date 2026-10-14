@@ -78,7 +78,8 @@ function compare(scenario, rRows) {
   const all = DAYS.flatMap((d) => result.days[d].log);
   const carried = all.filter((e) => e.event === "CARRIED").length;
   const conflicts = all.filter((e) => e.event === "CLUB_DROPPED" && e.reason === "day_conflict").length;
-  return { diffs, seats, carried, conflicts };
+  const excluded = all.filter((e) => e.event === "CLUB_DROPPED" && e.reason === "excluded").length;
+  return { diffs, seats, carried, conflicts, excluded };
 }
 
 // ---------- Scenarios ----------
@@ -151,13 +152,21 @@ function randomScenario(rng, name) {
       teacherLists[c.code] = shuffle(pool).slice(0, Math.min(c.capacity, 1 + Math.floor(rng() * 3)));
     }
   }
+  // Teachers' exclusions: a few students blocked, or a closed list
+  const exclusions = {};
+  for (const c of clubs) {
+    const r = rng();
+    if (r > 0.35) continue;
+    const pool = students.filter((s) => c.grades.includes(s.grade) && !(teacherLists[c.code] ?? []).includes(s.am)).map((s) => s.am);
+    exclusions[c.code] = r < 0.1 ? pool : shuffle(pool).slice(0, Math.floor(rng() * pool.length * 0.4));
+  }
   const seed = `${name} Κλήρωση ${rng()}`;
   const lottery = drawLottery(students.map((s) => s.am), seed);
   // Grades with mandatory placement go first (after the teacher's list).
   const mandatoryGrades = grades.filter(() => rng() < 0.4);
   // Groups of similar clubs (at most one per student in the week)
   for (const c of clubs) if (rng() < 0.4) c.similar = pick(["ΑΓΓΛΙΚΑ", "ΑΘΛΗΤΙΣΜΟΣ", "ΤΕΧΝΕΣ"]);
-  return { name, students, clubs, preferences, teacherLists, lottery, seed, mandatoryGrades };
+  return { name, students, clubs, preferences, teacherLists, exclusions, lottery, seed, mandatoryGrades };
 }
 
 // ---------- Main ----------
@@ -171,9 +180,9 @@ const scenarios = [sampleScenario(), ...Array.from({ length: nRandom }, (_, i) =
 let failed = 0;
 for (const scenario of scenarios) {
   const dir = mkdtempSync(join(tmpdir(), `compare-${scenario.name}-`));
-  const { diffs, seats, carried, conflicts } = compare(scenario, runR(dir, scenario));
+  const { diffs, seats, carried, conflicts, excluded } = compare(scenario, runR(dir, scenario));
   const multi = scenario.clubs.filter((c) => c.days.length > 1).length;
-  const summary = `${scenario.name}: ${scenario.students.length} μαθητές, ${scenario.clubs.length} όμιλοι (${multi} πολυήμεροι), ${seats} θέσεις, ${carried} μεταφορές, ${conflicts} συγκρούσεις ημερών, υποχρεωτικές τάξεις: ${scenario.mandatoryGrades?.join("+") || "καμία"}, παρεμφερείς: ${scenario.clubs.filter((c) => c.similar).length}`;
+  const summary = `${scenario.name}: ${scenario.students.length} μαθητές, ${scenario.clubs.length} όμιλοι (${multi} πολυήμεροι), ${seats} θέσεις, ${carried} μεταφορές, ${conflicts} συγκρούσεις ημερών, υποχρεωτικές τάξεις: ${scenario.mandatoryGrades?.join("+") || "καμία"}, παρεμφερείς: ${scenario.clubs.filter((c) => c.similar).length}, αποκλεισμοί: ${excluded}`;
   if (diffs.length === 0) {
     console.log(`✓ ${summary} — ίδια αποτελέσματα`);
   } else {

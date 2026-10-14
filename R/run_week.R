@@ -15,7 +15,10 @@
 #   - a multi-day club that would clash with a day the student already
 #     holds is removed too (ranks renumbered);
 #   - similar clubs (same «similar» word): once the student has one, the
-#     others leave the lists of the following days (ranks renumbered).
+#     others leave the lists of the following days (ranks renumbered);
+#   - teachers' exclusions (exclusions.csv): a club leaves the lists of the
+#     students it does not accept (ranks renumbered), so it may keep empty
+#     seats and the student may get no club that day.
 # Students are matched by RegistryNr (ΑΜ) throughout.
 #
 # Input folder (exported by the platform):
@@ -23,6 +26,8 @@
 #   clubs.csv          code, name, days ("mon;thu"), grades ("Α;Β"), capacity, similar (optional)
 #   preferences.csv    RegistryNr, day, rank, club_code
 #   teacher_lists.csv  club_code, position, RegistryNr
+#   exclusions.csv     club_code, RegistryNr — students the club does not
+#                      accept (optional; absent = none)
 #   mandatory_grades.csv grade — grades with mandatory placement; their
 #                      students go before the others (after the teacher's list)
 #   seed.txt           published seed        } at least one of the two;
@@ -80,6 +85,8 @@ clubs <- clubs %>% mutate(similar = coalesce(trimws(similar), ""))
 prefs <- read_input("preferences.csv") %>% mutate(rank = as.integer(rank))
 teacher_lists <- read_input("teacher_lists.csv", required = FALSE)
 if (is.null(teacher_lists)) teacher_lists <- tibble(club_code = character(0), position = character(0), RegistryNr = character(0))
+exclusions <- read_input("exclusions.csv", required = FALSE)
+excluded_keys <- if (is.null(exclusions)) character(0) else paste(exclusions$club_code, exclusions$RegistryNr, sep = "|")
 
 mandatory <- read_input("mandatory_grades.csv", required = FALSE)
 mandatory_grades <- if (is.null(mandatory)) character(0) else trimws(mandatory$grade)
@@ -153,9 +160,11 @@ for (day in DAY_KEYS) {
   held <- committed %>% select(RegistryNr, held_day = day)
   day_prefs <- prefs %>%
     filter(day == !!day, !RegistryNr %in% carried$RegistryNr, club_code %in% today_codes) %>%
-    rowwise() %>%
-    filter(!any(club_days[[club_code]] %in% held$held_day[held$RegistryNr == RegistryNr])) %>%
-    ungroup() %>%
+    filter(!paste(club_code, RegistryNr, sep = "|") %in% excluded_keys) %>%
+    # (vapply, not rowwise(): rowwise fails on an empty table, e.g. when
+    # exclusions leave nothing for the day)
+    filter(!vapply(seq_along(club_code), function(i)
+      any(club_days[[club_code[i]]] %in% held$held_day[held$RegistryNr == RegistryNr[i]]), logical(1))) %>%
     filter(similar_of[club_code] == "" | !paste(RegistryNr, similar_of[club_code], sep = "|") %in% taken) %>%
     group_by(RegistryNr) %>%
     arrange(rank, .by_group = TRUE) %>%

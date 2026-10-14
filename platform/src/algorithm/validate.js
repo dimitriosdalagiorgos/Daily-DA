@@ -43,11 +43,39 @@ export function validateClubs(clubs) {
 
 /**
  * Clubs a student ranks on a given day: clubs whose allocation happens that
- * day (multi-day clubs only on their first day) and which admit the grade.
+ * day (multi-day clubs only on their first day), which admit the grade and
+ * whose teacher has not excluded the student.
+ * @param {(code: string) => boolean} [isExcluded]
  */
-export function clubsToRank(clubs, grade, day) {
-  return clubs.filter((c) => c.days[0] === day && c.grades.includes(grade)).map((c) => String(c.code));
+export function clubsToRank(clubs, grade, day, isExcluded = () => false) {
+  return clubs.filter((c) => c.days[0] === day && c.grades.includes(grade) && !isExcluded(String(c.code))).map((c) => String(c.code));
 }
+
+/**
+ * Students each club does not accept, from the teachers' lists: with a
+ * closed list everyone of the club's grades not on the list, otherwise the
+ * list's `blocked` students (⛔).
+ * @param {{code: unknown, grades: string[]}[]} clubs
+ * @param {Record<string, {ams?: string[], blocked?: string[], closed?: boolean}>} lists
+ * @param {{am: string, grade: string}[]} students
+ * @returns {Record<string, string[]>} club code → ΑΜ (only clubs with exclusions)
+ */
+export function exclusionsOf(clubs, lists, students) {
+  const out = {};
+  for (const club of clubs) {
+    const list = lists[String(club.code)];
+    if (!list) continue;
+    const eligible = students.filter((s) => club.grades.includes(s.grade)).map((s) => String(s.am));
+    const wished = new Set((list.ams ?? []).map(String));
+    const blocked = new Set((list.blocked ?? []).map(String));
+    const ams = eligible.filter((am) => (list.closed ? !wished.has(am) : blocked.has(am)));
+    if (ams.length) out[String(club.code)] = ams;
+  }
+  return out;
+}
+
+/** exclusionsOf() for one student: club code → excluded? */
+export const excludedFor = (exclusions, am) => (code) => (exclusions[String(code)] ?? []).includes(String(am));
 
 /**
  * A parent's submission must rank, for every day, exactly the clubs from
@@ -55,10 +83,10 @@ export function clubsToRank(clubs, grade, day) {
  * only; on their later days the form shows them locked, since that
  * allocation has already happened (see SPEC).
  */
-export function validateSubmission(clubs, student, preferences) {
+export function validateSubmission(clubs, student, preferences, exclusions = {}) {
   const problems = [];
   for (const day of DAYS) {
-    const expected = clubsToRank(clubs, student.grade, day);
+    const expected = clubsToRank(clubs, student.grade, day, excludedFor(exclusions, student.am));
     const given = (preferences?.[day] ?? []).map(String);
     const label = DAY_LABELS[day];
     if (new Set(given).size !== given.length) problems.push(`${label}: κάποιος όμιλος εμφανίζεται δύο φορές.`);
@@ -70,10 +98,22 @@ export function validateSubmission(clubs, student, preferences) {
   return problems;
 }
 
-/** A teacher's list: known students of the club's grades, no repeats, up to capacity. */
-export function validateTeacherList(club, ams, studentsByAm) {
+/**
+ * A teacher's list: known students of the club's grades, no repeats, up to
+ * capacity; the excluded (⛔) students likewise, none of them also on the list.
+ */
+export function validateTeacherList(club, ams, studentsByAm, blocked = []) {
   const problems = [];
   const list = ams.map(String);
+  const out = blocked.map(String);
+  if (new Set(out).size !== out.length) problems.push("Κάποιος αποκλεισμένος μαθητής εμφανίζεται δύο φορές.");
+  const both = out.filter((am) => list.includes(am));
+  if (both.length) problems.push(`Οι ΑΜ ${both.join(", ")} είναι και στη λίστα και στους αποκλεισμένους.`);
+  for (const am of out) {
+    const student = studentsByAm.get(am);
+    if (!student) problems.push(`Άγνωστος ΑΜ ${am}.`);
+    else if (!club.grades.includes(student.grade)) problems.push(`Ο ΑΜ ${am} είναι στην τάξη ${student.grade}, που δεν αφορά τον όμιλο.`);
+  }
   if (list.length > club.capacity) {
     problems.push(`Η λίστα έχει ${list.length} μαθητές· η χωρητικότητα είναι ${club.capacity}.`);
   }

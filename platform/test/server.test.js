@@ -656,6 +656,8 @@ test("a new clubs file: its capacity wins over an earlier «Διόρθωση»; 
   state = (await call("GET", "/api/admin/state", { token: admin })).data;
   assert.equal(state.clubs.find((c) => c.code === 101).capacity, 3, "the correction stays");
   await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { ams: ["9003", "9001"] } });
+  // ⛔ for 9002 (Β) stays; none for Α students can stay once Α leaves the club
+  await call("PUT", "/api/admin/teacher-lists/102", { token: admin, body: { ams: [], blocked: ["9002"] } });
   // New file: 101 now 4 seats and grade Β only
   const changed = CLUB_ROWS.map((row) => (row[0] === 101 ? [101, "Ρομποτική", "Δευτέρα", "", "", "Β", 4, "", ""] : row));
   r = await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: changed, teachers: TEACHER_ROWS } });
@@ -664,6 +666,12 @@ test("a new clubs file: its capacity wins over an earlier «Διόρθωση»; 
   state = (await call("GET", "/api/admin/state", { token: admin })).data;
   assert.equal(state.clubs.find((c) => c.code === 101).capacity, 4, "the file's capacity");
   assert.deepEqual(state.teacherLists["101"].ams, ["9001"]);
+  assert.deepEqual(state.teacherLists["102"].blocked, ["9002"]);
+  // Algebra (Β) to Α only: its ⛔ for a Β student is dropped, not kept hidden
+  const toA = CLUB_ROWS.map((row) => (row[0] === 102 ? [102, "Άλγεβρα", "Πέμπτη", "", "", "Α", 5, "", ""] : row));
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: toA, teachers: TEACHER_ROWS } });
+  state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual(state.teacherLists["102"].blocked, []);
 });
 
 test("reset with hundreds of declarations: a few requests to Supabase, and «setup» first", async () => {
@@ -803,4 +811,69 @@ test("deleting a declaration: the parent until the deadline, the admin until the
   await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
   assert.equal((await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "1" } })).status, 200);
   assert.equal((await call("DELETE", "/api/admin/submissions/9001", { token: admin })).status, 409);
+});
+
+test("teachers' exclusions: ⛔ and closed lists, hidden from parents, only lifted once declarations open, used by the allocation", async () => {
+  const { call } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
+  const link = (await call("POST", "/api/admin/teacher-link", { token: admin, body: { email: "amix@sch.gr" } })).data.link;
+  const teacher = (await call("POST", "/api/teacher/session", { body: { token: link.split("#token=")[1] } })).data.token;
+  const save = (body) => call("PUT", "/api/teacher/clubs/101", { token: teacher, body });
+
+  let r = await save({ ams: ["9001"], blocked: ["9003"] });
+  assert.equal(r.status, 200);
+  let mine = (await call("GET", "/api/teacher/me", { token: teacher })).data.clubs[0];
+  assert.deepEqual([mine.list, mine.blocked, mine.closed], [["9001"], ["9003"], false]);
+  assert.equal((await save({ ams: ["9001"], blocked: ["9001"] })).status, 422, "listed and excluded at once");
+  // Closed list: only 9001 and 9002; separate ⛔ are dropped
+  r = await save({ ams: ["9001", "9002"], blocked: ["9003"], closed: true });
+  assert.deepEqual([r.data.list.closed, r.data.list.blocked], [true, undefined]);
+  // The admin's «Διόρθωση» (capacity and ⭐ only) keeps the closed setting
+  await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { capacity: 5, ams: ["9001", "9002"] } });
+  let state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.equal(state.teacherLists[101].closed, true);
+  // 9003 (Α) has only Ρομποτική on Monday: a warning, not an error
+  assert.ok(state.readiness.some((p) => p.level === "warning" && /Δευτέρα: 1 μαθητής δεν έχει κανέναν όμιλο.*ΑΜ 9003/.test(p.message)));
+
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z" } });
+  assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } })).status, 200, "exclusions do not block the declarations");
+
+  const login = (fields) => call("POST", "/api/parent/login", { body: { password: "omiloi2026", ...fields } });
+  const dimou = (await login({ am: "9003", surname: "ΔΗΜΟΥ", name: "ΣΟΦΙΑ", father: "ΠΕΤΡΟΣ", mother: "ΒΑΪΑ" })).data.token;
+  const ntoka = (await login({ am: "9004", surname: "ΝΤΟΚΑ", name: "ΑΡΜΠΕΡΑ", father: "ΑΡΜΠΕΝ", mother: "ΛΙΝΤΙΑ" })).data.token;
+  r = await call("GET", "/api/parent/me", { token: dimou });
+  assert.deepEqual(r.data.days.map((d) => [d.day, d.clubs.map((c) => c.code)]), [["thu", ["103"]]], "Monday has nothing left for 9003");
+  r = await call("GET", "/api/parent/me", { token: ntoka });
+  assert.deepEqual(r.data.days.find((d) => d.day === "mon").clubs.map((c) => c.code), ["100"], "Ρομποτική hidden");
+  const submit = (token, preferences) => call("PUT", "/api/parent/submission", { token, body: { parent: { name: "Γονέας", email: "p@example.com" }, preferences } });
+  assert.equal((await submit(ntoka, { mon: ["100", "101"], thu: ["102"] })).status, 422, "an excluded club cannot be ranked");
+  assert.equal((await submit(ntoka, { mon: ["100"], thu: ["102"] })).status, 200);
+  assert.equal((await submit(dimou, { thu: ["103"] })).status, 200);
+
+  // While parents declare: lifting is fine, adding is not
+  r = await save({ ams: ["9001"], closed: true });
+  assert.equal(r.status, 409, "9002 would become excluded");
+  assert.match(r.data.error, /μόνο να αφαιρεθούν/);
+  r = await save({ ams: ["9001", "9002", "9004"], closed: true });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.list.liftedAfterSubmission, 1, "9004 had already declared without Ρομποτική");
+  assert.deepEqual((await call("GET", "/api/parent/me", { token: ntoka })).data.days.find((d) => d.day === "mon").clubs.map((c) => c.code), ["100", "101"]);
+  const file = [["Κωδικός ομίλου", 101], ["Κλειστή λίστα", "ΟΧΙ"], ["Επιλογή", "ΑΜ"], ["Χ", 9001], ["ΟΧΙ", 9002], ["", 9003], ["", 9004]];
+  r = await call("POST", "/api/admin/teacher-lists/import", { token: admin, body: { files: [{ fileName: "101.xlsx", rows: file }] } });
+  assert.equal(r.data.ok, false);
+  assert.match(r.data.report[0].problems[0], /μόνο να αφαιρεθούν/, "the file would exclude 9002, now accepted");
+
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
+  r = await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "Κλήρωση 2026" } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.results.byStudent["9003"].mon, null);
+  assert.equal(r.data.results.gaps["9003"].mon, "excluded");
+  assert.equal(r.data.results.gapCounts.mon.excluded, 1);
+  const zip = new TextDecoder().decode((await call("GET", "/api/admin/export/r-package.zip", { token: admin })).data);
+  assert.match(zip, /exclusions\.csv/);
+  assert.match(zip, /club_code,RegistryNr\n101,9003\n/);
+  assert.match(new TextDecoder().decode((await call("GET", "/api/admin/export/results.csv", { token: admin })).data), /9003,ΔΗΜΟΥ,ΣΟΦΙΑ,Α,— αποκλεισμός/);
 });

@@ -177,3 +177,19 @@ test("teachers' ΑΜ/ΑΦΜ: optional; digits only; leading zeros dropped; one p
   assert.deepEqual(r.problems, []);
   assert.ok(r.teachers.every((t) => !("personalId" in t)));
 });
+
+test("readiness with teachers' exclusions: warnings for students no club accepts and for seats left out", () => {
+  const students = [{ am: "1", grade: "Α" }, { am: "2", grade: "Α" }, { am: "3", grade: "Α" }];
+  const clubs = [
+    { code: 10, days: ["mon"], grades: ["Α"], capacity: 2 },
+    { code: 11, days: ["mon"], grades: ["Α"], capacity: 2 },
+  ];
+  assert.deepEqual(checkReadiness(students, clubs, { mandatoryGrades: ["Α"] }), []);
+  let p = checkReadiness(students, clubs, { mandatoryGrades: ["Α"] }, { 10: ["1", "2"], 11: ["1"] });
+  assert.deepEqual(p.map((x) => x.level), ["warning"], "exclusions never block the declarations");
+  assert.match(p[0].message, /Δευτέρα: 1 μαθητής δεν έχει κανέναν όμιλο που να τον δέχεται.*θα μείνει χωρίς όμιλο: ΑΜ 1/);
+  // Club 10 accepts only student 3: it counts 1 seat, not 2
+  p = checkReadiness(students, [clubs[0], { ...clubs[1], capacity: 1 }], { mandatoryGrades: ["Α"] }, { 10: ["1", "2"] });
+  assert.deepEqual(p.map((x) => [x.level, x.seats, x.students]), [["warning", 2, 3]]);
+  assert.match(p[0].message, /με τους αποκλεισμούς των εκπαιδευτικών, οι όμιλοι για την Α τάξη δέχονται 2 θέσεις για 3 μαθητές/);
+});

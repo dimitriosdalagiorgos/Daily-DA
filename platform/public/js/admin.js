@@ -6,6 +6,7 @@ import { reportView as studentReportView } from "./report.js";
 import { makeZip } from "/lib/export/zip.js";
 import { LIST_SHEET, teacherListFileName, teacherListRows } from "/lib/export/teacherListFile.js";
 import { helpTabs } from "./help.js";
+import { listEditor } from "./listEditor.js";
 import { barsWithTarget, columns, fmt, pct, stackedBars, statTile } from "./charts.js";
 import { ROSTER_SHEET, clubMembers, hasSections, rosterFileName, rosterRows, weekHeader, weekRows } from "/lib/export/rosters.js";
 import { sectionsFileKind } from "/lib/import/sections.js";
@@ -476,7 +477,7 @@ function teacherListFiles() {
     const files = {};
     for (const c of state.clubs) {
       const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(teacherListRows(c, state.students, state.teacherLists[c.code]?.ams ?? []));
+      const ws = XLSX.utils.aoa_to_sheet(teacherListRows(c, state.students, state.teacherLists[c.code]?.ams ?? [], state.teacherLists[c.code] ?? {}));
       ws["!cols"] = [{ wch: 10 }, { wch: 10 }, { wch: 24 }, { wch: 20 }, { wch: 6 }];
       XLSX.utils.book_append_sheet(wb, ws, LIST_SHEET);
       files[teacherListFileName(c)] = new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" }));
@@ -601,7 +602,10 @@ function clubsTable() {
         const teachers = state.teachers.filter((t) => t.clubs.includes(c.code));
         const cell = el("td");
         const summary = () => cell.replaceChildren(
-          list?.ams?.length ? el("span", {}, `${list.ams.length} μαθητές`, el("br"), el("span.small.muted", {}, list.ams.map((am) => byAm.get(am)?.surname ?? am).join(", "))) : el("span.muted", {}, "—"),
+          list?.ams?.length || list?.closed || list?.blocked?.length
+            ? el("span", {}, `⭐ ${list.ams?.length ?? 0}`, list.closed ? el("strong", {}, " · κλειστή λίστα") : list.blocked?.length ? ` · ⛔ ${list.blocked.length}` : "",
+              list.ams?.length ? el("span", {}, el("br"), el("span.small.muted", {}, list.ams.map((am) => byAm.get(am)?.surname ?? am).join(", "))) : null)
+            : el("span.muted", {}, "—"),
           listEditable ? el("div", {}, el("button.small", { type: "button", onclick: () => editList(c, list, cell) }, "Διόρθωση")) : null);
         summary();
         return el("tr", {},
@@ -635,16 +639,33 @@ function similarCell(club, editable) {
   return cell;
 }
 
+// The admin's «Διόρθωση»: the seats, and the list with the teachers' editor
 function editList(club, list, cell) {
-  const out = el("div");
-  const cap = el("input", { type: "number", min: 1, value: list?.capacity ?? club.capacity, "aria-label": "Χωρητικότητα" });
-  const ams = el("textarea", { "aria-label": "ΑΜ, ένας ανά γραμμή, με σειρά προτίμησης" }, (list?.ams ?? []).join("\n"));
-  const save = el("button.small.primary", { type: "button" }, "Αποθήκευση");
-  save.addEventListener("click", () => busy(save, out, async () => {
-    await api("PUT", `/api/admin/teacher-lists/${club.code}`, { capacity: Number(cap.value), ams: ams.value.split(/\s+/).filter(Boolean) });
-    await refresh();
-  }));
-  cell.replaceChildren(el("label", {}, "Χωρητικότητα", cap), el("label", {}, "ΑΜ (ένας ανά γραμμή, με σειρά)", ams), out, el("div.actions", {}, save, el("button.small", { type: "button", onclick: render }, "Άκυρο")));
+  const cap = el("input", { type: "number", min: 1, value: list?.capacity ?? club.capacity, "aria-label": "Χωρητικότητα", style: "width:7em" });
+  const editor = listEditor({
+    club,
+    eligible: state.students.filter((s) => club.grades.includes(s.grade)),
+    list: list ?? {},
+    canEdit: true,
+    parentsPhase: state.settings.phase === "parents",
+    capacityInput: cap,
+    onSave: async (payload) => {
+      const { list: entry } = await api("PUT", `/api/admin/teacher-lists/${club.code}`, { capacity: Number(cap.value), ...payload });
+      changed = true;
+      return entry;
+    },
+  });
+  // The page is redrawn on «Κλείσιμο», so the editor's messages stay visible until then
+  let changed = false;
+  // In a row of its own below the club's, across the whole table
+  const row = cell.closest("tr");
+  row.nextElementSibling?.classList.contains("list-edit") && row.nextElementSibling.remove();
+  row.after(el("tr.list-edit", {}, el("td", { colspan: row.children.length },
+    el("h3", { style: "margin-top:0" }, `Λίστα εκπαιδευτικού: ${club.name}`),
+    el("label", {}, "Χωρητικότητα", cap),
+    editor,
+    el("div.actions", {}, el("button.small", { type: "button", onclick: () => (changed ? refresh() : render()) }, "Κλείσιμο")))));
+  cap.focus();
 }
 
 // ---------- Allocation ----------
@@ -717,14 +738,15 @@ function resultsView(results) {
           el("tr", {}, el("td", {}, DAY_LABELS[d]), el("td", {}, c.name), el("td.num", {}, results.enrolled[d][String(c.code)] ?? 0), el("td.num", {}, c.capacity))))))))],
     ["gaps", "Κενά ανά ημέρα", () => el("div", {},
       el("div.table-wrap", {}, el("table", {},
-        el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th.num", {}, "Τοποθετήθηκαν"), el("th.num", {}, "Δεν χώρεσαν"), el("th.num", {}, "Χωρίς προτιμήσεις"), el("th.num", {}, "Χωρίς όμιλο για την τάξη τους"))),
+        el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th.num", {}, "Τοποθετήθηκαν"), el("th.num", {}, "Δεν χώρεσαν"), el("th.num", {}, "Χωρίς προτιμήσεις"), el("th.num", {}, "Αποκλεισμός"), el("th.num", {}, "Χωρίς όμιλο για την τάξη τους"))),
         el("tbody", {}, DAYS.map((d) => el("tr", {},
           el("td", {}, DAY_LABELS[d]),
           el("td.num", {}, Object.values(results.enrolled[d]).reduce((a, b) => a + b, 0)),
           el("td.num", {}, results.gapCounts[d].all_rejected),
           el("td.num", {}, results.gapCounts[d].no_preferences),
+          el("td.num", {}, results.gapCounts[d].excluded ?? 0),
           el("td.num", {}, results.gapCounts[d].not_offered)))))),
-      el("p.small.muted", {}, "«Χωρίς προτιμήσεις»: ο μαθητής δεν δήλωσε κανέναν όμιλο εκείνης της ημέρας (ή δεν υπέβαλε δήλωση). «Δεν χώρεσε»: όλοι οι όμιλοι που δήλωσε γέμισαν."),
+      el("p.small.muted", {}, "«Χωρίς προτιμήσεις»: ο μαθητής δεν δήλωσε κανέναν όμιλο εκείνης της ημέρας (ή δεν υπέβαλε δήλωση). «Δεν χώρεσε»: όλοι οι όμιλοι που δήλωσε γέμισαν. «Αποκλεισμός»: όλοι οι όμιλοι της ημέρας για την τάξη του τον έχουν αποκλείσει οι εκπαιδευτικοί τους."),
       noPrefsByDay(results, byAm, who))],
     ["rejected", `Δεν χώρεσαν (${rejected.length})`, () => rejected.length
       ? el("div", {}, el("p.small.muted", {}, "Μαθητές που δήλωσαν, αλλά όλοι οι όμιλοι της λίστας τους γέμισαν εκείνη την ημέρα."),
@@ -770,16 +792,21 @@ function mandatoryGapsView(results, byAm, who) {
   for (const g of gaps) (perStudent.get(g.am) ?? perStudent.set(g.am, []).get(g.am)).push(g);
   const rows = [...perStudent].map(([am, list]) => {
     const rejected = list.filter((g) => g.reason === "all_rejected");
-    const reason = !state.submissions[am]
-      ? "δεν υπέβαλε δήλωση"
-      : [rejected.length ? `δεν χώρεσε: ${rejected.map((g) => DAY_LABELS[g.day]).join(", ")}` : "",
-        list.length > rejected.length ? `χωρίς προτιμήσεις: ${list.filter((g) => g.reason !== "all_rejected").map((g) => DAY_LABELS[g.day]).join(", ")}` : ""].filter(Boolean).join(" · ");
-    return { am, s: byAm.get(am), days: list.map((g) => DAY_LABELS[g.day]).join(", "), reason, fixable: rejected.length > 0 };
+    const excluded = list.filter((g) => g.reason === "excluded");
+    const other = list.filter((g) => g.reason !== "all_rejected" && g.reason !== "excluded");
+    const days = (gs) => gs.map((g) => DAY_LABELS[g.day]).join(", ");
+    const reason = [
+      !state.submissions[am] ? "δεν υπέβαλε δήλωση" : "",
+      rejected.length ? `δεν χώρεσε: ${days(rejected)}` : "",
+      excluded.length ? `αποκλεισμός από όλους τους ομίλους: ${days(excluded)}` : "",
+      state.submissions[am] && other.length ? `χωρίς προτιμήσεις: ${days(other)}` : ""].filter(Boolean).join(" · ");
+    return { am, s: byAm.get(am), days: list.map((g) => DAY_LABELS[g.day]).join(", "), reason, fixable: rejected.length > 0, excluded: excluded.length > 0 };
   }).sort((a, b) => Number(b.fixable) - Number(a.fixable) || (a.s?.surname ?? "").localeCompare(b.s?.surname ?? "", "el"));
   const fixable = rows.filter((r) => r.fixable).length;
+  const excludedOnly = rows.filter((r) => !r.fixable && r.excluded).length;
   return el("div.msg.err", { role: "alert" },
     el("strong", {}, `Υποχρεωτική ένταξη (${results.mandatoryGrades.join(", ")} τάξη): ${rows.length} μαθητές χωρίς όμιλο κάποια ημέρα`),
-    el("p.small", { style: "margin:4px 0" }, `${fixable} δήλωσαν αλλά δεν χώρεσαν (αυξήστε τη χωρητικότητα κάποιου ομίλου της λίστας τους και ξανατρέξτε την κατανομή)· ${rows.length - fixable} δεν έχουν προτιμήσεις (χρειάζεται δήλωση).`),
+    el("p.small", { style: "margin:4px 0" }, `${fixable} δήλωσαν αλλά δεν χώρεσαν (αυξήστε τη χωρητικότητα κάποιου ομίλου της λίστας τους και ξανατρέξτε την κατανομή)· ${rows.length - fixable - excludedOnly} δεν έχουν προτιμήσεις (χρειάζεται δήλωση)${excludedOnly ? `· ${excludedOnly} αποκλείστηκαν από όλους τους ομίλους κάποιας ημέρας (από τους εκπαιδευτικούς)` : ""}.`),
     el("details", { open: rows.length <= 20 }, el("summary", {}, "Λίστα μαθητών"),
       el("div.table-wrap", {}, el("table", {},
         el("thead", {}, el("tr", {}, el("th.num", {}, "ΑΜ"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"), el("th", {}, "Αιτία"))),
@@ -1000,7 +1027,7 @@ async function resultsWorkbook(results) {
   const XLSX = await loadXlsx();
   const byAm = new Map(state.students.map((s) => [s.am, s]));
   const nameOf = new Map(state.clubs.map((c) => [String(c.code), c.name]));
-  const REASON = { all_rejected: "δεν χώρεσε", no_preferences: "χωρίς προτιμήσεις", not_offered: "" };
+  const REASON = { all_rejected: "δεν χώρεσε", no_preferences: "χωρίς προτιμήσεις", excluded: "αποκλεισμός", not_offered: "" };
   const cell = (am, d) => {
     const code = results.byStudent[am]?.[d];
     return code ? nameOf.get(code) ?? code : REASON[results.gaps[am]?.[d]] ? `— ${REASON[results.gaps[am][d]]}` : "";
