@@ -64,8 +64,16 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     const closed = isClosed();
     return { ams: ofState(WISH), blocked: closed ? [] : ofState(OUT), closed };
   };
-  const key = () => students.map((s) => state.get(s.am)[0]).join("");
-  savedKey = key();
+  // What would be saved, normalized: compared with what is saved, so a list
+  // whose stored `closed` differs from what its states now mean counts as unsaved
+  const eligibleAms = new Set(students.map((s) => s.am));
+  const normal = ({ ams = [], blocked = [], closed = false }) => JSON.stringify({
+    ams: ams.map(String).filter((am) => eligibleAms.has(am)).sort(),
+    blocked: closed ? [] : blocked.map(String).filter((am) => eligibleAms.has(am)).sort(),
+    closed: Boolean(closed),
+  });
+  const key = () => normal(payload());
+  savedKey = normal(list);
   const full = () => counts()[WISH] >= capacity();
   const allowed = (am, v) => canEdit && (v !== WISH || state.get(am) === WISH || !full());
 
@@ -222,13 +230,18 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
   for (const input of [search, gradeFilter, sectionFilter].filter(Boolean)) input.addEventListener("input", () => { renderBulk(); renderList(); });
   capacityInput?.addEventListener("input", update);
 
+  // No edits while saving: the reply replaces the states with what was saved
+  const editing = el("div.list-editing");
   save.addEventListener("click", async () => {
     save.disabled = true;
+    undo.disabled = true;
+    editing.inert = true;
+    editing.classList.add("saving");
     try {
       const entry = await onSave(payload());
       saved = { ams: entry.ams ?? [], blocked: entry.blocked ?? [], closed: Boolean(entry.closed) };
       load(saved);
-      savedKey = key();
+      savedKey = normal(saved);
       update();
       show(out, message("ok", "Αποθηκεύτηκε."),
         entry.excludedAfterSubmission ? message("info", `${entry.excludedAfterSubmission === 1 ? "1 από τους μαθητές που αποκλείσατε τώρα είχε" : `${entry.excludedAfterSubmission} από τους μαθητές που αποκλείσατε τώρα είχαν`} ήδη δηλώσει τον όμιλο. Στην κατανομή ο όμιλος θα παραλειφθεί από τη δήλωση (η υπόλοιπη σειρά μένει ίδια), και ο γονέας θα το δει αν ξαναμπεί.`) : null,
@@ -237,16 +250,17 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
       show(out, message("err", err.message));
     } finally {
       save.disabled = !canEdit;
+      undo.disabled = false;
+      editing.inert = false;
+      editing.classList.remove("saving");
     }
   });
 
   update();
+  show(editing, el("div.filters", {}, search, gradeFilter, sectionFilter), shortcuts, bulkBox, listBox);
   return el("div.list-editor", {},
     bar,
     out,
     parentsPhase && canEdit ? message("info", "Οι δηλώσεις των γονέων είναι ανοιχτές. Αν αποκλείσετε (⛔) μαθητή που έχει ήδη δηλώσει τον όμιλο, ο όμιλος θα παραλειφθεί από τη δήλωσή του. Αν άρετε έναν αποκλεισμό, ο γονέας πρέπει να ξαναμπεί για να βάλει τον όμιλο στη σειρά του.") : null,
-    el("div.filters", {}, search, gradeFilter, sectionFilter),
-    shortcuts,
-    bulkBox,
-    listBox);
+    editing);
 }
