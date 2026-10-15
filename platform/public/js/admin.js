@@ -38,6 +38,7 @@ let state = null;
 let tab = "overview";
 let resultsTab = "fill"; // sub-tab of the allocation results
 let devOutbox = false;
+let listsSaved = false; // a «Διόρθωση» saved: the clubs table is redrawn once no other one has unsaved edits
 
 // Forms with edits not saved yet (the settings, a «Διόρθωση») register a
 // check here; changing tab or phase, logging out or leaving asks first
@@ -81,6 +82,7 @@ function loginView(notice) {
 
 async function refresh() {
   state = await api("GET", "/api/admin/state");
+  listsSaved = false;
   devOutbox = await api("GET", "/api/admin/outbox").then(() => true, () => false);
   render();
 }
@@ -713,8 +715,10 @@ function similarCell(club, editable) {
 
 // The admin's «Διόρθωση»: the seats, and the list with the teachers' editor
 function editList(club, list, cell) {
-  // The page is redrawn on «Κλείσιμο», so the editor's messages stay visible until then
-  let changed = false;
+  // In a row of its own below the club's, across the whole table; one already open is closed first
+  const row = cell.closest("tr");
+  const open = row.nextElementSibling;
+  if (open?.classList.contains("list-edit") && !open.discard()) return;
   let dirty = false; // edits not saved: «Κλείσιμο», another tab etc. ask first
   const cap = el("input", { type: "number", min: 1, value: list?.capacity ?? club.capacity, "aria-label": "Χωρητικότητα", style: "width:7em" });
   const editor = listEditor({
@@ -727,25 +731,27 @@ function editList(club, list, cell) {
     onDirty: (d) => { dirty = d; },
     onSave: async (payload) => {
       const { list: entry } = await api("PUT", `/api/admin/teacher-lists/${club.code}`, { capacity: Number(cap.value), ...payload });
-      changed = true;
+      listsSaved = true; // the table is redrawn on «Κλείσιμο», so the editor's messages stay visible until then
       return entry;
     },
   });
   const check = () => dirty;
   unsaved.add(check);
-  const close = () => {
-    if (dirty && !confirm("Υπάρχουν αλλαγές στη λίστα ή στη χωρητικότητα που δεν αποθηκεύσατε. Κλείσιμο χωρίς αποθήκευση;")) return;
+  // Only this row closes: other open «Διορθώσεις» keep their edits
+  const discard = () => {
+    if (dirty && !confirm("Υπάρχουν αλλαγές στη λίστα ή στη χωρητικότητα που δεν αποθηκεύσατε. Κλείσιμο χωρίς αποθήκευση;")) return false;
     unsaved.delete(check);
-    if (changed) refresh(); else render();
+    editRow.remove();
+    return true;
   };
-  // In a row of its own below the club's, across the whole table
-  const row = cell.closest("tr");
-  row.nextElementSibling?.classList.contains("list-edit") && row.nextElementSibling.remove();
-  row.after(el("tr.list-edit", {}, el("td", { colspan: row.children.length },
+  const close = () => { if (discard() && listsSaved && !hasUnsaved()) refresh(); };
+  const editRow = el("tr.list-edit", {}, el("td", { colspan: row.children.length },
     el("h3", { style: "margin-top:0" }, `Λίστα εκπαιδευτικού: ${club.name}`),
     el("label", {}, "Χωρητικότητα", cap),
     editor,
-    el("div.actions", {}, el("button.small", { type: "button", onclick: close }, "Κλείσιμο")))));
+    el("div.actions", {}, el("button.small", { type: "button", onclick: close }, "Κλείσιμο"))));
+  editRow.discard = discard;
+  row.after(editRow);
   cap.focus();
 }
 

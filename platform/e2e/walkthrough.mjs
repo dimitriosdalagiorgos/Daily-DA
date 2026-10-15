@@ -185,6 +185,18 @@ try {
   await editor.locator("button:has-text('Κλείσιμο')").click();
   await admin.waitForSelector("tr:has-text('Σκάκι') td:has-text('⭐ 2 · ⛔ 1')");
   step("admin: «Ακύρωση αλλαγών» in «Διόρθωση», then one ⛔ added");
+  // Two «Διορθώσεις» open: closing the clean one keeps the other's edits
+  const fixRows = admin.locator("tr:has(button:has-text('Διόρθωση'))");
+  await fixRows.nth(0).locator("button:has-text('Διόρθωση')").click();
+  await fixRows.nth(1).locator("button:has-text('Διόρθωση')").click();
+  const [firstEdit, secondEdit] = [admin.locator("tr.list-edit").nth(0), admin.locator("tr.list-edit").nth(1)];
+  await firstEdit.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
+  await secondEdit.locator("button:has-text('Κλείσιμο')").click();
+  if (await admin.locator("tr.list-edit").count() !== 1 || !(await firstEdit.locator(".unsaved").textContent())) throw new Error("closing one «Διόρθωση» lost the other's edits");
+  await firstEdit.locator("button:has-text('Ακύρωση αλλαγών')").click();
+  await firstEdit.locator("button:has-text('Κλείσιμο')").click();
+  if (await admin.locator("tr.list-edit").count()) throw new Error("«Διόρθωση» not closed");
+  step("admin: two «Διορθώσεις» open — closing one keeps the other");
 
   // ---------- Admin: settings, open declarations ----------
   await admin.click("role=tab[name='Πορεία & ρυθμίσεις']");
