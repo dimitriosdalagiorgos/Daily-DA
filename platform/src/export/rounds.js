@@ -103,6 +103,7 @@ export const DROP_REASONS = {
 export const UNASSIGNED_LABELS = {
   all_rejected: "δεν χώρεσε σε κανέναν όμιλο της λίστας του",
   no_preferences: "δεν έχει ομίλους να δηλώσει αυτή την ημέρα",
+  all_dropped: "όλοι οι όμιλοι της δήλωσής του έφυγαν από τη λίστα πριν από την κατανομή (δείτε «Πριν»)",
 };
 
 /**
@@ -124,7 +125,9 @@ export function buildRounds(input, result) {
   for (const day of DAYS) {
     const dayResult = result.days[day];
     const dayClubs = clubs.filter((c) => c.days[0] === day).map((c) => ({ code: String(c.code), name: c.name, capacity: c.capacity, days: c.days }));
-    if (!dayResult || dayClubs.length === 0) continue;
+    // A day with only later sessions of multi-day clubs has no rounds, but
+    // still has seats to show.
+    if (!dayResult || (dayClubs.length === 0 && !dayResult.assignments.length)) continue;
     const log = dayResult.log;
 
     // Before the first round: seats carried from multi-day clubs, and clubs
@@ -227,7 +230,12 @@ export function buildRounds(input, result) {
       day, label: DAY_LABELS[day], clubs: dayClubs, carried, dropped, rounds,
       final: {
         counts,
-        unassigned: dayResult.unassigned.map((u) => ({ am: u.am, reason: u.reason, text: UNASSIGNED_LABELS[u.reason] ?? u.reason })),
+        unassigned: dayResult.unassigned.map((u) => {
+          // Declared, but every club left the list (⛔, clash, similar).
+          const declared = (preferences[u.am]?.[day] ?? []).length > 0;
+          const reason = u.reason === "no_preferences" && declared ? "all_dropped" : u.reason;
+          return { am: u.am, reason, declared, text: UNASSIGNED_LABELS[reason] ?? reason };
+        }),
       },
     });
   }

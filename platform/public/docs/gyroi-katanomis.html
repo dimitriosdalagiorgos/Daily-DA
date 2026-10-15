@@ -657,6 +657,7 @@ const DROP_REASONS = {
 const UNASSIGNED_LABELS = {
   all_rejected: "δεν χώρεσε σε κανέναν όμιλο της λίστας του",
   no_preferences: "δεν έχει ομίλους να δηλώσει αυτή την ημέρα",
+  all_dropped: "όλοι οι όμιλοι της δήλωσής του έφυγαν από τη λίστα πριν από την κατανομή (δείτε «Πριν»)",
 };
 
 /**
@@ -678,7 +679,9 @@ function buildRounds(input, result) {
   for (const day of DAYS) {
     const dayResult = result.days[day];
     const dayClubs = clubs.filter((c) => c.days[0] === day).map((c) => ({ code: String(c.code), name: c.name, capacity: c.capacity, days: c.days }));
-    if (!dayResult || dayClubs.length === 0) continue;
+    // A day with only later sessions of multi-day clubs has no rounds, but
+    // still has seats to show.
+    if (!dayResult || (dayClubs.length === 0 && !dayResult.assignments.length)) continue;
     const log = dayResult.log;
 
     // Before the first round: seats carried from multi-day clubs, and clubs
@@ -781,7 +784,12 @@ function buildRounds(input, result) {
       day, label: DAY_LABELS[day], clubs: dayClubs, carried, dropped, rounds,
       final: {
         counts,
-        unassigned: dayResult.unassigned.map((u) => ({ am: u.am, reason: u.reason, text: UNASSIGNED_LABELS[u.reason] ?? u.reason })),
+        unassigned: dayResult.unassigned.map((u) => {
+          // Declared, but every club left the list (⛔, clash, similar).
+          const declared = (preferences[u.am]?.[day] ?? []).length > 0;
+          const reason = u.reason === "no_preferences" && declared ? "all_dropped" : u.reason;
+          return { am: u.am, reason, declared, text: UNASSIGNED_LABELS[reason] ?? reason };
+        }),
       },
     });
   }
@@ -869,7 +877,7 @@ function legend() {
 
 function roundView(d, r) {
   const intro = h("p", { class: "lede" }, r.round === 1
-    ? `${d.label}, γύρος 1: κάθε μαθητής κάνει αίτηση στον όμιλο της 1ης του επιλογής (${r.applicants} αιτήσεις). Κάθε όμιλος βάζει τους υποψηφίους σε σειρά: πρώτα τη λίστα ⭐ του εκπαιδευτικού, μετά τις τάξεις με υποχρεωτική ένταξη (αν υπάρχουν), μετά τον λαχνό.`
+    ? `${d.label}, γύρος 1: κάθε μαθητής κάνει αίτηση στον πρώτο όμιλο που έμεινε στη λίστα του, συνήθως την 1η του επιλογή (${r.applicants} αιτήσεις· όσοι όμιλοι φεύγουν από λίστες φαίνονται στο «Πριν»). Κάθε όμιλος βάζει τους υποψηφίους σε σειρά: πρώτα τη λίστα ⭐ του εκπαιδευτικού, μετά τις τάξεις με υποχρεωτική ένταξη (αν υπάρχουν), μετά τον λαχνό.`
     : `${d.label}, γύρος ${r.round}: όσοι περίσσεψαν στον γύρο ${r.round - 1} κάνουν αίτηση στην επόμενη επιλογή τους (${r.applicants} αιτήσεις). Οι όμιλοι που τις δέχονται ξαναβάζουν σε σειρά όσους ήδη κρατούν μαζί με τους νέους.`);
   return [intro, legend(), ...r.clubs.map((c) => clubCard(c, r.round))];
 }
@@ -917,7 +925,7 @@ function before(d) {
       h("thead", {}, h("tr", {}, h("th", {}, "Όμιλος"), h("th", {}, "Θέσεις"), h("th", {}, "Ημέρες"))),
       h("tbody", {}, d.clubs.map((c) => h("tr", { style: clubVars(c.code) }, h("td", {}, h("b", { style: "color:var(--c)" }, "● "), c.name), h("td", { class: "n" }, c.capacity),
         h("td", {}, c.days.map((x) => DAY_LABELS[x]).join(", "))))))));
-  out.push(clubs);
+  if (d.clubs.length) out.push(clubs);
   if (d.carried.length) {
     const byClub = new Map();
     for (const x of d.carried) byClub.set(x.club, [...(byClub.get(x.club) ?? []), x.am]);
@@ -936,14 +944,16 @@ function before(d) {
 }
 
 function final(d) {
-  const out = [h("p", { class: "lede" }, `${d.label}: η κατανομή τελείωσε μετά από ${d.rounds.length} ${d.rounds.length === 1 ? "γύρο" : "γύρους"}. Οι προσωρινές θέσεις γίνονται οριστικές.`)];
-  out.push(h("section", { class: "card stack" }, h("h2", {}, "Θέσεις"),
+  const out = [h("p", { class: "lede" }, d.rounds.length === 0
+    ? `${d.label}: δεν κρίνεται κανένας όμιλος αυτή την ημέρα· υπάρχουν μόνο θέσεις από ομίλους πολλών ημερών.`
+    : `${d.label}: η κατανομή τελείωσε μετά από ${d.rounds.length} ${d.rounds.length === 1 ? "γύρο" : "γύρους"}. Οι προσωρινές θέσεις γίνονται οριστικές.`)];
+  if (d.clubs.length) out.push(h("section", { class: "card stack" }, h("h2", {}, "Θέσεις"),
     h("div", { class: "scroll" }, h("table", { class: "plain" },
       h("thead", {}, h("tr", {}, h("th", {}, "Όμιλος"), h("th", {}, "Μαθητές"), h("th", {}, "Θέσεις"), h("th", {}, "Κενές"))),
       h("tbody", {}, d.clubs.map((c) => h("tr", { style: clubVars(c.code) }, h("td", {}, h("b", { style: "color:var(--c)" }, "● "), c.name),
         h("td", { class: "n" }, d.final.counts[c.code]), h("td", { class: "n" }, c.capacity), h("td", { class: "n" }, c.capacity - d.final.counts[c.code]))))))));
   if (d.carried.length) out.push(h("p", { class: "muted" }, `Επιπλέον ${d.carried.length} μαθητές έχουν όμιλο αυτή την ημέρα από όμιλο πολλών ημερών.`));
-  const missing = d.final.unassigned.filter((u) => u.reason === "all_rejected");
+  const missing = d.final.unassigned.filter((u) => u.declared);
   out.push(h("section", { class: "card stack" }, h("h2", {}, `Χωρίς όμιλο, ενώ δήλωσαν (${missing.length})`),
     missing.length === 0 ? h("p", { class: "muted" }, "Κανείς.") : h("div", { class: "scroll" }, h("table", { class: "plain" },
       h("thead", {}, h("tr", {}, h("th", {}, "ΑΜ"), h("th", {}, "Ονοματεπώνυμο"), h("th", {}, "Τάξη"), h("th", {}, "Λαχνός"), h("th", {}, "Γιατί"))),

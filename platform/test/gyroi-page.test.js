@@ -77,3 +77,23 @@ test("gyroi page: the sample shows displaced students and clubs that leave lists
   const reasons = new Set(days.flatMap((d) => d.dropped.map((x) => x.reason)));
   for (const r of ["excluded", "similar", "day_conflict"]) assert.ok(reasons.has(r), r);
 });
+
+test("gyroi page: a day with only carried seats is shown, and a declaration whose clubs all left the list counts as without a club", () => {
+  const students = [{ am: "1", grade: "Α" }, { am: "2", grade: "Α" }];
+  const clubs = [
+    { code: "10", name: "Δύο ημέρες", days: ["mon", "thu"], grades: ["Α"], capacity: 5 },
+    { code: "20", name: "Δευτέρα", days: ["mon"], grades: ["Α"], capacity: 5 },
+  ];
+  const input = {
+    students, clubs, lottery: new Map([["1", 1], ["2", 2]]),
+    preferences: { 1: { mon: ["10"] }, 2: { mon: ["20"] } },
+    exclusions: { 20: ["2"] },
+  };
+  const days = buildRounds(input, allocateWeek(input));
+  const thu = days.find((d) => d.day === "thu");
+  assert.ok(thu, "Thursday is shown");
+  assert.deepEqual(thu.rounds, []);
+  assert.deepEqual(thu.carried, [{ am: "1", club: "10" }]);
+  const mon = days.find((d) => d.day === "mon");
+  assert.deepEqual(mon.final.unassigned.map((u) => [u.am, u.reason, u.declared]), [["2", "all_dropped", true]]);
+});
