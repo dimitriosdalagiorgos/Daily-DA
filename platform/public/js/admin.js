@@ -615,6 +615,7 @@ function clubsTable() {
             ? el("span", {}, `⭐ ${list.ams?.length ?? 0}`, list.closed ? el("strong", {}, " · κλειστή λίστα") : list.blocked?.length ? ` · ⛔ ${list.blocked.length}` : "",
               list.ams?.length ? el("span", {}, el("br"), el("span.small.muted", {}, list.ams.map((am) => byAm.get(am)?.surname ?? am).join(", "))) : null)
             : el("span.muted", {}, "—"),
+          list?.reset ? el("div.small", {}, el("strong", {}, "⚠ Οι ⭐ μηδενίστηκαν"), ` (ήταν ${list.reset.starred}, θέσεις ${list.reset.capacity}): ο εκπαιδευτικός πρέπει να τους ξαναορίσει.`) : null,
           listEditable ? el("div", {}, el("button.small", { type: "button", onclick: () => editList(c, list, cell) }, "Διόρθωση")) : null);
         summary();
         return el("tr", {},
@@ -735,6 +736,8 @@ function allocation() {
   xlsx.addEventListener("click", () => busy(xlsx, out, async () => resultsWorkbook((await api("GET", "/api/admin/results")).results)));
   const audit = el("button", { type: "button", disabled: !state.results }, "Audit log κατανομής (.csv)");
   audit.addEventListener("click", () => busy(audit, out, () => api.download("/api/admin/export/audit_log.csv", "audit_log_katanomis.csv")));
+  const verify = el("button", { type: "button", disabled: !state.results }, "Επαλήθευση κατανομής (.xlsx)");
+  verify.addEventListener("click", () => busy(verify, out, async () => saveWorkbook("epalitheusi_katanomis.xlsx", (await api("GET", "/api/admin/export/verification")).sheets)));
   const lotteryCsv = el("button", { type: "button" }, "Κλήρωση: ΑΜ και αριθμός (.csv)");
   lotteryCsv.addEventListener("click", () => busy(lotteryCsv, out, () => api.download(`/api/admin/export/lottery.csv${state.results ? "" : `?seed=${encodeURIComponent(seed.value)}`}`, "klirosi.csv")));
   const summary = el("button", { type: "button", disabled: !state.results }, "Σύνοψη ανά όμιλο (.csv)");
@@ -752,7 +755,8 @@ function allocation() {
       out,
       el("div.actions", {}, run, randomSeed),
       el("h3", {}, "Εξαγωγές"),
-      el("div.actions", {}, xlsx, csv, audit, summary, lotteryCsv, rZip),
+      el("div.actions", {}, xlsx, csv, audit, verify, summary, lotteryCsv, rZip),
+      el("p.small.muted", {}, "«Επαλήθευση κατανομής»: για να ελέγξετε την κατανομή με το χέρι. Για κάθε όμιλο ο τελευταίος που μπήκε και ο πρώτος που έμεινε έξω· για κάθε μαθητή και ημέρα οι επιλογές του, τι έγινε με την καθεμία και οι γύροι· γύρο-γύρο ποιοι κάνουν αίτηση σε κάθε όμιλο, ποιοι μένουν και ποιοι βγαίνουν, με τον αριθμό κλήρωσης. Στο πρώτο φύλλο, αυτόματοι έλεγχοι και οδηγίες."),
       el("p.small.muted", {}, "«Κλήρωση»: μόνο ΑΜ και αριθμός κλήρωσης, ταξινομημένα κατά ΑΜ, χωρίς ονόματα — για γρήγορη σύγκριση δύο μαθητών ή για ανακοίνωση. Μικρότερος αριθμός = προηγείται στην ίδια προτεραιότητα. Πριν την κατανομή βγαίνει για το seed που έχετε γράψει.")),
     resultsBox);
 }
@@ -969,6 +973,21 @@ async function saveSheet(fileName, sheetName, rows, cols) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+/** Save several sheets ({name, rows, cols, filter}) as one .xlsx in the browser. */
+async function saveWorkbook(fileName, sheets) {
+  const XLSX = await loadXlsx();
+  const wb = XLSX.utils.book_new();
+  for (const { name, rows, cols, filter } of sheets) {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    if (cols) ws["!cols"] = cols.map((wch) => ({ wch }));
+    if (filter && rows.length > 1) ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: rows[0].length - 1 } }) };
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
+  const url = URL.createObjectURL(new Blob([XLSX.write(wb, { type: "array", bookType: "xlsx" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  el("a", { href: url, download: fileName }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 const weekCols = () => [8, 5, ...(hasSections(state.students) ? [7] : []), 20, 16, 14, 14, 22, 22, 22, 22, 22];
 
 function weekView(results) {
@@ -1093,7 +1112,7 @@ async function resultsWorkbook(results) {
 const EVENT_LABELS = {
   login: "Σύνδεση διαχείρισης", students_uploaded: "Ανέβασμα καταλόγου μαθητών", sections_uploaded: "Ανέβασμα τμημάτων μαθητών", clubs_uploaded: "Ανέβασμα ομίλων",
   import_legacy: "Εισαγωγή περσινών δηλώσεων", settings: "Αλλαγή ρυθμίσεων", phase: "Αλλαγή φάσης", login_exception: "Εξαίρεση σύνδεσης",
-  teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού",
+  teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού", teacher_list_reset: "Μηδενισμός ⭐ λίστας εκπαιδευτικού (λιγότερες θέσεις)",
   teacher_login_failed: "Αποτυχημένη σύνδεση εκπαιδευτικού",
   parent_login: "Σύνδεση γονέα", parent_login_failed: "Αποτυχημένη σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
 };

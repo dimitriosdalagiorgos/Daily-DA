@@ -368,7 +368,7 @@ try {
   await shot(admin, "07e-admin-rosters");
   step("admin: the week per student and the clubs' rosters on screen");
   await shot(admin, "07-admin-results");
-  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"]]) {
+  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Επαλήθευση κατανομής (.xlsx)", "verification"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"]]) {
     const [d] = await Promise.all([admin.waitForEvent("download"), admin.click(`button:has-text('${label}')`)]);
     step(`admin: ${file} downloaded (${d.suggestedFilename()})`);
   }

@@ -123,6 +123,8 @@ function clubCard(club, me) {
     ? `Τελευταία αλλαγή: ${{ admin: "διαχείριση", "admin-file": "διαχείριση (από αρχείο)" }[club.updatedBy] ?? club.updatedBy}, ${formatDateTime(club.updatedAt)}`
     : "");
   const lastChange = el("p.small.muted", {}, changeText());
+  // The ⭐ were emptied by a clubs file with fewer seats: until the list is saved again
+  const resetNotice = club.reset ? message("warn", `${club.reset} Ορίστε ξανά τους προτιμώμενους μαθητές (⭐), έως ${club.capacity}, και πατήστε αποθήκευση.`) : null;
   const editor = listEditor({
     club,
     eligible: club.eligible,
@@ -134,6 +136,7 @@ function clubCard(club, me) {
       const { list } = await api("PUT", `/api/teacher/clubs/${club.code}`, payload);
       Object.assign(club, { list: list.ams, blocked: list.blocked ?? [], closed: Boolean(list.closed), updatedBy: list.updatedBy, updatedAt: list.updatedAt });
       lastChange.textContent = changeText();
+      resetNotice?.remove();
       return list;
     },
   });
@@ -142,6 +145,7 @@ function clubCard(club, me) {
     el("p.muted.small", {}, `${club.days.map((d) => DAY_LABELS[d]).join(" + ")} · Τάξεις ${club.grades.join(", ")} · `, el("strong", {}, `${club.capacity} θέσεις`),
       club.coTeachers.length ? ` · Μαζί με: ${club.coTeachers.join(", ")}` : ""),
     club.coTeachers.length ? message("info", "Ο όμιλος έχει κοινή λίστα για όλους τους εκπαιδευτικούς του. Συνεννοηθείτε ώστε να τη συμπληρώσει ένας.") : null,
+    resetNotice,
     lastChange,
     editor);
 }

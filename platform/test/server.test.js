@@ -411,8 +411,23 @@ test("reports: reasons, audit log, club summary, student story, uploads, events"
   assert.match(csv, /9003,ΔΗΜΟΥ,ΣΟΦΙΑ,Α,— χωρίς προτιμήσεις,,,— χωρίς προτιμήσεις,/);
 
   const audit = new TextDecoder().decode((await call("GET", "/api/admin/export/audit_log.csv", { token: admin })).data);
-  assert.match(audit, /^Ημέρα,Γύρος,Γεγονός,ΑΜ,Επώνυμο,Όνομα,Κωδικός ομίλου,Όμιλος,Θέση προτίμησης,Περιγραφή\n/);
-  assert.match(audit, /Δευτέρα,1,PROPOSAL,9001,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΝΙΚΟΛΑΟΣ,100,Αντιγόνη,1,Αίτηση στον όμιλο «Αντιγόνη» \(1η επιλογή\)\./);
+  assert.match(audit, /^Ημέρα,Γύρος,Γεγονός,ΑΜ,Επώνυμο,Όνομα,Αριθμός κλήρωσης,Κωδικός ομίλου,Όμιλος,Θέση προτίμησης,Προτεραιότητα στον όμιλο,Περιγραφή\n/);
+  assert.match(audit, /Δευτέρα,1,PROPOSAL,9001,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΝΙΚΟΛΑΟΣ,\d+,100,Αντιγόνη,1,[^,]*,Αίτηση στον όμιλο «Αντιγόνη» \(1η επιλογή\)\./);
+
+  // The workbook for checking by hand: the automatic checks pass, and
+  // the student's row shows the lottery number and each choice's outcome.
+  const ver = (await call("GET", "/api/admin/export/verification", { token: admin })).data;
+  assert.equal(ver.problems, 0);
+  assert.deepEqual(ver.sheets.map((s) => s.name), ["Οδηγίες", "Βάσεις", "Μαθητές", "Γύροι", "Κλήρωση"]);
+  const rows = ver.sheets[2].rows;
+  const lostRow = rows.find((r) => r[0] === loser && r[5] === "Δευτέρα");
+  assert.match(lostRow.join("|"), /✗ Αντιγόνη: γεμάτος \(τελευταίος που μπήκε: .*κλ\. \d+ · μαθητής: .*κλ\. \d+\)/);
+  assert.match(lostRow.at(-1), /Γ1: αίτηση στον όμιλο «Αντιγόνη» \(1η επιλογή\) → δεν χώρεσε/);
+  assert.equal((await call("GET", "/api/admin/export/verification")).status, 401);
+
+  // The student's report says what the last student admitted had
+  const lostReport = (await call("GET", `/api/admin/report/${loser}`, { token: admin })).data;
+  assert.match(lostReport.days.mon.steps.join(" "), /Δεν χώρεσε στον όμιλο «Αντιγόνη».*Ο τελευταίος μαθητής που μπήκε είχε αριθμό κλήρωσης \d+· ο μαθητής έχει \d+/);
 
   const summary = new TextDecoder().decode((await call("GET", "/api/admin/export/club_summary.csv", { token: admin })).data);
   assert.match(summary, /100,Αντιγόνη,Δευτέρα,κατανομή,1,1,100,2,2,/);
@@ -988,4 +1003,39 @@ test("removing a club while a parent saves: neither change is lost", async () =>
   assert.deepEqual(sub.preferences, { mon: ["100"] }, "the parent's save kept (no longer ranking the club)");
   assert.deepEqual(sub.removedClubs, undefined, "a new save starts without notes");
   assert.equal(sub.parent.email, "g2@example.com", "the parent's newer details kept");
+});
+
+test("a clubs file with fewer seats than a teacher's ⭐ empties the ⭐, opens a closed list, and tells admin and teacher", async () => {
+  const { call, store } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
+  const link = (await call("POST", "/api/admin/teacher-link", { token: admin, body: { email: "amix@sch.gr" } })).data.link;
+  const teacher = (await call("POST", "/api/teacher/session", { body: { token: link.split("#token=")[1] } })).data.token;
+  // Ρομποτική: 5 seats, 3 ⭐ and a closed list; another club within its seats
+  assert.equal((await call("PUT", "/api/teacher/clubs/101", { token: teacher, body: { ams: ["9001", "9002", "9003"], closed: true } })).status, 200);
+  await call("PUT", "/api/admin/teacher-lists/102", { token: admin, body: { ams: ["9001"] } });
+
+  const fewer = CLUB_ROWS.map((row) => (row[0] === 101 ? [...row.slice(0, 6), 2, ...row.slice(7)] : row));
+  const r = await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: fewer, teachers: TEACHER_ROWS } });
+  assert.equal(r.status, 200);
+  const warning = r.data.report.problems.find((p) => p.message.includes("Ρομποτική"));
+  assert.match(warning.message, /μηδενίστηκαν: ήταν 3, ενώ ο όμιλος έχει πλέον 2 θέσεις .* Η λίστα ήταν κλειστή: όσοι ήταν ⭐ έγιναν ουδέτεροι \(○, κλήρωση\) και όλοι οι άλλοι ⛔\. Οι εκπαιδευτικοί του ομίλου ενημερώθηκαν\./);
+
+  const lists = (await call("GET", "/api/admin/state", { token: admin })).data.teacherLists;
+  assert.deepEqual([lists[101].ams, lists[101].closed, lists[101].blocked, lists[101].reset.starred, lists[101].reset.capacity], [[], undefined, ["9004"], 3, 2],
+    "the former ⭐ become ○, the rest of the club's grades ⛔");
+  assert.deepEqual(lists[102].ams, ["9001"], "a list within its seats is kept");
+  const mail = (await store.readLog("outbox")).at(-1);
+  assert.equal(mail.to, "amix@sch.gr");
+  const events = (await call("GET", "/api/admin/events", { token: admin })).data;
+  assert.ok(JSON.stringify(events).includes("teacher_list_reset"));
+
+  // The teacher sees it until the list is saved again
+  let me = (await call("GET", "/api/teacher/me", { token: teacher })).data.clubs.find((c) => c.code === 101);
+  assert.match(me.reset, /μηδενίστηκαν/);
+  await call("PUT", "/api/teacher/clubs/101", { token: teacher, body: { ams: ["9001"] } });
+  me = (await call("GET", "/api/teacher/me", { token: teacher })).data.clubs.find((c) => c.code === 101);
+  assert.equal(me.reset, null);
 });

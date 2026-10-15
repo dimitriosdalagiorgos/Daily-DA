@@ -58,14 +58,16 @@ export function describeEvent(e, nameOf, daysOf = () => []) {
  * only when the club is reconsidered (new applicants); the story adds the
  * end of the day — a final step for whoever still holds a seat — and says
  * «Κράτησε τη θέση» once for several rounds in a row.
+ * @param {(am: string, code: string) => string} [cutoffNote] added to «Δεν χώρεσε»
+ *   and «Έχασε τη θέση»: what the last student admitted had (cutoffNotes())
  * @returns {Record<string, Record<string, {round: number, event: string, club?: string, rank?: number, text: string}[]>>}
  *   am → day → events
  */
-export function storiesByStudent(logByDay, nameOf, daysOf) {
+export function storiesByStudent(logByDay, nameOf, daysOf, cutoffNote = () => "") {
   const out = {};
   const entry = (e) => ({
     round: e.round, event: e.event, ...(e.club !== undefined ? { club: e.club } : {}), ...(e.rank !== undefined ? { rank: e.rank } : {}),
-    text: describeEvent(e, nameOf, daysOf),
+    text: describeEvent(e, nameOf, daysOf) + (e.event === "REJECTED" || e.event === "DISPLACED" ? cutoffNote(String(e.am), String(e.club)) : ""),
   });
   for (const day of DAYS) {
     let lastRound = 0;
