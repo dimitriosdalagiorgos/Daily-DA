@@ -134,6 +134,7 @@ try {
   if (await puzzles.locator("text=Μη αποθηκευμένες αλλαγές").count()) throw new Error("still marked unsaved after saving");
   // Wish list → closed list in one click; the others become ⛔
   await colleague.click("role=tab[name=/Άλγεβρα/]");
+  if (!(await colleague.locator("role=tab[name=/Άλγεβρα/]").evaluate((b) => b === document.activeElement))) throw new Error("the chosen tab lost the focus");
   if (await puzzles.isVisible()) throw new Error("the other club's list is still shown");
   await algebra.locator(".tri-list .tri button.s-wish >> nth=0").click();
   await algebra.locator("button:has-text('Μόνο οι ⭐')").click();

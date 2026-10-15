@@ -123,12 +123,18 @@ function mainView(me) {
     let current = rememberedTab();
     if (!codes.includes(current)) current = codes[0];
     const nav = el("nav.tabs.club-tabs", { role: "tablist", "aria-label": "Οι όμιλοί σας" });
+    // The buttons are updated in place, so a keyboard user keeps focus on the tab
+    const buttons = me.clubs.map((club, i) => el("button", {
+      type: "button", role: "tab",
+      onclick: () => { current = codes[i]; rememberTab(current); drawTabs(); nav.scrollIntoView({ block: "nearest" }); },
+    }));
+    nav.append(...buttons);
     drawTabs = () => {
-      nav.replaceChildren(...me.clubs.map((club) => el("button", {
-        type: "button", role: "tab", "aria-selected": String(String(club.code) === current),
-        title: unsaved[club.code] ? "Μη αποθηκευμένες αλλαγές" : "",
-        onclick: () => { current = String(club.code); rememberTab(current); drawTabs(); nav.scrollIntoView({ block: "nearest" }); },
-      }, club.name, unsaved[club.code] ? " ●" : "")));
+      me.clubs.forEach((club, i) => {
+        buttons[i].setAttribute("aria-selected", String(codes[i] === current));
+        buttons[i].title = unsaved[club.code] ? "Μη αποθηκευμένες αλλαγές" : "";
+        buttons[i].textContent = club.name + (unsaved[club.code] ? " ●" : "");
+      });
       cards.forEach((card, i) => { card.hidden = codes[i] !== current; });
     };
     drawTabs();
