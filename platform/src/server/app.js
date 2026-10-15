@@ -25,6 +25,7 @@ import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
 import { GAP_REASONS, describeEvent, gapReasons, storiesByStudent } from "../export/story.js";
 import { allocationStats } from "../export/stats.js";
+import { buildVerification, cutoffNotes, priorities } from "../export/verification.js";
 import { createHash } from "node:crypto";
 import { makeZip } from "./zip.js";
 import { createRateLimiter, hashPassword, personalIdHash, safeEqual, signToken, verifyPassword, verifyToken, withIdHashes } from "./auth.js";
@@ -228,7 +229,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       clubs,
       teachers: teachers.map(({ idHash, ...t }) => ({ ...t, hasPersonalId: Boolean(idHash) })),
       teacherLists: lists,
-      submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}) }])),
+      submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}), clubs: [...new Set(Object.values(s.preferences ?? {}).flat().map(String))] }])),
       uploads: uploads ?? {},
       readiness: students.length && clubs.length ? checkReadiness(students, clubs, settings, exclusionsOf(clubs, lists, students)) : [],
       results: results ? { seed: results.seed, at: results.at } : null,
@@ -331,9 +332,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     await store.set("teachers", report.teachers);
     // Teacher lists: dropped for clubs that no longer exist; for the others
     // the file's capacity wins (an earlier «Διόρθωση» no longer applies) and
-    // students no longer in the club's grades leave the list.
+    // students no longer in the club's grades leave the list. A ⭐ list now
+    // longer than the seats is emptied (decided 15/10/2026): its order would
+    // decide who gets in, which the teacher did not intend. The ⛔ stay; a
+    // closed list (closed with no ⭐ would exclude everyone) keeps its intent:
+    // the former ⭐ become ○ and everyone else of the club's grades ⛔. The admin
+    // and the club's teachers are told; the teacher's page shows it until
+    // the list is saved again.
     const byCode = new Map(report.clubs.map((c) => [String(c.code), c]));
     const gradeOf = new Map((await getStudents()).map((st) => [st.am, st.grade]));
+    const resets = [];
     for (const { key, value } of await store.list("teacherList:")) {
       const club = byCode.get(key.slice(12));
       if (!club) {
@@ -342,13 +350,26 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       }
       const ams = (value.ams ?? []).filter((am) => club.grades.includes(gradeOf.get(am)));
       const blocked = (value.blocked ?? []).filter((am) => club.grades.includes(gradeOf.get(am)));
-      const { capacity: _old, ...rest } = value;
-      await store.set(key, { ...rest, ams, ...(value.blocked ? { blocked } : {}) });
+      const { capacity: _old, reset: _oldReset, ...rest } = value;
       if (ams.length < (value.ams ?? []).length) {
         reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${value.ams.length - ams.length} μαθητές βγήκαν, γιατί δεν είναι πια στις τάξεις του ομίλου.` }];
       }
       if (ams.length > club.capacity) {
-        reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${ams.length} μαθητές, περισσότεροι από τις ${club.capacity} θέσεις του νέου αρχείου. Διορθώστε τη λίστα.` }];
+        const reset = { at: new Date(now()).toISOString(), starred: ams.length, capacity: club.capacity, ...(value.closed ? { wasClosed: true } : {}) };
+        const { closed: _closed, ...open } = rest;
+        const others = value.closed ? [...gradeOf].filter(([am, grade]) => club.grades.includes(grade) && !ams.includes(am)).map(([am]) => am) : blocked;
+        await store.set(key, { ...open, ams: [], ...(others.length ? { blocked: others } : {}), reset, updatedBy: "admin-file", updatedAt: reset.at });
+        const text = resetText(club, reset);
+        reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${text} Οι εκπαιδευτικοί του ομίλου ενημερώθηκαν.` }];
+        await logEvent("admin", "teacher_list_reset", { club: club.code, starred: ams.length, capacity: club.capacity });
+        resets.push({ club, text });
+        continue;
+      }
+      await store.set(key, { ...rest, ams, ...(value.blocked ? { blocked } : {}) });
+    }
+    for (const { club, text } of resets) {
+      for (const t of report.teachers.filter((t) => t.clubs.includes(club.code))) {
+        await mail(t.email, `Η λίστα του ομίλου «${club.name}» μηδενίστηκε`, `${text}\nΣυνδεθείτε στην πλατφόρμα και ορίστε ξανά τους προτιμώμενους μαθητές (⭐), έως ${club.capacity}.`);
       }
     }
     await logEvent("admin", "clubs_uploaded", { clubs: report.clubs.length, teachers: report.teachers.length, fileName: fileNameOf(fileName) });
@@ -372,6 +393,47 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!found) throw new HttpError(404, "Δεν υπάρχει τέτοιος όμιλος.");
     await logEvent("admin", "club_similar", { club: Number(code), similar: value });
     return json(200, { club: found });
+  });
+
+  // Removes a club for good, also after declarations opened (a teacher
+  // leaves, the club is not approved…), until the allocation. As last year's
+  // R script did, the club leaves every declaration and the clubs after it
+  // move up one place; the parent sees a note on the form.
+  route("DELETE", "/api/admin/clubs/:code", async (req, { code }) => {
+    session(req, "admin");
+    const settings = await getSettings();
+    if (phaseAtLeast(settings.phase, "allocated")) {
+      throw new HttpError(409, "Η κατανομή έχει γίνει: ο όμιλος δεν καταργείται. Πατήστε «Επιστροφή» μέχρι τη φάση «Κλειστές δηλώσεις», καταργήστε τον και ξανατρέξτε την κατανομή (με το ίδιο seed).");
+    }
+    const club = ((await store.get("clubs")) ?? []).find((c) => String(c.code) === String(code));
+    if (!club) throw new HttpError(404, "Δεν υπάρχει τέτοιος όμιλος.");
+    const key = String(club.code);
+    await store.update("clubs", (clubs = []) => clubs.filter((c) => String(c.code) !== key));
+    await store.update("teachers", (teachers = []) => teachers.map((t) => ({ ...t, clubs: (t.clubs ?? []).filter((c) => String(c) !== key) })));
+    await store.delete(`teacherList:${key}`);
+    // Declarations: the club leaves every day's ranking. Each one is
+    // rewritten from its latest version, so a parent's save at the same
+    // moment is not lost (the club list changed first: see the parent's PUT).
+    const at = new Date(now()).toISOString();
+    let changed = 0;
+    for (const [am, sub] of Object.entries(await getSubmissions())) {
+      if (!ranksClub(sub, key)) continue;
+      let hit = false; // update() may retry: the last attempt counts
+      await store.update(`submission:${am}`, (latest) => {
+        hit = Boolean(latest && ranksClub(latest, key));
+        return hit ? withoutClubs(latest, [{ code: key, name: club.name }], at) : latest;
+      });
+      if (hit) changed++;
+    }
+    // An earlier allocation (before a step back) no longer applies
+    await Promise.all([store.delete("results"), store.delete("resultsLog"), store.deletePrefix("story:")]);
+    await logEvent("admin", "club_removed", { club: club.code, name: club.name, declarations: changed });
+    // Fewer seats: the mandatory grades may no longer fit (a warning only)
+    const [students, clubs] = await Promise.all([getStudents(), getClubs()]);
+    const warnings = phaseAtLeast(settings.phase, "parents")
+      ? checkReadiness(students, clubs, settings, await getExclusions(clubs, students)).filter((p) => p.level === "error").map((p) => p.message)
+      : [];
+    return json(200, { removed: { code: key, name: club.name }, declarations: changed, warnings });
   });
 
   route("PUT", "/api/admin/settings", async (req) => {
@@ -565,7 +627,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     await store.set("resultsLog", logByDay);
     // Each student's story, stored per student so a parent reads only theirs.
     const byCode = new Map(input.clubs.map((c) => [String(c.code), c]));
-    const stories = storiesByStudent(logByDay, (code) => byCode.get(String(code))?.name ?? code, (code) => byCode.get(String(code))?.days ?? []);
+    const stories = storiesByStudent(logByDay, (code) => byCode.get(String(code))?.name ?? code, (code) => byCode.get(String(code))?.days ?? [], cutoffNotes(input, results));
     for (const { key } of await store.list("story:")) if (!stories[key.slice(6)]) await store.delete(key);
     await store.setMany(Object.entries(stories).map(([am, story]) => ({ key: `story:${am}`, value: story })));
     await store.update("settings", (s = {}) => ({ ...s, phase: "allocated" }));
@@ -621,16 +683,32 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     session(req, "admin");
     const log = await store.get("resultsLog");
     if (!log) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
-    const [students, clubs] = await Promise.all([getStudents(), getClubs()]);
+    const results = await store.get("results");
+    const [students, clubs, input] = await Promise.all([getStudents(), getClubs(), allocationInput(results.seed)]);
     const byAm = new Map(students.map((s) => [s.am, s]));
     const byCode = new Map(clubs.map((c) => [String(c.code), c]));
     const nameOf = (code) => byCode.get(String(code))?.name ?? code;
     const daysOf = (code) => byCode.get(String(code))?.days ?? [];
+    // The lottery the allocation used, and the club's priority category
+    const lottery = new Map(results.lottery);
+    const prio = priorities({ ...input, lottery });
     const rows = DAYS.flatMap((d) => (log[d] ?? []).map((e) => [
-      DAY_LABELS[d], e.round, e.event, e.am ?? "", byAm.get(e.am)?.surname ?? "", byAm.get(e.am)?.name ?? "",
-      e.club ?? "", e.club !== undefined ? nameOf(e.club) : "", e.rank ?? "", describeEvent(e, nameOf, daysOf),
+      DAY_LABELS[d], e.round, e.event, e.am ?? "", byAm.get(e.am)?.surname ?? "", byAm.get(e.am)?.name ?? "", e.am !== undefined ? lottery.get(e.am) ?? "" : "",
+      e.club ?? "", e.club !== undefined ? nameOf(e.club) : "", e.rank ?? "",
+      e.am !== undefined && e.club !== undefined ? prio.category(prio.key(e.am, e.club)) : "", describeEvent(e, nameOf, daysOf),
     ]));
-    return csvResponse(["Ημέρα", "Γύρος", "Γεγονός", "ΑΜ", "Επώνυμο", "Όνομα", "Κωδικός ομίλου", "Όμιλος", "Θέση προτίμησης", "Περιγραφή"], rows, "audit_log_katanomis.csv");
+    return csvResponse(["Ημέρα", "Γύρος", "Γεγονός", "ΑΜ", "Επώνυμο", "Όνομα", "Αριθμός κλήρωσης", "Κωδικός ομίλου", "Όμιλος", "Θέση προτίμησης", "Προτεραιότητα στον όμιλο", "Περιγραφή"], rows, "audit_log_katanomis.csv");
+  });
+
+  // Everything needed to check the allocation by hand: cut-offs, every
+  // student's choices and rounds, the rounds per club, the lottery
+  // (src/export/verification.js). Sheets as rows; the browser writes the .xlsx.
+  route("GET", "/api/admin/export/verification", async (req) => {
+    session(req, "admin");
+    const [results, log] = await Promise.all([store.get("results"), store.get("resultsLog")]);
+    if (!results || !log) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
+    const input = await allocationInput(results.seed);
+    return json(200, buildVerification({ ...input, lottery: new Map(results.lottery) }, results, log));
   });
 
   // The lottery alone: ΑΜ and number, by ΑΜ — no names, so it can be
@@ -796,6 +874,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       closed: Boolean(lists[c.code]?.closed),
       updatedBy: lists[c.code]?.updatedBy ?? null,
       updatedAt: lists[c.code]?.updatedAt ?? null,
+      reset: lists[c.code]?.reset ? resetText(c, lists[c.code].reset) : null,
       coTeachers: teachers.filter((t) => t.email !== email && t.clubs.includes(c.code)).map((t) => `${t.name} ${t.surname}`),
       eligible: students.filter((s) => c.grades.includes(s.grade)).map(({ am, surname, name, grade }) => ({ am, surname, name, grade, section: sectionOf(sections, am, grade) })),
     }));
@@ -823,6 +902,11 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       closed: closed === undefined ? undefined : Boolean(closed),
     });
     return json(200, { list: entry });
+  }
+
+  /** Why a teacher's ⭐ list was emptied, for the admin, the teacher and the email. */
+  function resetText(club, reset) {
+    return `Οι προτιμώμενοι μαθητές (⭐) μηδενίστηκαν: ήταν ${reset.starred}, ενώ ο όμιλος έχει πλέον ${reset.capacity} θέσεις (νέο αρχείο ομίλων).${reset.wasClosed ? " Η λίστα ήταν κλειστή: όσοι ήταν ⭐ έγιναν ουδέτεροι (○, κλήρωση) και όλοι οι άλλοι ⛔." : ""}`;
   }
 
   /**
@@ -881,6 +965,20 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       // A declaration made before the exclusion still ranks the club: nothing to redo
       liftedAfterSubmission: (await submissionsOf(lifted)).filter((s) => s && !ranksClub(s, club.code)).length,
       excludedAfterSubmission: (await submissionsOf(added)).filter((s) => ranksClub(s, club.code)).length,
+    };
+  }
+
+  /** A declaration without the removed clubs: the ones after them move up. */
+  function withoutClubs(sub, removed, at) {
+    const gone = new Set(removed.map((c) => c.code));
+    const preferences = Object.fromEntries(Object.entries(sub.preferences ?? {})
+      .map(([day, list]) => [day, (list ?? []).map(String).filter((c) => !gone.has(c))])
+      .filter(([, list]) => list.length));
+    return {
+      ...sub,
+      preferences,
+      removedClubs: [...(sub.removedClubs ?? []), ...removed],
+      history: [...(sub.history ?? []), { at, email: `(διαχείριση: κατάργηση ${removed.map((c) => `ομίλου «${c.name}»`).join(", ")})`, preferences }],
     };
   }
 
@@ -957,6 +1055,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
           receipt: receiptCode(am, submission.submittedAt, submission.preferences),
           // Every save, so a parent can spot a change they did not make.
           history: (submission.history ?? []).map((h) => ({ at: h.at, email: h.email })),
+          // Clubs the school removed after this declaration (left out of it)
+          removedClubs: submission.removedClubs ?? [],
         }
         : null,
       result: published
@@ -995,16 +1095,28 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       };
     });
     await logEvent(`parent:${am}`, "submission", { email: parentEmail });
+    // A club removed while this save was on its way (checked against the
+    // clubs read before): it leaves the declaration as for everyone else.
+    const current = new Set((await store.get("clubs") ?? []).map((c) => String(c.code)));
+    let saved = clean;
+    if (Object.values(clean).flat().some((c) => !current.has(c))) {
+      const latest = await store.update(`submission:${am}`, (sub) => {
+        // Unless the removal itself already took it out
+        const lost = [...new Set(Object.values(sub?.preferences ?? {}).flat().map(String))].filter((c) => !current.has(c));
+        return lost.length ? withoutClubs(sub, lost.map((c) => ({ code: c, name: clubs.find((x) => String(x.code) === c)?.name ?? c })), at) : sub;
+      });
+      saved = latest?.preferences ?? {};
+    }
 
     const byCode = new Map(clubs.map((c) => [String(c.code), c.name]));
-    const summary = DAYS.filter((d) => clean[d]).map((d) => `${DAY_LABELS[d]}:\n${clean[d].map((c, i) => `  ${i + 1}. ${byCode.get(c)}`).join("\n")}`).join("\n\n");
+    const summary = DAYS.filter((d) => saved[d]).map((d) => `${DAY_LABELS[d]}:\n${saved[d].map((c, i) => `  ${i + 1}. ${byCode.get(c)}`).join("\n")}`).join("\n\n");
     const text = `Καταχωρίστηκε η δήλωση ομίλων για τον/την μαθητή/τρια ${student.surname} ${student.name} (${at.slice(0, 16).replace("T", " ")}).\n\n${summary}\n\nΜπορείτε να την αλλάξετε μέχρι την προθεσμία.`;
     await mail(parentEmail, "Επιβεβαίωση δήλωσης ομίλων", text);
     if (previousEmail && previousEmail !== parentEmail) {
       await mail(previousEmail, "Αλλαγή δήλωσης ομίλων",
         `Η δήλωση ομίλων για τον/την μαθητή/τρια ${student.surname} ${student.name} άλλαξε από άλλη διεύθυνση email (${parentEmail}). Αν δεν το κάνατε εσείς, επικοινωνήστε με το σχολείο.`);
     }
-    return json(200, { submittedAt: at, receipt: receiptCode(am, at, clean) });
+    return json(200, { submittedAt: at, receipt: receiptCode(am, at, saved) });
   });
 
   // The parent withdraws the declaration: the student is left without one,

@@ -38,9 +38,21 @@ let state = null;
 let tab = "overview";
 let resultsTab = "fill"; // sub-tab of the allocation results
 let devOutbox = false;
+let listsSaved = false; // a «Διόρθωση» saved: the clubs table is redrawn once no other one has unsaved edits
 
-api.onExpired = () => { api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
-logout.addEventListener("click", () => { api.setToken(null); loginView(); });
+// Forms with edits not saved yet (the settings, a «Διόρθωση») register a
+// check here; changing tab or phase, logging out or leaving asks first
+const unsaved = new Set();
+const hasUnsaved = () => [...unsaved].some((check) => check());
+const leaveOk = () => !hasUnsaved() || confirm("Υπάρχουν αλλαγές που δεν αποθηκεύσατε. Συνέχεια χωρίς αποθήκευση;");
+
+api.onExpired = () => { unsaved.clear(); api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
+logout.addEventListener("click", () => {
+  if (!leaveOk()) return;
+  unsaved.clear();
+  api.setToken(null);
+  loginView();
+});
 
 async function start() {
   if (api.hasToken()) {
@@ -70,15 +82,17 @@ function loginView(notice) {
 
 async function refresh() {
   state = await api("GET", "/api/admin/state");
+  listsSaved = false;
   devOutbox = await api("GET", "/api/admin/outbox").then(() => true, () => false);
   render();
 }
 
 function render() {
+  unsaved.clear(); // the views drawn below register their own
   logout.classList.remove("hidden");
   const tabs = [["overview", "Πορεία & ρυθμίσεις"], ["data", "Αρχεία"], ["students", "Μαθητές"], ["clubs", "Όμιλοι"], ["allocation", "Κατανομή"], ["history", "Ιστορικό"], ...(devOutbox ? [["outbox", "Εξερχόμενα email"]] : []), ["help", "Βοήθεια"]];
   const nav = el("nav.tabs", { role: "tablist" }, tabs.map(([id, label]) =>
-    el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), onclick: () => { tab = id; render(); } }, label)));
+    el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), onclick: () => { if (tab !== id && !leaveOk()) return; tab = id; render(); } }, label)));
   const views = { overview, data, students, clubs, allocation, history, outbox, help: () => helpTabs(["admin", "teacher", "parent"]) };
   show(app, el("h1", {}, "Διαχείριση"), phaseBar(), nav, el("div", { role: "tabpanel" }, views[tab]()));
 }
@@ -90,7 +104,7 @@ function phaseBar() {
   const idx = PHASES.findIndex(([p]) => p === phase);
   const out = el("div");
   const go = (target, confirmText) => async (e) => {
-    if (confirmText && !confirm(confirmText)) return;
+    if (!leaveOk() || (confirmText && !confirm(confirmText))) return;
     await busy(e.currentTarget, out, async () => {
       await api("POST", "/api/admin/phase", { phase: target });
       await refresh();
@@ -132,6 +146,29 @@ function overview() {
     parentPassword: el("input", { id: "ppw", type: "text", autocomplete: "off", placeholder: s.parentPasswordSet ? "Έχει οριστεί — γράψτε νέο για αλλαγή" : "Τουλάχιστον 6 χαρακτήρες" }),
     teacherPassword: el("input", { id: "tpw", type: "text", autocomplete: "off", placeholder: s.teacherPasswordSet ? "Έχει οριστεί — γράψτε νέο για αλλαγή" : "Τουλάχιστον 6 χαρακτήρες" }),
   };
+  // What is saved, to compare with and to go back to («Ακύρωση αλλαγών»)
+  const saved = { schoolName: f.schoolName.value, contact: f.contact.value, deadline: f.deadline.value, mandatory: f.mandatory.map((c) => c.checked) };
+  const dirty = () => f.schoolName.value !== saved.schoolName || f.contact.value !== saved.contact || f.deadline.value !== saved.deadline
+    || f.mandatory.some((c, i) => c.checked !== saved.mandatory[i]) || Boolean(f.parentPassword.value || f.teacherPassword.value);
+  const unsavedNote = el("span.small.unsaved");
+  const cancel = el("button.small", { type: "button", hidden: true }, "Ακύρωση αλλαγών");
+  const markDirty = () => {
+    unsavedNote.textContent = dirty() ? "Μη αποθηκευμένες αλλαγές" : "";
+    cancel.hidden = !dirty();
+  };
+  for (const input of [f.schoolName, f.contact, f.deadline, f.parentPassword, f.teacherPassword, ...f.mandatory]) input.addEventListener("input", markDirty);
+  for (const c of f.mandatory) c.addEventListener("change", markDirty);
+  cancel.addEventListener("click", () => {
+    f.schoolName.value = saved.schoolName;
+    f.contact.value = saved.contact;
+    f.deadline.value = saved.deadline;
+    f.mandatory.forEach((c, i) => { c.checked = saved.mandatory[i]; });
+    f.parentPassword.value = "";
+    f.teacherPassword.value = "";
+    show(out, null);
+    markDirty();
+  });
+  unsaved.add(dirty);
   const save = el("button.primary", { type: "button" }, "Αποθήκευση ρυθμίσεων");
   save.addEventListener("click", () => busy(save, out, async () => {
     const body = {
@@ -173,7 +210,7 @@ function overview() {
         el("p.small.muted", { style: "margin:2px 0 6px" }, "Για αυτές τις τάξεις κάθε μαθητής πρέπει να πάρει όμιλο κάθε ημέρα: οι δηλώσεις δεν ανοίγουν αν οι θέσεις δεν φτάνουν, και μετά την κατανομή εμφανίζεται όποιος έμεινε εκτός."),
         el("div.actions", { style: "margin-top:0" }, f.mandatory.map((c) => el("label", { style: "font-weight:400;margin:0" }, c, ` ${c.value} τάξη`)))),
       out,
-      el("div.actions", {}, save)),
+      el("div.actions", {}, save, unsavedNote, cancel)),
     dangerZone());
 }
 
@@ -510,7 +547,7 @@ function teacherListFiles() {
             !r.problems.length && !r.warnings.length ? el("span", { style: "color:var(--ok)" }, "✓") : null)))))),
       ok ? message("info", "Ελέγξτε τον πίνακα και πατήστε «Αποθήκευση». Οι λίστες αντικαθιστούν όσες υπάρχουν για αυτούς τους ομίλους.")
         : message("err", "Κάποια αρχεία έχουν σφάλματα (✗). Διορθώστε τα και επιλέξτε ξανά όλα τα αρχεία· δεν αποθηκεύτηκε τίποτα."),
-      el("div.actions", {}, save));
+      el("div.actions", {}, save, el("button", { type: "button", onclick: () => { files = []; show(preview, null); } }, "Ακύρωση")));
   };
   input.addEventListener("change", () => busy(input, preview, async () => {
     const XLSX = [...input.files].some((f) => !/\.csv$/i.test(f.name)) ? await loadXlsx() : null;
@@ -590,11 +627,20 @@ function teacherLinks() {
       el("tbody", {}, rows))) : el("p.muted", {}, "Δεν υπάρχουν εκπαιδευτικοί ακόμα (ανεβάστε το αρχείο ομίλων)."));
 }
 
+// What the last «Κατάργηση» did, shown once above the table
+let clubNotice = null;
+
 function clubsTable() {
   const editable = ["setup", "teachers"].includes(state.settings.phase); // clubs and «Παρεμφερείς»
   const listEditable = listsEditable();
+  // Until the allocation; afterwards: «Επιστροφή» first
+  const removable = !["allocated", "published"].includes(state.settings.phase);
   const byAm = new Map(state.students.map((s) => [s.am, s]));
+  const notice = clubNotice;
+  clubNotice = null;
   return el("section.card", {},
+    notice,
+    removable && state.clubs.length ? el("p.small.muted", {}, "«Κατάργηση»: ο όμιλος διαγράφεται οριστικά, και από τις δηλώσεις που τον έχουν ήδη (οι επόμενοι όμιλοι ανεβαίνουν μία θέση). Για εκπαιδευτικό που αποχωρεί, όμιλο που δεν εγκρίθηκε κ.λπ." ) : null,
     el("div.table-wrap", {}, el("table", {},
       el("thead", {}, el("tr", {}, el("th.num", {}, "Κωδ."), el("th", {}, "Όμιλος"), el("th", {}, "Ημέρες"), el("th", {}, "Τάξεις"), el("th.num", {}, "Θέσεις"), el("th", {}, "Παρεμφερείς"), el("th", {}, "Εκπαιδευτικοί"), el("th", {}, "Λίστα εκπαιδευτικού"))),
       el("tbody", {}, state.clubs.map((c) => {
@@ -606,15 +652,43 @@ function clubsTable() {
             ? el("span", {}, `⭐ ${list.ams?.length ?? 0}`, list.closed ? el("strong", {}, " · κλειστή λίστα") : list.blocked?.length ? ` · ⛔ ${list.blocked.length}` : "",
               list.ams?.length ? el("span", {}, el("br"), el("span.small.muted", {}, list.ams.map((am) => byAm.get(am)?.surname ?? am).join(", "))) : null)
             : el("span.muted", {}, "—"),
+          list?.reset ? el("div.small", {}, el("strong", {}, "⚠ Οι ⭐ μηδενίστηκαν"), ` (ήταν ${list.reset.starred}, θέσεις ${list.reset.capacity}): ο εκπαιδευτικός πρέπει να τους ξαναορίσει.`) : null,
           listEditable ? el("div", {}, el("button.small", { type: "button", onclick: () => editList(c, list, cell) }, "Διόρθωση")) : null);
         summary();
         return el("tr", {},
-          el("td.num", {}, c.code), el("td", {}, c.name), el("td", {}, c.days.map((d) => DAY_LABELS[d]).join(" + ")),
+          el("td.num", {}, c.code), el("td", {}, c.name, removable ? el("div", {}, removeClubButton(c)) : null), el("td", {}, c.days.map((d) => DAY_LABELS[d]).join(" + ")),
           el("td", {}, c.grades.join(", ")), el("td.num", {}, c.capacity),
           similarCell(c, editable),
           el("td.small", {}, teachers.map((t) => el("div", {}, `${t.name} ${t.surname}`, el("br"), el("span.muted", {}, t.email)))),
           cell);
       })))));
+}
+
+// Removes a club for good, also from the declarations that rank it
+function removeClubButton(club) {
+  const declared = Object.values(state.submissions).filter((sub) => (sub.clubs ?? []).includes(String(club.code))).length;
+  const button = el("button.small.danger", { type: "button", "aria-label": `Κατάργηση του ομίλου ${club.code}` }, "Κατάργηση");
+  button.addEventListener("click", async () => {
+    const text = [
+      `Κατάργηση του ομίλου ${club.code} «${club.name}»;`,
+      "Ο όμιλος διαγράφεται οριστικά, μαζί με τη λίστα του εκπαιδευτικού.",
+      declared ? `Βγαίνει από ${declared === 1 ? "τη δήλωση 1 μαθητή" : `τις δηλώσεις ${declared} μαθητών`}: οι επόμενοι όμιλοι ανεβαίνουν μία θέση και ο γονέας βλέπει σχετικό μήνυμα. Αν ο όμιλος ξαναγίνει, οι γονείς πρέπει να τον ξαναβάλουν στη σειρά τους.` : "Δεν τον έχει δηλώσει κανείς ακόμα.",
+      "Δεν αναιρείται.",
+    ].join("\n\n");
+    if (!confirm(text)) return;
+    button.disabled = true;
+    try {
+      const r = await api("DELETE", `/api/admin/clubs/${club.code}`);
+      clubNotice = el("div", {},
+        message("ok", `Ο όμιλος ${r.removed.code} «${r.removed.name}» καταργήθηκε${r.declarations ? `· βγήκε από ${r.declarations === 1 ? "1 δήλωση" : `${r.declarations} δηλώσεις`}` : ""}.`),
+        r.warnings.length ? message("err", `ΠΡΟΣΟΧΗ: ${r.warnings.join(" ")} Αυξήστε θέσεις σε άλλους ομίλους («Διόρθωση»).`) : null);
+      await refresh();
+    } catch (err) {
+      button.disabled = false;
+      alert(err.message);
+    }
+  });
+  return button;
 }
 
 // «Παρεμφερείς»: clubs with the same word — a student gets at most one
@@ -632,7 +706,7 @@ function similarCell(club, editable) {
       await api("PUT", `/api/admin/clubs/${club.code}/similar`, { similar: input.value });
       await refresh();
     }));
-    cell.replaceChildren(input, el("p.small.muted", {}, "Ίδια λέξη = παρεμφερείς· κενό = κανένας."), out, el("div.actions", {}, save, el("button.small", { type: "button", onclick: view }, "Άκυρο")));
+    cell.replaceChildren(input, el("p.small.muted", {}, "Ίδια λέξη = παρεμφερείς· κενό = κανένας."), out, el("div.actions", {}, save, el("button.small", { type: "button", onclick: view }, "Ακύρωση")));
     input.focus();
   }
   view();
@@ -641,6 +715,11 @@ function similarCell(club, editable) {
 
 // The admin's «Διόρθωση»: the seats, and the list with the teachers' editor
 function editList(club, list, cell) {
+  // In a row of its own below the club's, across the whole table; one already open is closed first
+  const row = cell.closest("tr");
+  const open = row.nextElementSibling;
+  if (open?.classList.contains("list-edit") && !open.discard()) return;
+  let dirty = false; // edits not saved: «Κλείσιμο», another tab etc. ask first
   const cap = el("input", { type: "number", min: 1, value: list?.capacity ?? club.capacity, "aria-label": "Χωρητικότητα", style: "width:7em" });
   const editor = listEditor({
     club,
@@ -649,22 +728,30 @@ function editList(club, list, cell) {
     canEdit: true,
     parentsPhase: state.settings.phase === "parents",
     capacityInput: cap,
+    onDirty: (d) => { dirty = d; },
     onSave: async (payload) => {
       const { list: entry } = await api("PUT", `/api/admin/teacher-lists/${club.code}`, { capacity: Number(cap.value), ...payload });
-      changed = true;
+      listsSaved = true; // the table is redrawn on «Κλείσιμο», so the editor's messages stay visible until then
       return entry;
     },
   });
-  // The page is redrawn on «Κλείσιμο», so the editor's messages stay visible until then
-  let changed = false;
-  // In a row of its own below the club's, across the whole table
-  const row = cell.closest("tr");
-  row.nextElementSibling?.classList.contains("list-edit") && row.nextElementSibling.remove();
-  row.after(el("tr.list-edit", {}, el("td", { colspan: row.children.length },
+  const check = () => dirty;
+  unsaved.add(check);
+  // Only this row closes: other open «Διορθώσεις» keep their edits
+  const discard = () => {
+    if (dirty && !confirm("Υπάρχουν αλλαγές στη λίστα ή στη χωρητικότητα που δεν αποθηκεύσατε. Κλείσιμο χωρίς αποθήκευση;")) return false;
+    unsaved.delete(check);
+    editRow.remove();
+    return true;
+  };
+  const close = () => { if (discard() && listsSaved && !hasUnsaved()) refresh(); };
+  const editRow = el("tr.list-edit", {}, el("td", { colspan: row.children.length },
     el("h3", { style: "margin-top:0" }, `Λίστα εκπαιδευτικού: ${club.name}`),
     el("label", {}, "Χωρητικότητα", cap),
     editor,
-    el("div.actions", {}, el("button.small", { type: "button", onclick: () => (changed ? refresh() : render()) }, "Κλείσιμο")))));
+    el("div.actions", {}, el("button.small", { type: "button", onclick: close }, "Κλείσιμο"))));
+  editRow.discard = discard;
+  row.after(editRow);
   cap.focus();
 }
 
@@ -699,6 +786,8 @@ function allocation() {
   xlsx.addEventListener("click", () => busy(xlsx, out, async () => resultsWorkbook((await api("GET", "/api/admin/results")).results)));
   const audit = el("button", { type: "button", disabled: !state.results }, "Audit log κατανομής (.csv)");
   audit.addEventListener("click", () => busy(audit, out, () => api.download("/api/admin/export/audit_log.csv", "audit_log_katanomis.csv")));
+  const verify = el("button", { type: "button", disabled: !state.results }, "Επαλήθευση κατανομής (.xlsx)");
+  verify.addEventListener("click", () => busy(verify, out, async () => saveWorkbook("epalitheusi_katanomis.xlsx", (await api("GET", "/api/admin/export/verification")).sheets)));
   const lotteryCsv = el("button", { type: "button" }, "Κλήρωση: ΑΜ και αριθμός (.csv)");
   lotteryCsv.addEventListener("click", () => busy(lotteryCsv, out, () => api.download(`/api/admin/export/lottery.csv${state.results ? "" : `?seed=${encodeURIComponent(seed.value)}`}`, "klirosi.csv")));
   const summary = el("button", { type: "button", disabled: !state.results }, "Σύνοψη ανά όμιλο (.csv)");
@@ -716,7 +805,8 @@ function allocation() {
       out,
       el("div.actions", {}, run, randomSeed),
       el("h3", {}, "Εξαγωγές"),
-      el("div.actions", {}, xlsx, csv, audit, summary, lotteryCsv, rZip),
+      el("div.actions", {}, xlsx, csv, audit, verify, summary, lotteryCsv, rZip),
+      el("p.small.muted", {}, "«Επαλήθευση κατανομής»: για να ελέγξετε την κατανομή με το χέρι. Για κάθε όμιλο ο τελευταίος που μπήκε και ο πρώτος που έμεινε έξω· για κάθε μαθητή και ημέρα οι επιλογές του, τι έγινε με την καθεμία και οι γύροι· γύρο-γύρο ποιοι κάνουν αίτηση σε κάθε όμιλο, ποιοι μένουν και ποιοι βγαίνουν, με τον αριθμό κλήρωσης. Στο πρώτο φύλλο, αυτόματοι έλεγχοι και οδηγίες."),
       el("p.small.muted", {}, "«Κλήρωση»: μόνο ΑΜ και αριθμός κλήρωσης, ταξινομημένα κατά ΑΜ, χωρίς ονόματα — για γρήγορη σύγκριση δύο μαθητών ή για ανακοίνωση. Μικρότερος αριθμός = προηγείται στην ίδια προτεραιότητα. Πριν την κατανομή βγαίνει για το seed που έχετε γράψει.")),
     resultsBox);
 }
@@ -933,6 +1023,21 @@ async function saveSheet(fileName, sheetName, rows, cols) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+/** Save several sheets ({name, rows, cols, filter}) as one .xlsx in the browser. */
+async function saveWorkbook(fileName, sheets) {
+  const XLSX = await loadXlsx();
+  const wb = XLSX.utils.book_new();
+  for (const { name, rows, cols, filter } of sheets) {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    if (cols) ws["!cols"] = cols.map((wch) => ({ wch }));
+    if (filter && rows.length > 1) ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: rows[0].length - 1 } }) };
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
+  const url = URL.createObjectURL(new Blob([XLSX.write(wb, { type: "array", bookType: "xlsx" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  el("a", { href: url, download: fileName }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 const weekCols = () => [8, 5, ...(hasSections(state.students) ? [7] : []), 20, 16, 14, 14, 22, 22, 22, 22, 22];
 
 function weekView(results) {
@@ -1057,7 +1162,7 @@ async function resultsWorkbook(results) {
 const EVENT_LABELS = {
   login: "Σύνδεση διαχείρισης", students_uploaded: "Ανέβασμα καταλόγου μαθητών", sections_uploaded: "Ανέβασμα τμημάτων μαθητών", clubs_uploaded: "Ανέβασμα ομίλων",
   import_legacy: "Εισαγωγή περσινών δηλώσεων", settings: "Αλλαγή ρυθμίσεων", phase: "Αλλαγή φάσης", login_exception: "Εξαίρεση σύνδεσης",
-  teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού",
+  teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού", teacher_list_reset: "Μηδενισμός ⭐ λίστας εκπαιδευτικού (λιγότερες θέσεις)",
   teacher_login_failed: "Αποτυχημένη σύνδεση εκπαιδευτικού",
   parent_login: "Σύνδεση γονέα", parent_login_failed: "Αποτυχημένη σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
 };
@@ -1139,6 +1244,8 @@ function outbox() {
       el("div.actions", {}, send)),
     box);
 }
+
+window.addEventListener("beforeunload", (e) => { if (hasUnsaved()) e.preventDefault(); });
 
 function linkify(text) {
   return text.split(/(https?:\/\/\S+)/).map((part) => (/^https?:\/\//.test(part) ? el("a", { href: part }, part) : part));

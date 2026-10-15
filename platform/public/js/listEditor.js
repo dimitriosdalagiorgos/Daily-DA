@@ -1,10 +1,19 @@
 // A club's list, as the teacher (and the admin's «Διόρθωση») edits it: every
 // eligible student in one of three states, ⭐ preferred (priority, up to the
 // seats), ○ neutral (the lottery decides) or ⛔ excluded (never placed in
-// the club). A closed list excludes everyone without ⭐. Excluded students
-// do not see the club in their parents' form. While parents declare, an
-// exclusion takes the club out of a declaration already made (the server
-// says how many, after saving).
+// the club). Excluded students do not see the club in their parents' form.
+// While parents declare, an exclusion takes the club out of a declaration
+// already made (the server says how many, after saving).
+//
+// Open or closed is not a switch but what the states add up to (decided
+// 15/10/2026): no ○ left and some ⛔ → a closed list, saved as `closed`, so
+// students added to the catalogue later are excluded too. One ○ anywhere
+// makes the list open again.
+//
+// Layout: a bar that stays on screen (list type, the counters, which also
+// filter the rows, «Αποθήκευση» and «Ακύρωση αλλαγών»), then search and filters, the
+// shortcuts, a box for changing all the rows shown (only once something
+// narrows them), and the rows.
 
 import { el, message, show } from "./ui.js";
 import { normalizeName } from "/lib/import/names.js";
@@ -17,6 +26,8 @@ const STATES = [
   [NONE, "○", "Ουδέτερος (κλήρωση)"],
   [OUT, "⛔", "Αποκλεισμός"],
 ];
+const ICON = Object.fromEntries(STATES.map(([v, icon]) => [v, icon]));
+const studentsAcc = (n) => `${n} ${n === 1 ? "μαθητή" : "μαθητές"}`;
 
 /**
  * @param {{
@@ -37,225 +48,231 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
   const label = (s) => `${s.surname} ${s.name}`;
   const capacity = () => (capacityInput ? Number(capacityInput.value) || 0 : club.capacity);
 
-  let saved = { ams: [...(list.ams ?? [])], blocked: [...(list.blocked ?? [])], closed: Boolean(list.closed) };
-  const wish = new Set(saved.ams);
-  const blocked = new Set(saved.blocked);
-  let closed = saved.closed;
+  // Each student's state; a closed list from the server = ⛔ for everyone without ⭐
+  const state = new Map();
+  const load = ({ ams = [], blocked = [], closed = false }) => {
+    const wished = new Set(ams.map(String));
+    const out = new Set(blocked.map(String));
+    for (const s of students) state.set(s.am, wished.has(s.am) ? WISH : closed || out.has(s.am) ? OUT : NONE);
+  };
+  load(list);
+  let savedKey = "";
+  const ofState = (v) => students.filter((s) => state.get(s.am) === v).map((s) => s.am);
+  const counts = () => ({ [WISH]: ofState(WISH).length, [NONE]: ofState(NONE).length, [OUT]: ofState(OUT).length });
+  const isClosed = () => { const c = counts(); return c[NONE] === 0 && c[OUT] > 0; };
+  const payload = () => {
+    const closed = isClosed();
+    return { ams: ofState(WISH), blocked: closed ? [] : ofState(OUT), closed };
+  };
+  // What would be saved, normalized: compared with what is saved, so a list
+  // whose stored `closed` differs from what its states now mean counts as unsaved
+  const eligibleAms = new Set(students.map((s) => s.am));
+  const normal = ({ ams = [], blocked = [], closed = false }) => JSON.stringify({
+    ams: ams.map(String).filter((am) => eligibleAms.has(am)).sort(),
+    blocked: closed ? [] : blocked.map(String).filter((am) => eligibleAms.has(am)).sort(),
+    closed: Boolean(closed),
+  });
+  const key = () => normal(payload());
+  savedKey = normal(list);
+  const full = () => counts()[WISH] >= capacity();
+  const allowed = (am, v) => canEdit && (v !== WISH || state.get(am) === WISH || !full());
 
-  const stateOf = (am) => (wish.has(am) ? WISH : closed || blocked.has(am) ? OUT : NONE);
-  const counts = () => {
-    const c = { [WISH]: 0, [NONE]: 0, [OUT]: 0 };
-    for (const s of students) c[stateOf(s.am)]++;
-    return c;
-  };
-  const full = () => wish.size >= capacity();
-  const allowed = (am, state) => {
-    if (!canEdit) return false;
-    if (state === WISH) return wish.has(am) || !full();
-    if (state === NONE) return !closed;
-    return true; // in a closed list: takes the ⭐ away
-  };
-  const setState = (am, state) => {
-    wish.delete(am);
-    blocked.delete(am);
-    if (state === WISH) wish.add(am);
-    if (state === OUT) blocked.add(am);
-  };
+  const out = el("div");
+  const set = (am, v) => { state.set(am, v); };
 
   // ---------- filters ----------
-  const out = el("div");
   const grades = [...new Set(students.map((s) => s.grade))].sort();
   const sections = [...new Set(students.map((s) => s.section).filter(Boolean))].sort((a, b) => a.localeCompare(b, "el", { numeric: true }));
-  const gradeFilter = el("select", { "aria-label": "Τάξη", disabled: grades.length < 2 },
-    el("option", { value: "" }, "Όλες οι τάξεις"), grades.map((g) => el("option", { value: g }, `${g} τάξη`)));
+  const gradeFilter = grades.length > 1
+    ? el("select", { "aria-label": "Τάξη" }, el("option", { value: "" }, "Όλες οι τάξεις"), grades.map((g) => el("option", { value: g }, `${g} τάξη`)))
+    : null;
   const sectionFilter = sections.length
     ? el("select", { "aria-label": "Τμήμα" }, el("option", { value: "" }, "Όλα τα τμήματα"), sections.map((x) => el("option", { value: x }, `Τμήμα ${x}`)))
     : null;
-  const stateFilter = el("select", { "aria-label": "Κατάσταση" },
-    el("option", { value: "" }, "Όλοι"), STATES.map(([v, icon, text]) => el("option", { value: v }, `${icon} ${text}`)));
   const search = el("input", { type: "search", placeholder: "Αναζήτηση με όνομα ή ΑΜ", "aria-label": "Αναζήτηση μαθητή" });
+  let shown = ""; // the counters filter by state: "" = everyone
+  const narrowed = () => Boolean(shown || search.value.trim() || gradeFilter?.value || sectionFilter?.value);
   const visible = () => {
     const q = normalizeName(search.value);
-    return students.filter((s) => (!gradeFilter.value || s.grade === gradeFilter.value)
+    return students.filter((s) => (!gradeFilter?.value || s.grade === gradeFilter.value)
       && (!sectionFilter?.value || s.section === sectionFilter.value)
-      && (!stateFilter.value || stateOf(s.am) === stateFilter.value)
+      && (!shown || state.get(s.am) === shown)
       && (!q || normalizeName(label(s)).includes(q) || s.am.startsWith(search.value.trim())));
   };
 
-  // ---------- list type ----------
-  const name = `mode-${club.code}-${Math.random().toString(36).slice(2, 7)}`;
-  const openRadio = el("input", { type: "radio", name, value: "open" });
-  const closedRadio = el("input", { type: "radio", name, value: "closed" });
-  const modeBox = el("fieldset.mode", {},
-    el("legend.small", {}, "Τύπος λίστας"),
-    el("label.inline", {}, openRadio, el("span", {}, el("strong", {}, "Ανοιχτή"), " — όσοι δεν έχουν ⭐ ή ⛔ κρίνονται με την κλήρωση.")),
-    el("label.inline", {}, closedRadio, el("span", {}, el("strong", {}, "Κλειστή"), " — ο όμιλος δέχεται ", el("em", {}, "μόνο"), " τους ⭐· όλοι οι άλλοι είναι ⛔. Αν δεν τους έρθουν όλοι, μένουν κενές θέσεις.")));
-  const question = el("div");
-  openRadio.addEventListener("change", () => {
-    if (!openRadio.checked || !closed) return;
-    // Closed → open: the others become neutral, or stay excluded (a block list)
-    const others = students.filter((s) => !wish.has(s.am)).map((s) => s.am);
-    closed = false;
-    for (const am of others) blocked.add(am);
-    show(question, el("div.msg.info", {},
-      el("p", { style: "margin:0 0 6px" }, `Η λίστα έγινε ανοιχτή. Οι ${others.length} μαθητές χωρίς ⭐ τι να γίνουν;`),
-      el("div.actions", { style: "margin:0" },
-        el("button.small", { type: "button", onclick: () => { show(question, null); update(); } }, "Να μείνουν ⛔ (αποκλεισμένοι)"),
-        el("button.small", {
-          type: "button",
-          onclick: () => { for (const am of others) blocked.delete(am); show(question, null); update(); },
-        }, "Να γίνουν ○ (κλήρωση)"))));
-    update();
-  });
-  closedRadio.addEventListener("change", () => {
-    if (!closedRadio.checked || closed) return;
-    toClosed();
-  });
-  function toClosed() {
-    closed = true;
-    blocked.clear();
-    show(question, null);
-    update();
-  }
-
-  // ---------- quick actions ----------
-  const bulk = (state) => {
-    const rows = visible().filter((s) => stateOf(s.am) !== state);
-    if (state === WISH) {
-      const free = capacity() - wish.size;
-      if (rows.length > free) {
-        show(out, message("warn", `Δεν χωρούν: θα έπαιρναν ⭐ ${rows.length} μαθητές, ενώ οι ελεύθερες θέσεις είναι ${free}. Περιορίστε τη λίστα με τα φίλτρα ή επιλέξτε έναν έναν.`));
-        return;
-      }
-    }
-    if (state === NONE && closed) return;
-    for (const s of rows) setState(s.am, state);
+  // ---------- the bar on top: list type, counters (= filters), save ----------
+  const typeLine = el("div.list-type");
+  const counters = el("div.counters", { role: "group", "aria-label": "Προβολή" });
+  const unsavedNote = el("span.small.unsaved");
+  // Back to what is saved: the states, and the admin's seats too
+  const undo = el("button.small", { type: "button", onclick: () => {
+    load(saved);
+    if (capacityInput) capacityInput.value = savedCapacity;
     show(out, null);
     update();
+  } }, "Ακύρωση αλλαγών");
+  const save = el("button.primary", { type: "button", disabled: !canEdit }, "Αποθήκευση");
+  let saved = { ...list };
+  let savedCapacity = capacityInput?.value;
+  const bar = el("div.list-bar", {}, typeLine, counters, canEdit ? el("div.actions.bar-actions", {}, save, unsavedNote, undo) : null);
+
+  const renderBar = () => {
+    const c = counts();
+    const cap = capacity();
+    const accepted = c[WISH] + c[NONE];
+    let type;
+    if (c[OUT] === 0) {
+      type = el("span", {}, el("strong", {}, "Ανοιχτή λίστα"), c[WISH] ? " — οι ⭐ προηγούνται, οι υπόλοιποι κρίνονται με την κλήρωση." : " — όλοι κρίνονται με την κλήρωση.");
+    } else if (isClosed()) {
+      type = c[WISH]
+        ? el("span", {}, el("strong", {}, "🔒 Κλειστή λίστα"), ` — ο όμιλος δέχεται μόνο ${c[WISH] === 1 ? "τον 1 ⭐" : `τους ${c[WISH]} ⭐`}.`)
+        : el("span", {}, el("strong", {}, "🔒 Κλειστή λίστα"), " — όλοι είναι ⛔: ο όμιλος δεν θα δεχτεί κανέναν.");
+    } else {
+      type = el("span", {}, el("strong", {}, "Ανοιχτή λίστα με αποκλεισμούς"), ` — ο όμιλος δεν δέχεται ${studentsAcc(c[OUT])}.`);
+    }
+    const empty = c[OUT] ? Math.max(0, cap - accepted) : 0;
+    typeLine.className = `list-type ${isClosed() || empty ? "warn" : ""}`;
+    show(typeLine, type,
+      empty ? el("span.block.small", {}, `Θα μείνουν τουλάχιστον ${empty} κενές θέσεις (ο όμιλος δέχεται ${accepted} για ${cap} θέσεις).`) : null,
+      canEdit && c[WISH] >= cap ? el("span.block.small", {}, `Οι ⭐ έφτασαν τις ${cap} θέσεις· για να δώσετε ⭐ σε άλλον, αφαιρέστε πρώτα κάποιον.`) : null);
+
+    const tab = (v, text, n) => el(`button.counter${v ? `.c-${v}` : ""}`, {
+      type: "button",
+      "aria-pressed": String(shown === v),
+      title: v ? `Εμφάνιση μόνο: ${text}` : "Εμφάνιση όλων",
+      onclick: () => { shown = shown === v ? "" : v; update(); },
+    }, text, " ", el("strong", {}, String(n)));
+    show(counters,
+      el("span.counters-label", {}, "Προβολή:"),
+      tab("", "Όλοι", students.length),
+      tab(WISH, "⭐", `${c[WISH]} / ${cap}`),
+      tab(NONE, "○", c[NONE]),
+      tab(OUT, "⛔", c[OUT]));
+
+    const dirty = key() !== savedKey || (Boolean(capacityInput) && capacityInput.value !== savedCapacity);
+    unsavedNote.textContent = dirty ? "Μη αποθηκευμένες αλλαγές" : "";
+    undo.hidden = !dirty;
+    onDirty(dirty);
   };
-  // In a closed list there are no ○: everyone without ⭐ is ⛔
-  const bulkNone = el("button.small", { type: "button", onclick: () => bulk(NONE) }, "○ Ουδέτεροι");
-  const bulkButtons = el("div.actions", { style: "margin:4px 0 8px" },
-    el("span.small", {}, "Σε όσους εμφανίζονται:"),
-    el("button.small", { type: "button", onclick: () => bulk(WISH) }, "⭐ Προτίμηση"),
-    bulkNone,
-    el("button.small", { type: "button", onclick: () => bulk(OUT) }, "⛔ Αποκλεισμός"));
-  // The two shortcuts of the request: wish list → closed list, and the reverse
-  const shortcuts = el("div.actions", { style: "margin:4px 0" });
+
+  // ---------- shortcuts ----------
+  const shortcuts = el("div.actions.shortcuts");
   const renderShortcuts = () => {
+    if (!canEdit) return shortcuts.replaceChildren();
     const c = counts();
     const items = [];
-    if (canEdit && !closed && wish.size && c[NONE] + c[OUT] > 0) {
-      items.push(el("button.small", { type: "button", onclick: () => { closedRadio.checked = true; toClosed(); } },
-        `Μόνο οι ⭐: όλοι οι υπόλοιποι (${c[NONE] + c[OUT]}) → ⛔`));
-    }
-    if (canEdit && !closed && c[OUT] && c[NONE] && c[NONE] <= capacity() - wish.size) {
+    if (c[WISH] && c[NONE]) {
       items.push(el("button.small", {
         type: "button",
-        onclick: () => { for (const s of students) if (stateOf(s.am) === NONE) setState(s.am, WISH); update(); },
+        onclick: () => { for (const am of ofState(NONE)) set(am, OUT); show(out, null); update(); },
+      }, `Μόνο οι ⭐ — ${c[NONE] === 1 ? "ο άλλος" : `οι άλλοι ${c[NONE]}`} ⛔`));
+    }
+    if (c[OUT] && c[NONE] && c[NONE] <= capacity() - c[WISH]) {
+      items.push(el("button.small", {
+        type: "button",
+        onclick: () => { for (const am of ofState(NONE)) set(am, WISH); show(out, null); update(); },
       }, `Όλοι οι μη αποκλεισμένοι (${c[NONE]}) → ⭐`));
+    }
+    if (c[WISH] || c[OUT]) {
+      items.push(el("button.small", {
+        type: "button",
+        onclick: () => {
+          if (!confirm(`Καθαρισμός της λίστας: και οι ${students.length} μαθητές θα γίνουν ○ (κλήρωση). Συνέχεια;`)) return;
+          for (const s of students) set(s.am, NONE);
+          show(out, null); update();
+        },
+      }, "Καθαρισμός: όλοι ○"));
     }
     shortcuts.replaceChildren(...items);
   };
 
+  // ---------- change everyone shown (only when the rows are narrowed) ----------
+  const bulkBox = el("div.bulk");
+  const bulk = (v) => {
+    const rows = visible().filter((s) => state.get(s.am) !== v);
+    if (!rows.length) return;
+    if (v === WISH && rows.length > capacity() - counts()[WISH]) {
+      show(out, message("warn", `Δεν χωρούν: θα έπαιρναν ⭐ ${studentsAcc(rows.length)}, ενώ οι ελεύθερες θέσεις είναι ${Math.max(0, capacity() - counts()[WISH])}. Περιορίστε τη λίστα με τα φίλτρα ή επιλέξτε έναν έναν.`));
+      return;
+    }
+    if (!confirm(`${rows.length === 1 ? "1 μαθητής θα γίνει" : `${rows.length} μαθητές θα γίνουν`} ${ICON[v]}. Συνέχεια;`)) return;
+    for (const s of rows) set(s.am, v);
+    show(out, null);
+    update();
+  };
+  const renderBulk = () => {
+    const n = visible().length;
+    if (!canEdit || !narrowed() || !n) return bulkBox.replaceChildren();
+    show(bulkBox,
+      el("span.small", {}, el("strong", {}, "Μαζική αλλαγή:"), n === 1 ? " ο μαθητής που βλέπετε τώρα γίνεται" : ` οι ${n} μαθητές που βλέπετε τώρα γίνονται`),
+      [[WISH, "⭐ Προτίμηση"], [NONE, "○ Ουδέτερ" + (n === 1 ? "ος" : "οι")], [OUT, "⛔ Αποκλεισμός"]].map(([v, text]) => el("button.small", { type: "button", onclick: () => bulk(v) }, text)));
+  };
+
   // ---------- rows ----------
-  const listBox = el("div.check-list", { role: "group", "aria-label": `Μαθητές για «${club.name}»` });
+  const listBox = el("div.tri-list", { role: "group", "aria-label": `Μαθητές για «${club.name}»` });
   const rowFor = (s) => {
-    const state = stateOf(s.am);
+    const current = state.get(s.am);
     const buttons = STATES.map(([v, icon, text]) => el(`button.s-${v}`, {
       type: "button",
-      "aria-pressed": String(state === v),
+      "aria-pressed": String(current === v),
       "aria-label": `${text}: ${label(s)}`,
-      title: text,
-      disabled: state !== v && !allowed(s.am, v),
-      onclick: () => { setState(s.am, v); show(out, null); update(); },
+      title: v === WISH && !allowed(s.am, v) ? `Οι ⭐ έφτασαν τις ${capacity()} θέσεις· αφαιρέστε πρώτα κάποιον.` : text,
+      disabled: current !== v && !allowed(s.am, v),
+      onclick: () => { set(s.am, v); show(out, null); update(); },
     }, icon));
-    return el(`div.tri-row.${state}`, {},
-      el("span.tri", { role: "group", "aria-label": label(s) }, buttons),
-      el("span.tri-name", {}, label(s)),
-      el("span.muted.small", {}, `${s.grade}${s.section ? ` · ${s.section}` : ""} · ΑΜ ${s.am}`));
+    return el(`div.tri-row.${current}`, {},
+      el("span.tri-who", {}, el("span.tri-name", {}, label(s)), el("span.muted.small", {}, ` ${s.grade}${s.section ? ` · ${s.section}` : ""} · ΑΜ ${s.am}`)),
+      el("span.tri", { role: "group", "aria-label": label(s) }, buttons));
   };
   const renderList = () => {
     const rows = visible();
-    // Keep the scroll position when the rows are redrawn
-    const top = listBox.scrollTop;
     listBox.replaceChildren(...(rows.length ? rows.map(rowFor) : [el("p.muted.small", { style: "padding:0 12px" }, "Κανένας μαθητής με αυτά τα κριτήρια.")]));
-    listBox.scrollTop = top;
-  };
-
-  // ---------- summary ----------
-  const summary = el("div");
-  const isSaved = () => closed === saved.closed && wish.size === saved.ams.length && saved.ams.every((am) => wish.has(am))
-    && (closed || (blocked.size === saved.blocked.length && saved.blocked.every((am) => blocked.has(am))));
-  const unsavedNote = el("span.small.muted");
-  const renderSummary = () => {
-    const c = counts();
-    const cap = capacity();
-    const accepted = c[WISH] + c[NONE];
-    const chips = wish.size
-      ? el("div.small", {}, "⭐ ", [...wish].map((am) => el("span.chip", {}, byAm.get(am) ? label(byAm.get(am)) : `ΑΜ ${am}`,
-        canEdit ? el("button.small.link", { type: "button", "aria-label": `Αφαίρεση ${byAm.get(am)?.surname ?? am}`, onclick: () => { setState(am, closed ? OUT : NONE); update(); } }, "✕") : null)))
-      : null;
-    let meaning;
-    if (closed) {
-      meaning = c[WISH] === 0
-        ? message("warn", "Κλειστή λίστα χωρίς μαθητές: ο όμιλος δεν θα δεχτεί κανέναν.")
-        : message(c[WISH] < cap ? "warn" : "info", `Κλειστή λίστα: ο όμιλος δέχεται μόνο αυτούς τους ${c[WISH]}, αν τον δηλώσουν.${c[WISH] < cap ? ` Θα μείνουν τουλάχιστον ${cap - c[WISH]} κενές θέσεις.` : ""}`);
-    } else if (c[OUT]) {
-      meaning = message(accepted < cap ? "warn" : "info", `Ο όμιλος δεν δέχεται ${c[OUT]} ${c[OUT] === 1 ? "μαθητή" : "μαθητές"}· τον βλέπουν μόνο οι υπόλοιποι ${accepted}.${accepted < cap ? ` Θα μείνουν τουλάχιστον ${cap - accepted} κενές θέσεις.` : ""}`);
-    } else {
-      meaning = el("p.small.muted", {}, c[WISH] ? "Οι ⭐ έχουν προτεραιότητα αν δηλώσουν τον όμιλο· οι υπόλοιποι κρίνονται με την κλήρωση." : "Χωρίς λίστα: όσοι δηλώσουν τον όμιλο κρίνονται με την κλήρωση.");
-    }
-    show(summary,
-      el("div.list-summary", {},
-        el(`span.badge.${wish.size > cap ? "warn" : "primary"}`, {}, `⭐ ${c[WISH]} / ${cap} θέσεις`),
-        el("span.badge", {}, `○ ${c[NONE]}`),
-        el(`span.badge${c[OUT] ? ".err" : ""}`, {}, `⛔ ${c[OUT]}`)),
-      canEdit && full() ? el("p.small.muted", {}, `Οι ⭐ έφτασαν τις ${cap} θέσεις του ομίλου· για να δώσετε ⭐ σε άλλον, αφαιρέστε πρώτα κάποιον.`) : null,
-      meaning, chips);
-    unsavedNote.textContent = isSaved() ? "" : "Μη αποθηκευμένες αλλαγές";
-    onDirty(!isSaved());
   };
 
   function update() {
-    openRadio.checked = !closed;
-    closedRadio.checked = closed;
-    openRadio.disabled = closedRadio.disabled = !canEdit;
-    bulkNone.disabled = closed;
-    bulkNone.title = closed ? "Σε κλειστή λίστα δεν υπάρχουν ουδέτεροι· κάντε πρώτα τη λίστα ανοιχτή." : "";
-    renderSummary();
+    renderBar();
     renderShortcuts();
+    renderBulk();
     renderList();
   }
-  for (const input of [search, gradeFilter, sectionFilter, stateFilter].filter(Boolean)) input.addEventListener("input", renderList);
+  for (const input of [search, gradeFilter, sectionFilter].filter(Boolean)) input.addEventListener("input", () => { renderBulk(); renderList(); });
   capacityInput?.addEventListener("input", update);
 
-  const save = el("button.primary", { type: "button", disabled: !canEdit }, "Αποθήκευση");
+  // No edits while saving: the reply replaces the states with what was saved
+  const editing = el("div.list-editing");
   save.addEventListener("click", async () => {
     save.disabled = true;
+    undo.disabled = true;
+    editing.inert = true;
+    editing.classList.add("saving");
     try {
-      const entry = await onSave({ ams: [...wish], blocked: closed ? [] : [...blocked], closed });
-      saved = { ams: [...(entry.ams ?? [])], blocked: [...(entry.blocked ?? [])], closed: Boolean(entry.closed) };
+      const entry = await onSave(payload());
+      saved = { ams: entry.ams ?? [], blocked: entry.blocked ?? [], closed: Boolean(entry.closed) };
+      load(saved);
+      savedKey = normal(saved);
+      if (capacityInput) {
+        if (entry.capacity !== undefined) capacityInput.value = entry.capacity;
+        savedCapacity = capacityInput.value;
+      }
       update();
       show(out, message("ok", "Αποθηκεύτηκε."),
-        entry.excludedAfterSubmission ? message("info", `${entry.excludedAfterSubmission} από τους μαθητές που αποκλείσατε τώρα είχαν ήδη δηλώσει τον όμιλο. Στην κατανομή ο όμιλος θα παραλειφθεί από τη δήλωσή τους (η υπόλοιπη σειρά μένει ίδια), και οι γονείς τους θα το δουν αν ξαναμπούν.`) : null,
-        entry.liftedAfterSubmission ? message("warn", `${entry.liftedAfterSubmission} από τους μαθητές που δεν είναι πια αποκλεισμένοι έχουν ήδη δήλωση χωρίς αυτόν τον όμιλο. Ο όμιλος θα ληφθεί υπόψη μόνο αν ο γονέας ξαναμπεί και αποθηκεύσει τη δήλωση (θα του εμφανιστεί στο τέλος της σειράς). Ενημερώστε τη διαχείριση.`) : null);
+        entry.excludedAfterSubmission ? message("info", `${entry.excludedAfterSubmission === 1 ? "1 από τους μαθητές που αποκλείσατε τώρα είχε" : `${entry.excludedAfterSubmission} από τους μαθητές που αποκλείσατε τώρα είχαν`} ήδη δηλώσει τον όμιλο. Στην κατανομή ο όμιλος θα παραλειφθεί από τη δήλωση (η υπόλοιπη σειρά μένει ίδια), και ο γονέας θα το δει αν ξαναμπεί.`) : null,
+        entry.liftedAfterSubmission ? message("warn", `${entry.liftedAfterSubmission === 1 ? "1 μαθητής που δεν είναι πια αποκλεισμένος έχει" : `${entry.liftedAfterSubmission} μαθητές που δεν είναι πια αποκλεισμένοι έχουν`} ήδη δήλωση χωρίς αυτόν τον όμιλο. Ο όμιλος θα ληφθεί υπόψη μόνο αν ο γονέας ξαναμπεί και αποθηκεύσει τη δήλωση (θα του εμφανιστεί στο τέλος της σειράς). Ενημερώστε τη διαχείριση.`) : null);
     } catch (err) {
       show(out, message("err", err.message));
     } finally {
       save.disabled = !canEdit;
+      undo.disabled = false;
+      editing.inert = false;
+      editing.classList.remove("saving");
     }
   });
 
   update();
-  return el("div", {},
-    modeBox,
-    question,
-    summary,
-    parentsPhase && canEdit ? message("info", "Οι δηλώσεις των γονέων είναι ανοιχτές. Αν αποκλείσετε (⛔) μαθητή που έχει ήδη δηλώσει τον όμιλο, ο όμιλος θα παραλειφθεί από τη δήλωσή του. Αν άρετε έναν αποκλεισμό, ο γονέας πρέπει να ξαναμπεί για να βάλει τον όμιλο στη σειρά του.") : null,
-    el("div.filters", {}, search, gradeFilter, sectionFilter, stateFilter),
-    canEdit ? el("div", {}, bulkButtons, shortcuts) : null,
-    listBox,
+  show(editing, el("div.filters", {}, search, gradeFilter, sectionFilter), shortcuts, bulkBox, listBox);
+  return el("div.list-editor", {},
+    bar,
     out,
-    el("div.actions", {}, save, unsavedNote));
+    parentsPhase && canEdit ? message("info", "Οι δηλώσεις των γονέων είναι ανοιχτές. Αν αποκλείσετε (⛔) μαθητή που έχει ήδη δηλώσει τον όμιλο, ο όμιλος θα παραλειφθεί από τη δήλωσή του. Αν άρετε έναν αποκλεισμό, ο γονέας πρέπει να ξαναμπεί για να βάλει τον όμιλο στη σειρά του.") : null,
+    editing);
 }

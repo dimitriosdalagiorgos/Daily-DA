@@ -82,11 +82,11 @@ try {
   step("teacher: logged in with the magic link");
   if (await teacher.locator("input[type=number]").count()) throw new Error("teachers must not edit the capacity");
   await teacher.fill("input[type=search]", "γεωργ");
-  await teacher.locator(".check-list .tri button.s-wish >> nth=0").click();
+  await teacher.locator(".tri-list .tri button.s-wish >> nth=0").click();
   await teacher.fill("input[type=search]", "");
-  await teacher.locator(".check-list .tri-row.none button.s-wish >> nth=0").click();
-  const badge = await teacher.locator(".list-summary .badge >> nth=0").textContent();
-  if (badge.trim() !== "⭐ 2 / 20 θέσεις") throw new Error(`teacher count: ${badge}`);
+  await teacher.locator(".tri-list .tri-row.none button.s-wish >> nth=0").click();
+  const badge = await teacher.locator(".counter.c-wish").textContent();
+  if (badge.trim() !== "⭐ 2 / 20") throw new Error(`teacher count: ${badge}`);
   await teacher.click("text=Αποθήκευση");
   await teacher.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
   step("teacher: two students ticked and saved (capacity shown, not editable)");
@@ -110,44 +110,58 @@ try {
   // Only this teacher's two clubs
   await colleague.waitForSelector("h2:has-text('Μαθηματικοί γρίφοι')");
   if ((await colleague.locator("section.card h2").count()) !== 2) throw new Error("the teacher must see only their own two clubs");
+  // One tab per club: only the chosen club's list is shown
+  if ((await colleague.locator("nav.club-tabs >> role=tab").count()) !== 2) throw new Error("one tab per club expected");
+  if ((await colleague.locator("section.card:visible").count()) !== 1) throw new Error("only one club's list at a time");
   const puzzles = colleague.locator("section.card:has(h2:has-text('Μαθηματικοί γρίφοι'))");
   const algebra = colleague.locator("section.card:has(h2:has-text('Άλγεβρα'))");
   // The bulk buttons take whoever the filters show
-  const wishBadge = (card) => card.locator(".list-summary .badge >> nth=0").textContent().then((t) => t.trim());
+  // Changing everyone shown appears only once the rows are narrowed (and asks first)
+  const wishBadge = (card) => card.locator(".counter.c-wish").textContent().then((t) => t.trim());
+  const outBadge = (card) => card.locator(".counter.c-out").textContent().then((t) => t.trim());
+  if (await puzzles.locator(".bulk button").count()) throw new Error("bulk change shown without a filter");
   await puzzles.locator("input[type=search]").fill("γεωργ");
-  await puzzles.locator("button:has-text('⭐ Προτίμηση')").click();
+  await puzzles.locator(".bulk button:has-text('⭐')").click();
   const picked = Number((await wishBadge(puzzles)).match(/⭐ (\d+)/)[1]);
   if (picked < 1) throw new Error("bulk ⭐ picked nobody");
-  await puzzles.locator("button:has-text('○ Ουδέτεροι')").click();
-  if (await wishBadge(puzzles) !== "⭐ 0 / 15 θέσεις") throw new Error("bulk ○ left some ⭐");
-  await puzzles.locator("button:has-text('⭐ Προτίμηση')").click();
+  await puzzles.locator(".bulk button:has-text('○')").click();
+  if (await wishBadge(puzzles) !== "⭐ 0 / 15") throw new Error("bulk ○ left some ⭐");
+  await puzzles.locator(".bulk button:has-text('⭐')").click();
   await puzzles.locator("input[type=search]").fill("");
   await puzzles.locator("text=Μη αποθηκευμένες αλλαγές").waitFor();
   await puzzles.locator("button:has-text('Αποθήκευση')").click();
   await puzzles.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   if (await puzzles.locator("text=Μη αποθηκευμένες αλλαγές").count()) throw new Error("still marked unsaved after saving");
   // Wish list → closed list in one click; the others become ⛔
-  await algebra.locator(".check-list .tri button.s-wish >> nth=0").click();
+  await colleague.click("role=tab[name=/Άλγεβρα/]");
+  if (!(await colleague.locator("role=tab[name=/Άλγεβρα/]").evaluate((b) => b === document.activeElement))) throw new Error("the chosen tab lost the focus");
+  if (await puzzles.isVisible()) throw new Error("the other club's list is still shown");
+  await algebra.locator(".tri-list .tri button.s-wish >> nth=0").click();
   await algebra.locator("button:has-text('Μόνο οι ⭐')").click();
-  await algebra.locator(".msg:has-text('Κλειστή λίστα: ο όμιλος δέχεται μόνο αυτούς τους 1')").waitFor();
-  // …and back to open: the others stay ⛔ (a block list) or become ○
-  await algebra.locator("label:has-text('Ανοιχτή') input").check();
-  await algebra.locator("button:has-text('Να γίνουν ○')").click();
-  if ((await algebra.locator(".list-summary .badge >> nth=2").textContent()).trim() !== "⛔ 0") throw new Error("closed → open → ○ left exclusions");
+  await algebra.locator(".list-type:has-text('Κλειστή λίστα'):has-text('μόνο τον 1 ⭐')").waitFor();
+  // One ○ makes it open again, no switch; «Καθαρισμός» clears everything
+  await algebra.locator(".tri-list .tri-row.out button.s-none >> nth=0").click();
+  await algebra.locator(".list-type:has-text('Ανοιχτή λίστα με αποκλεισμούς')").waitFor();
+  await algebra.locator("button:has-text('Καθαρισμός')").click();
+  if (await outBadge(algebra) !== "⛔ 0" || await wishBadge(algebra) !== "⭐ 0 / 15") throw new Error("«Καθαρισμός» left some ⭐/⛔");
+  await algebra.locator(".tri-list .tri button.s-wish >> nth=0").click();
   // One ⛔: the student will not see the club
-  await algebra.locator(".check-list .tri-row.none button.s-out >> nth=0").click();
+  await algebra.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
   await algebra.locator("button:has-text('Αποθήκευση')").click();
   await algebra.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   // After a reload both lists are still there
   await colleague.reload();
-  await colleague.waitForSelector("h2:has-text('Μαθηματικοί γρίφοι')");
-  if (await wishBadge(puzzles) !== `⭐ ${picked} / 15 θέσεις`) throw new Error("first club's list not kept");
-  if (await wishBadge(algebra) !== "⭐ 1 / 15 θέσεις") throw new Error("second club's list not kept");
-  if ((await algebra.locator(".list-summary .badge >> nth=2").textContent()).trim() !== "⛔ 1") throw new Error("the ⛔ was not kept");
+  // The chosen tab is kept after a reload
+  await colleague.locator("role=tab[name=/Άλγεβρα/][selected=true]").waitFor();
+  await algebra.waitFor();
+  if (await wishBadge(puzzles) !== `⭐ ${picked} / 15`) throw new Error("first club's list not kept");
+  if (await wishBadge(algebra) !== "⭐ 1 / 15") throw new Error("second club's list not kept");
+  if (await outBadge(algebra) !== "⛔ 1") throw new Error("the ⛔ was not kept");
   await colleague.click("header button:has-text('Βοήθεια')");
   await colleague.waitForSelector("#help-panel h2:has-text('Σύνδεση')");
   await shot(colleague, "03b-teacher-code");
-  await algebra.locator(".check-list .tri-row.none button.s-wish >> nth=0").click(); // unsaved: logging out asks first
+  await algebra.locator(".tri-list .tri-row.none button.s-wish >> nth=0").click(); // unsaved: logging out asks first
+  await colleague.locator("role=tab[name=/Άλγεβρα.*●/]").waitFor(); // the tab marks unsaved changes
   await colleague.click("text=Αποσύνδεση εκπαιδευτικού");
   await colleague.waitForSelector("#tcode");
   step("teacher: common code + own ΑΜ/ΑΦΜ → only their clubs; select/clear all; lists kept after a reload; in-page help");
@@ -165,16 +179,48 @@ try {
   const chess = admin.locator("tr:has-text('Σκάκι')");
   await chess.locator("button:has-text('Διόρθωση')").click();
   const editor = admin.locator("tr.list-edit");
-  await editor.locator(".check-list .tri-row.none button.s-out >> nth=0").click();
+  // «Ακύρωση αλλαγών» brings back the saved list and seats
+  const seats = await editor.locator("input[aria-label='Χωρητικότητα']").inputValue();
+  await editor.locator("input[aria-label='Χωρητικότητα']").fill("99");
+  await editor.locator(".tri-list .tri-row.none button.s-wish >> nth=0").click();
+  await editor.locator(".unsaved:has-text('Μη αποθηκευμένες αλλαγές')").waitFor();
+  await editor.locator("button:has-text('Ακύρωση αλλαγών')").click();
+  if (await editor.locator("input[aria-label='Χωρητικότητα']").inputValue() !== seats) throw new Error("«Ακύρωση αλλαγών» did not restore the seats");
+  if (await editor.locator(".tri-list .tri-row.wish").count() !== 2 || await editor.locator(".unsaved").textContent()) throw new Error("«Ακύρωση αλλαγών» did not restore the list");
+  await editor.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
   await editor.locator("button:has-text('Αποθήκευση')").click();
   await editor.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   await shot(admin, "02c-admin-list-editor");
   await editor.locator("button:has-text('Κλείσιμο')").click();
   await admin.waitForSelector("tr:has-text('Σκάκι') td:has-text('⭐ 2 · ⛔ 1')");
-  step("admin: one ⛔ added with «Διόρθωση»");
+  step("admin: «Ακύρωση αλλαγών» in «Διόρθωση», then one ⛔ added");
+  // Two «Διορθώσεις» open: closing the clean one keeps the other's edits
+  const fixRows = admin.locator("tr:has(button:has-text('Διόρθωση'))");
+  await fixRows.nth(0).locator("button:has-text('Διόρθωση')").click();
+  await fixRows.nth(1).locator("button:has-text('Διόρθωση')").click();
+  const [firstEdit, secondEdit] = [admin.locator("tr.list-edit").nth(0), admin.locator("tr.list-edit").nth(1)];
+  await firstEdit.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
+  await secondEdit.locator("button:has-text('Κλείσιμο')").click();
+  if (await admin.locator("tr.list-edit").count() !== 1 || !(await firstEdit.locator(".unsaved").textContent())) throw new Error("closing one «Διόρθωση» lost the other's edits");
+  await firstEdit.locator("button:has-text('Ακύρωση αλλαγών')").click();
+  await firstEdit.locator("button:has-text('Κλείσιμο')").click();
+  if (await admin.locator("tr.list-edit").count()) throw new Error("«Διόρθωση» not closed");
+  step("admin: two «Διορθώσεις» open — closing one keeps the other");
 
   // ---------- Admin: settings, open declarations ----------
   await admin.click("role=tab[name='Πορεία & ρυθμίσεις']");
+  // Unsaved settings: another tab asks first (no → stay), «Ακύρωση αλλαγών» brings back what is saved
+  const school = await admin.inputValue("#school");
+  await admin.fill("#school", "Λάθος όνομα");
+  await admin.fill("#tpw", "xyzxyz");
+  let leaveAsked = "";
+  admin.removeAllListeners("dialog");
+  admin.once("dialog", (d) => { leaveAsked = d.message(); d.dismiss(); });
+  await admin.click("role=tab[name='Αρχεία']");
+  admin.on("dialog", (d) => d.accept());
+  if (!leaveAsked.includes("δεν αποθηκεύσατε") || await admin.inputValue("#school") !== "Λάθος όνομα") throw new Error(`changing tab with unsaved settings: ${leaveAsked}`);
+  await admin.click("button:has-text('Ακύρωση αλλαγών')");
+  if (await admin.inputValue("#school") !== school || await admin.inputValue("#tpw")) throw new Error("«Ακύρωση αλλαγών» did not restore the settings");
   await admin.fill("#ppw", "omiloi2026");
   const inTwoDays = new Date(Date.now() + 2 * 86400000);
   await admin.fill("#deadline", new Date(inTwoDays.getTime() - inTwoDays.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
@@ -182,7 +228,7 @@ try {
   await admin.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
   await admin.click("text=Επόμενη φάση: Δηλώσεις γονέων");
   await admin.waitForSelector("ol.steps li.current:has-text('Δηλώσεις γονέων')");
-  step("admin: parents' password + deadline, phase → parents");
+  step("admin: settings — «Ακύρωση αλλαγών»; parents' password + deadline, phase → parents");
 
   // ---------- Parent (phone size) ----------
   const parent = await newPage({ width: 390, height: 844 });
@@ -293,6 +339,17 @@ try {
   // «Επαναφορά της Δευτέρας» brings back the first-visit order; «Διαγραφή
   // δήλωσης» deletes the saved declaration. Then the same one is made again.
   if ((await names()).join() !== afterDrag.join()) throw new Error(`saved Monday order not shown: ${await names()}`);
+  // A change not saved: logging out asks (no → stay); «Ακύρωση αλλαγών» brings back the saved order
+  await mon.locator("li >> nth=0").locator("button[aria-label$='μία θέση κάτω']").click();
+  await parent.locator(".unsaved:has-text('Μη αποθηκευμένες αλλαγές')").waitFor();
+  let logoutAsked = "";
+  parent.once("dialog", (d) => { logoutAsked = d.message(); d.dismiss(); });
+  await parent.click("#logout");
+  if (!logoutAsked.includes("δεν αποθηκεύσατε") || !(await parent.locator("ol.ranker").count())) throw new Error(`logout with unsaved changes: ${logoutAsked}`);
+  await parent.click("button:has-text('Ακύρωση αλλαγών')");
+  if ((await names()).join() !== afterDrag.join()) throw new Error(`«Ακύρωση αλλαγών» did not restore Monday: ${await names()}`);
+  if (await parent.locator("button:has-text('Ακύρωση αλλαγών')").isVisible()) throw new Error("«Ακύρωση αλλαγών» still shown");
+  step("parent: unsaved change — logout asks, «Ακύρωση αλλαγών» restores the saved order");
   parent.once("dialog", (d) => d.accept());
   await parent.click("button:has-text('Επαναφορά της Δευτέρας')");
   if ((await names()).join() !== before.join()) throw new Error(`Monday reset failed: ${await names()}`);
@@ -363,7 +420,7 @@ try {
   await shot(admin, "07e-admin-rosters");
   step("admin: the week per student and the clubs' rosters on screen");
   await shot(admin, "07-admin-results");
-  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"]]) {
+  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Επαλήθευση κατανομής (.xlsx)", "verification"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"]]) {
     const [d] = await Promise.all([admin.waitForEvent("download"), admin.click(`button:has-text('${label}')`)]);
     step(`admin: ${file} downloaded (${d.suggestedFilename()})`);
   }

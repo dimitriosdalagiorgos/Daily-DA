@@ -109,31 +109,69 @@ function mainView(me) {
   const nodes = [
     el("h1", {}, `${me.teacher.name} ${me.teacher.surname}`),
     me.canEdit
-      ? message("info", "Αν θέλετε, ορίστε για κάθε μαθητή: ⭐ προτίμηση (έως τις θέσεις του ομίλου: έχει προτεραιότητα αν δηλώσει τον όμιλο, δεν τοποθετείται υποχρεωτικά), ○ ουδέτερος (κρίνεται με την κλήρωση) ή ⛔ αποκλεισμός (δεν μπαίνει στον όμιλο και δεν τον βλέπει στη φόρμα των γονέων). Με «Κλειστή λίστα» ο όμιλος δέχεται μόνο τους ⭐. Τις θέσεις τις ορίζει η διαχείριση."
+      ? message("info", "Αν θέλετε, ορίστε για κάθε μαθητή: ⭐ προτίμηση (έως τις θέσεις του ομίλου: έχει προτεραιότητα αν δηλώσει τον όμιλο, δεν τοποθετείται υποχρεωτικά), ○ ουδέτερος (κρίνεται με την κλήρωση) ή ⛔ αποκλεισμός (δεν μπαίνει στον όμιλο και δεν τον βλέπει στη φόρμα των γονέων). Αν δεν μείνει κανένας ○, η λίστα γίνεται «κλειστή»: ο όμιλος δέχεται μόνο τους ⭐. Τις θέσεις τις ορίζει η διαχείριση."
         + (me.phase === "parents" && me.deadline ? ` Οι λίστες μένουν ανοιχτές μέχρι το κλείσιμο των δηλώσεων των γονέων: ${formatDateTime(me.deadline)}.` : ""))
       : message("warn", me.phase === "setup" ? "Η φάση των εκπαιδευτικών δεν έχει ανοίξει ακόμα." : "Οι λίστες κλείδωσαν με το κλείσιμο των δηλώσεων. Για διορθώσεις επικοινωνήστε με τη διαχείριση."),
   ];
-  for (const club of me.clubs) nodes.push(clubCard(club, me));
+  let drawTabs = null;
+  const cards = me.clubs.map((club) => clubCard(club, me, () => drawTabs?.()));
   if (me.clubs.length === 0) nodes.push(message("warn", "Δεν υπάρχει όμιλος με το email σας."));
+  // Several clubs: one tab each, so only one long list is on the page at a time.
+  // The other cards stay in the page (hidden), keeping their unsaved ticks.
+  if (cards.length > 1) {
+    const codes = me.clubs.map((c) => String(c.code));
+    let current = rememberedTab();
+    if (!codes.includes(current)) current = codes[0];
+    const nav = el("nav.tabs.club-tabs", { role: "tablist", "aria-label": "Οι όμιλοί σας" });
+    // The buttons are updated in place, so a keyboard user keeps focus on the tab
+    const buttons = me.clubs.map((club, i) => el("button", {
+      type: "button", role: "tab",
+      onclick: () => { current = codes[i]; rememberTab(current); drawTabs(); nav.scrollIntoView({ block: "nearest" }); },
+    }));
+    nav.append(...buttons);
+    drawTabs = () => {
+      me.clubs.forEach((club, i) => {
+        buttons[i].setAttribute("aria-selected", String(codes[i] === current));
+        buttons[i].title = unsaved[club.code] ? "Μη αποθηκευμένες αλλαγές" : "";
+        buttons[i].textContent = club.name + (unsaved[club.code] ? " ●" : "");
+      });
+      cards.forEach((card, i) => { card.hidden = codes[i] !== current; });
+    };
+    drawTabs();
+    nodes.push(nav);
+  }
+  nodes.push(...cards);
   show(app, nodes);
 }
 
-function clubCard(club, me) {
+// The chosen tab survives a reload (best effort: storage may be blocked)
+const TAB_KEY = "teacher-club-tab";
+function rememberedTab() { try { return sessionStorage.getItem(TAB_KEY); } catch { return null; } }
+function rememberTab(code) { try { sessionStorage.setItem(TAB_KEY, code); } catch { /* ignore */ } }
+
+function clubCard(club, me, onTabChange) {
   const changeText = () => (club.updatedAt
     ? `Τελευταία αλλαγή: ${{ admin: "διαχείριση", "admin-file": "διαχείριση (από αρχείο)" }[club.updatedBy] ?? club.updatedBy}, ${formatDateTime(club.updatedAt)}`
     : "");
   const lastChange = el("p.small.muted", {}, changeText());
+  // The ⭐ were emptied by a clubs file with fewer seats: until the list is saved again
+  const resetNotice = club.reset ? message("warn", `${club.reset} Ορίστε ξανά τους προτιμώμενους μαθητές (⭐), έως ${club.capacity}, και πατήστε αποθήκευση.`) : null;
   const editor = listEditor({
     club,
     eligible: club.eligible,
     list: { ams: club.list, blocked: club.blocked, closed: club.closed },
     canEdit: me.canEdit,
     parentsPhase: me.phase === "parents",
-    onDirty: (dirty) => { unsaved[club.code] = dirty; },
+    onDirty: (dirty) => {
+      const changed = Boolean(unsaved[club.code]) !== dirty;
+      unsaved[club.code] = dirty;
+      if (changed) onTabChange();
+    },
     onSave: async (payload) => {
       const { list } = await api("PUT", `/api/teacher/clubs/${club.code}`, payload);
       Object.assign(club, { list: list.ams, blocked: list.blocked ?? [], closed: Boolean(list.closed), updatedBy: list.updatedBy, updatedAt: list.updatedAt });
       lastChange.textContent = changeText();
+      resetNotice?.remove();
       return list;
     },
   });
@@ -142,6 +180,7 @@ function clubCard(club, me) {
     el("p.muted.small", {}, `${club.days.map((d) => DAY_LABELS[d]).join(" + ")} · Τάξεις ${club.grades.join(", ")} · `, el("strong", {}, `${club.capacity} θέσεις`),
       club.coTeachers.length ? ` · Μαζί με: ${club.coTeachers.join(", ")}` : ""),
     club.coTeachers.length ? message("info", "Ο όμιλος έχει κοινή λίστα για όλους τους εκπαιδευτικούς του. Συνεννοηθείτε ώστε να τη συμπληρώσει ένας.") : null,
+    resetNotice,
     lastChange,
     editor);
 }
