@@ -102,7 +102,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
 
   // ---------- the bar on top: list type, counters (= filters), save ----------
   const typeLine = el("div.list-type");
-  const counters = el("div.counters", { role: "group", "aria-label": "Εμφάνιση" });
+  const counters = el("div.counters", { role: "group", "aria-label": "Προβολή" });
   const unsavedNote = el("span.small.unsaved");
   const undo = el("button.small", { type: "button", onclick: () => { load(saved); show(out, null); update(); } }, "Αναίρεση αλλαγών");
   const save = el("button.primary", { type: "button", disabled: !canEdit }, "Αποθήκευση");
@@ -136,6 +136,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
       onclick: () => { shown = shown === v ? "" : v; update(); },
     }, text, " ", el("strong", {}, String(n)));
     show(counters,
+      el("span.counters-label", {}, "Προβολή:"),
       tab("", "Όλοι", students.length),
       tab(WISH, "⭐", `${c[WISH]} / ${cap}`),
       tab(NONE, "○", c[NONE]),
@@ -196,8 +197,8 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     const n = visible().length;
     if (!canEdit || !narrowed() || !n) return bulkBox.replaceChildren();
     show(bulkBox,
-      el("span.small", {}, `Αλλαγή σε ${n === 1 ? "αυτόν που φαίνεται" : `όλους τους ${n} που φαίνονται`}:`),
-      STATES.map(([v, icon, text]) => el("button.small", { type: "button", onclick: () => bulk(v) }, `${icon} ${text.split(" ")[0]}`)));
+      el("span.small", {}, el("strong", {}, "Μαζική αλλαγή:"), n === 1 ? " ο μαθητής που βλέπετε τώρα γίνεται" : ` οι ${n} μαθητές που βλέπετε τώρα γίνονται`),
+      [[WISH, "⭐ Προτίμηση"], [NONE, "○ Ουδέτερ" + (n === 1 ? "ος" : "οι")], [OUT, "⛔ Αποκλεισμός"]].map(([v, text]) => el("button.small", { type: "button", onclick: () => bulk(v) }, text)));
   };
 
   // ---------- rows ----------

@@ -309,6 +309,7 @@ label.check-row input { width: 18px; height: 18px; }
 .list-type.warn { background: var(--warn-soft); color: var(--warn); }
 .list-type .block { display: block; }
 .counters { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.counters-label { align-self: center; font-weight: 600; margin-right: 2px; }
 .counter { min-height: 34px; padding: 4px 12px; border-radius: 999px; font-size: 0.95rem; font-weight: 400; }
 .counter[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
 .bar-actions { margin-top: 8px; }
