@@ -735,6 +735,8 @@ function allocation() {
   xlsx.addEventListener("click", () => busy(xlsx, out, async () => resultsWorkbook((await api("GET", "/api/admin/results")).results)));
   const audit = el("button", { type: "button", disabled: !state.results }, "Audit log κατανομής (.csv)");
   audit.addEventListener("click", () => busy(audit, out, () => api.download("/api/admin/export/audit_log.csv", "audit_log_katanomis.csv")));
+  const verify = el("button", { type: "button", disabled: !state.results }, "Επαλήθευση κατανομής (.xlsx)");
+  verify.addEventListener("click", () => busy(verify, out, async () => saveWorkbook("epalitheusi_katanomis.xlsx", (await api("GET", "/api/admin/export/verification")).sheets)));
   const lotteryCsv = el("button", { type: "button" }, "Κλήρωση: ΑΜ και αριθμός (.csv)");
   lotteryCsv.addEventListener("click", () => busy(lotteryCsv, out, () => api.download(`/api/admin/export/lottery.csv${state.results ? "" : `?seed=${encodeURIComponent(seed.value)}`}`, "klirosi.csv")));
   const summary = el("button", { type: "button", disabled: !state.results }, "Σύνοψη ανά όμιλο (.csv)");
@@ -752,7 +754,8 @@ function allocation() {
       out,
       el("div.actions", {}, run, randomSeed),
       el("h3", {}, "Εξαγωγές"),
-      el("div.actions", {}, xlsx, csv, audit, summary, lotteryCsv, rZip),
+      el("div.actions", {}, xlsx, csv, audit, verify, summary, lotteryCsv, rZip),
+      el("p.small.muted", {}, "«Επαλήθευση κατανομής»: για να ελέγξετε την κατανομή με το χέρι. Για κάθε όμιλο ο τελευταίος που μπήκε και ο πρώτος που έμεινε έξω· για κάθε μαθητή και ημέρα οι επιλογές του, τι έγινε με την καθεμία και οι γύροι· γύρο-γύρο ποιοι κάνουν αίτηση σε κάθε όμιλο, ποιοι μένουν και ποιοι βγαίνουν, με τον αριθμό κλήρωσης. Στο πρώτο φύλλο, αυτόματοι έλεγχοι και οδηγίες."),
       el("p.small.muted", {}, "«Κλήρωση»: μόνο ΑΜ και αριθμός κλήρωσης, ταξινομημένα κατά ΑΜ, χωρίς ονόματα — για γρήγορη σύγκριση δύο μαθητών ή για ανακοίνωση. Μικρότερος αριθμός = προηγείται στην ίδια προτεραιότητα. Πριν την κατανομή βγαίνει για το seed που έχετε γράψει.")),
     resultsBox);
 }
@@ -964,6 +967,21 @@ async function saveSheet(fileName, sheetName, rows, cols) {
   if (cols) ws["!cols"] = cols.map((wch) => ({ wch }));
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   // Through a link (as for the .zip downloads)
+  const url = URL.createObjectURL(new Blob([XLSX.write(wb, { type: "array", bookType: "xlsx" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  el("a", { href: url, download: fileName }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+/** Save several sheets ({name, rows, cols, filter}) as one .xlsx in the browser. */
+async function saveWorkbook(fileName, sheets) {
+  const XLSX = await loadXlsx();
+  const wb = XLSX.utils.book_new();
+  for (const { name, rows, cols, filter } of sheets) {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    if (cols) ws["!cols"] = cols.map((wch) => ({ wch }));
+    if (filter && rows.length > 1) ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: rows[0].length - 1 } }) };
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
   const url = URL.createObjectURL(new Blob([XLSX.write(wb, { type: "array", bookType: "xlsx" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   el("a", { href: url, download: fileName }).click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);

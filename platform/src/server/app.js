@@ -25,6 +25,7 @@ import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
 import { GAP_REASONS, describeEvent, gapReasons, storiesByStudent } from "../export/story.js";
 import { allocationStats } from "../export/stats.js";
+import { buildVerification, priorities } from "../export/verification.js";
 import { createHash } from "node:crypto";
 import { makeZip } from "./zip.js";
 import { createRateLimiter, hashPassword, personalIdHash, safeEqual, signToken, verifyPassword, verifyToken, withIdHashes } from "./auth.js";
@@ -662,16 +663,32 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     session(req, "admin");
     const log = await store.get("resultsLog");
     if (!log) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
-    const [students, clubs] = await Promise.all([getStudents(), getClubs()]);
+    const results = await store.get("results");
+    const [students, clubs, input] = await Promise.all([getStudents(), getClubs(), allocationInput(results.seed)]);
     const byAm = new Map(students.map((s) => [s.am, s]));
     const byCode = new Map(clubs.map((c) => [String(c.code), c]));
     const nameOf = (code) => byCode.get(String(code))?.name ?? code;
     const daysOf = (code) => byCode.get(String(code))?.days ?? [];
+    // The lottery the allocation used, and the club's priority category
+    const lottery = new Map(results.lottery);
+    const prio = priorities({ ...input, lottery });
     const rows = DAYS.flatMap((d) => (log[d] ?? []).map((e) => [
-      DAY_LABELS[d], e.round, e.event, e.am ?? "", byAm.get(e.am)?.surname ?? "", byAm.get(e.am)?.name ?? "",
-      e.club ?? "", e.club !== undefined ? nameOf(e.club) : "", e.rank ?? "", describeEvent(e, nameOf, daysOf),
+      DAY_LABELS[d], e.round, e.event, e.am ?? "", byAm.get(e.am)?.surname ?? "", byAm.get(e.am)?.name ?? "", e.am !== undefined ? lottery.get(e.am) ?? "" : "",
+      e.club ?? "", e.club !== undefined ? nameOf(e.club) : "", e.rank ?? "",
+      e.am !== undefined && e.club !== undefined ? prio.category(prio.key(e.am, e.club)) : "", describeEvent(e, nameOf, daysOf),
     ]));
-    return csvResponse(["Ημέρα", "Γύρος", "Γεγονός", "ΑΜ", "Επώνυμο", "Όνομα", "Κωδικός ομίλου", "Όμιλος", "Θέση προτίμησης", "Περιγραφή"], rows, "audit_log_katanomis.csv");
+    return csvResponse(["Ημέρα", "Γύρος", "Γεγονός", "ΑΜ", "Επώνυμο", "Όνομα", "Αριθμός κλήρωσης", "Κωδικός ομίλου", "Όμιλος", "Θέση προτίμησης", "Προτεραιότητα στον όμιλο", "Περιγραφή"], rows, "audit_log_katanomis.csv");
+  });
+
+  // Everything needed to check the allocation by hand: cut-offs, every
+  // student's choices and rounds, the rounds per club, the lottery
+  // (src/export/verification.js). Sheets as rows; the browser writes the .xlsx.
+  route("GET", "/api/admin/export/verification", async (req) => {
+    session(req, "admin");
+    const [results, log] = await Promise.all([store.get("results"), store.get("resultsLog")]);
+    if (!results || !log) throw new HttpError(404, "Δεν έχει γίνει κατανομή.");
+    const input = await allocationInput(results.seed);
+    return json(200, buildVerification({ ...input, lottery: new Map(results.lottery) }, results, log));
   });
 
   // The lottery alone: ΑΜ and number, by ΑΜ — no names, so it can be

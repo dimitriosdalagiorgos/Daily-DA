@@ -411,8 +411,19 @@ test("reports: reasons, audit log, club summary, student story, uploads, events"
   assert.match(csv, /9003,ΔΗΜΟΥ,ΣΟΦΙΑ,Α,— χωρίς προτιμήσεις,,,— χωρίς προτιμήσεις,/);
 
   const audit = new TextDecoder().decode((await call("GET", "/api/admin/export/audit_log.csv", { token: admin })).data);
-  assert.match(audit, /^Ημέρα,Γύρος,Γεγονός,ΑΜ,Επώνυμο,Όνομα,Κωδικός ομίλου,Όμιλος,Θέση προτίμησης,Περιγραφή\n/);
-  assert.match(audit, /Δευτέρα,1,PROPOSAL,9001,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΝΙΚΟΛΑΟΣ,100,Αντιγόνη,1,Αίτηση στον όμιλο «Αντιγόνη» \(1η επιλογή\)\./);
+  assert.match(audit, /^Ημέρα,Γύρος,Γεγονός,ΑΜ,Επώνυμο,Όνομα,Αριθμός κλήρωσης,Κωδικός ομίλου,Όμιλος,Θέση προτίμησης,Προτεραιότητα στον όμιλο,Περιγραφή\n/);
+  assert.match(audit, /Δευτέρα,1,PROPOSAL,9001,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΝΙΚΟΛΑΟΣ,\d+,100,Αντιγόνη,1,[^,]*,Αίτηση στον όμιλο «Αντιγόνη» \(1η επιλογή\)\./);
+
+  // The workbook for checking by hand: the automatic checks pass, and
+  // the student's row shows the lottery number and each choice's outcome.
+  const ver = (await call("GET", "/api/admin/export/verification", { token: admin })).data;
+  assert.equal(ver.problems, 0);
+  assert.deepEqual(ver.sheets.map((s) => s.name), ["Οδηγίες", "Βάσεις", "Μαθητές", "Γύροι", "Κλήρωση"]);
+  const rows = ver.sheets[2].rows;
+  const lostRow = rows.find((r) => r[0] === loser && r[5] === "Δευτέρα");
+  assert.match(lostRow.join("|"), /✗ Αντιγόνη: γεμάτος \(τελευταίος που μπήκε: .*κλ\. \d+ · μαθητής: .*κλ\. \d+\)/);
+  assert.match(lostRow.at(-1), /Γ1: αίτηση στον όμιλο «Αντιγόνη» \(1η επιλογή\) → δεν χώρεσε/);
+  assert.equal((await call("GET", "/api/admin/export/verification")).status, 401);
 
   const summary = new TextDecoder().decode((await call("GET", "/api/admin/export/club_summary.csv", { token: admin })).data);
   assert.match(summary, /100,Αντιγόνη,Δευτέρα,κατανομή,1,1,100,2,2,/);
