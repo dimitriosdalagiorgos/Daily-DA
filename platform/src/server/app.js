@@ -878,7 +878,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const submissionsOf = async (ams) => (settings.phase === "parents" && ams.length ? Promise.all(ams.map((am) => store.get(`submission:${am}`))) : []);
     return {
       ...entry,
-      liftedAfterSubmission: (await submissionsOf(lifted)).filter(Boolean).length,
+      // A declaration made before the exclusion still ranks the club: nothing to redo
+      liftedAfterSubmission: (await submissionsOf(lifted)).filter((s) => s && !ranksClub(s, club.code)).length,
       excludedAfterSubmission: (await submissionsOf(added)).filter((s) => ranksClub(s, club.code)).length,
     };
   }

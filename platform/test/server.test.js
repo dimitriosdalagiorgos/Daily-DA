@@ -870,6 +870,11 @@ test("teachers' exclusions: ⛔ and closed lists, hidden from parents, added or 
   const mon = (await call("GET", "/api/parent/me", { token: ntoka })).data.days.find((d) => d.day === "mon");
   assert.deepEqual(mon.clubs.map((c) => c.code), ["100"]);
   assert.deepEqual(mon.withdrawn, [{ code: "101", name: "Ρομποτική" }], "the parent is told");
+  // Lifted again: 9004's declaration still ranks Ρομποτική, so nothing for the parent to redo
+  r = await save({ ams: ["9001", "9002", "9004"], closed: true });
+  assert.deepEqual([r.data.list.excludedAfterSubmission, r.data.list.liftedAfterSubmission], [0, 0]);
+  assert.deepEqual((await call("GET", "/api/parent/me", { token: ntoka })).data.days.find((d) => d.day === "mon").withdrawn, []);
+  await save({ ams: ["9001", "9002"], closed: true });
 
   await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
   r = await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "Κλήρωση 2026" } });
