@@ -110,6 +110,9 @@ try {
   // Only this teacher's two clubs
   await colleague.waitForSelector("h2:has-text('Μαθηματικοί γρίφοι')");
   if ((await colleague.locator("section.card h2").count()) !== 2) throw new Error("the teacher must see only their own two clubs");
+  // One tab per club: only the chosen club's list is shown
+  if ((await colleague.locator("nav.club-tabs >> role=tab").count()) !== 2) throw new Error("one tab per club expected");
+  if ((await colleague.locator("section.card:visible").count()) !== 1) throw new Error("only one club's list at a time");
   const puzzles = colleague.locator("section.card:has(h2:has-text('Μαθηματικοί γρίφοι'))");
   const algebra = colleague.locator("section.card:has(h2:has-text('Άλγεβρα'))");
   // The bulk buttons take whoever the filters show
@@ -130,6 +133,8 @@ try {
   await puzzles.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   if (await puzzles.locator("text=Μη αποθηκευμένες αλλαγές").count()) throw new Error("still marked unsaved after saving");
   // Wish list → closed list in one click; the others become ⛔
+  await colleague.click("role=tab[name=/Άλγεβρα/]");
+  if (await puzzles.isVisible()) throw new Error("the other club's list is still shown");
   await algebra.locator(".tri-list .tri button.s-wish >> nth=0").click();
   await algebra.locator("button:has-text('Μόνο οι ⭐')").click();
   await algebra.locator(".list-type:has-text('Κλειστή λίστα'):has-text('μόνο τον 1 ⭐')").waitFor();
@@ -145,7 +150,9 @@ try {
   await algebra.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   // After a reload both lists are still there
   await colleague.reload();
-  await colleague.waitForSelector("h2:has-text('Μαθηματικοί γρίφοι')");
+  // The chosen tab is kept after a reload
+  await colleague.locator("role=tab[name=/Άλγεβρα/][selected=true]").waitFor();
+  await algebra.waitFor();
   if (await wishBadge(puzzles) !== `⭐ ${picked} / 15`) throw new Error("first club's list not kept");
   if (await wishBadge(algebra) !== "⭐ 1 / 15") throw new Error("second club's list not kept");
   if (await outBadge(algebra) !== "⛔ 1") throw new Error("the ⛔ was not kept");
@@ -153,6 +160,7 @@ try {
   await colleague.waitForSelector("#help-panel h2:has-text('Σύνδεση')");
   await shot(colleague, "03b-teacher-code");
   await algebra.locator(".tri-list .tri-row.none button.s-wish >> nth=0").click(); // unsaved: logging out asks first
+  await colleague.locator("role=tab[name=/Άλγεβρα.*●/]").waitFor(); // the tab marks unsaved changes
   await colleague.click("text=Αποσύνδεση εκπαιδευτικού");
   await colleague.waitForSelector("#tcode");
   step("teacher: common code + own ΑΜ/ΑΦΜ → only their clubs; select/clear all; lists kept after a reload; in-page help");

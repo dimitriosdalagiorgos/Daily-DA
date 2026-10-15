@@ -113,12 +113,37 @@ function mainView(me) {
         + (me.phase === "parents" && me.deadline ? ` Οι λίστες μένουν ανοιχτές μέχρι το κλείσιμο των δηλώσεων των γονέων: ${formatDateTime(me.deadline)}.` : ""))
       : message("warn", me.phase === "setup" ? "Η φάση των εκπαιδευτικών δεν έχει ανοίξει ακόμα." : "Οι λίστες κλείδωσαν με το κλείσιμο των δηλώσεων. Για διορθώσεις επικοινωνήστε με τη διαχείριση."),
   ];
-  for (const club of me.clubs) nodes.push(clubCard(club, me));
+  let drawTabs = null;
+  const cards = me.clubs.map((club) => clubCard(club, me, () => drawTabs?.()));
   if (me.clubs.length === 0) nodes.push(message("warn", "Δεν υπάρχει όμιλος με το email σας."));
+  // Several clubs: one tab each, so only one long list is on the page at a time.
+  // The other cards stay in the page (hidden), keeping their unsaved ticks.
+  if (cards.length > 1) {
+    const codes = me.clubs.map((c) => String(c.code));
+    let current = rememberedTab();
+    if (!codes.includes(current)) current = codes[0];
+    const nav = el("nav.tabs.club-tabs", { role: "tablist", "aria-label": "Οι όμιλοί σας" });
+    drawTabs = () => {
+      nav.replaceChildren(...me.clubs.map((club) => el("button", {
+        type: "button", role: "tab", "aria-selected": String(String(club.code) === current),
+        title: unsaved[club.code] ? "Μη αποθηκευμένες αλλαγές" : "",
+        onclick: () => { current = String(club.code); rememberTab(current); drawTabs(); nav.scrollIntoView({ block: "nearest" }); },
+      }, club.name, unsaved[club.code] ? " ●" : "")));
+      cards.forEach((card, i) => { card.hidden = codes[i] !== current; });
+    };
+    drawTabs();
+    nodes.push(nav);
+  }
+  nodes.push(...cards);
   show(app, nodes);
 }
 
-function clubCard(club, me) {
+// The chosen tab survives a reload (best effort: storage may be blocked)
+const TAB_KEY = "teacher-club-tab";
+function rememberedTab() { try { return sessionStorage.getItem(TAB_KEY); } catch { return null; } }
+function rememberTab(code) { try { sessionStorage.setItem(TAB_KEY, code); } catch { /* ignore */ } }
+
+function clubCard(club, me, onTabChange) {
   const changeText = () => (club.updatedAt
     ? `Τελευταία αλλαγή: ${{ admin: "διαχείριση", "admin-file": "διαχείριση (από αρχείο)" }[club.updatedBy] ?? club.updatedBy}, ${formatDateTime(club.updatedAt)}`
     : "");
@@ -131,7 +156,11 @@ function clubCard(club, me) {
     list: { ams: club.list, blocked: club.blocked, closed: club.closed },
     canEdit: me.canEdit,
     parentsPhase: me.phase === "parents",
-    onDirty: (dirty) => { unsaved[club.code] = dirty; },
+    onDirty: (dirty) => {
+      const changed = Boolean(unsaved[club.code]) !== dirty;
+      unsaved[club.code] = dirty;
+      if (changed) onTabChange();
+    },
     onSave: async (payload) => {
       const { list } = await api("PUT", `/api/teacher/clubs/${club.code}`, payload);
       Object.assign(club, { list: list.ams, blocked: list.blocked ?? [], closed: Boolean(list.closed), updatedBy: list.updatedBy, updatedAt: list.updatedAt });
