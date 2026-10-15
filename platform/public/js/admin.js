@@ -615,6 +615,7 @@ function clubsTable() {
             ? el("span", {}, `⭐ ${list.ams?.length ?? 0}`, list.closed ? el("strong", {}, " · κλειστή λίστα") : list.blocked?.length ? ` · ⛔ ${list.blocked.length}` : "",
               list.ams?.length ? el("span", {}, el("br"), el("span.small.muted", {}, list.ams.map((am) => byAm.get(am)?.surname ?? am).join(", "))) : null)
             : el("span.muted", {}, "—"),
+          list?.reset ? el("div.small", {}, el("strong", {}, "⚠ Οι ⭐ μηδενίστηκαν"), ` (ήταν ${list.reset.starred}, θέσεις ${list.reset.capacity}): ο εκπαιδευτικός πρέπει να τους ξαναορίσει.`) : null,
           listEditable ? el("div", {}, el("button.small", { type: "button", onclick: () => editList(c, list, cell) }, "Διόρθωση")) : null);
         summary();
         return el("tr", {},
@@ -1111,7 +1112,7 @@ async function resultsWorkbook(results) {
 const EVENT_LABELS = {
   login: "Σύνδεση διαχείρισης", students_uploaded: "Ανέβασμα καταλόγου μαθητών", sections_uploaded: "Ανέβασμα τμημάτων μαθητών", clubs_uploaded: "Ανέβασμα ομίλων",
   import_legacy: "Εισαγωγή περσινών δηλώσεων", settings: "Αλλαγή ρυθμίσεων", phase: "Αλλαγή φάσης", login_exception: "Εξαίρεση σύνδεσης",
-  teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού",
+  teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού", teacher_list_reset: "Μηδενισμός ⭐ λίστας εκπαιδευτικού (λιγότερες θέσεις)",
   teacher_login_failed: "Αποτυχημένη σύνδεση εκπαιδευτικού",
   parent_login: "Σύνδεση γονέα", parent_login_failed: "Αποτυχημένη σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
 };

@@ -25,7 +25,7 @@ import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
 import { GAP_REASONS, describeEvent, gapReasons, storiesByStudent } from "../export/story.js";
 import { allocationStats } from "../export/stats.js";
-import { buildVerification, priorities } from "../export/verification.js";
+import { buildVerification, cutoffNotes, priorities } from "../export/verification.js";
 import { createHash } from "node:crypto";
 import { makeZip } from "./zip.js";
 import { createRateLimiter, hashPassword, personalIdHash, safeEqual, signToken, verifyPassword, verifyToken, withIdHashes } from "./auth.js";
@@ -332,9 +332,16 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     await store.set("teachers", report.teachers);
     // Teacher lists: dropped for clubs that no longer exist; for the others
     // the file's capacity wins (an earlier «Διόρθωση» no longer applies) and
-    // students no longer in the club's grades leave the list.
+    // students no longer in the club's grades leave the list. A ⭐ list now
+    // longer than the seats is emptied (decided 15/10/2026): its order would
+    // decide who gets in, which the teacher did not intend. The ⛔ stay; a
+    // closed list (closed with no ⭐ would exclude everyone) keeps its intent:
+    // the former ⭐ become ○ and everyone else of the club's grades ⛔. The admin
+    // and the club's teachers are told; the teacher's page shows it until
+    // the list is saved again.
     const byCode = new Map(report.clubs.map((c) => [String(c.code), c]));
     const gradeOf = new Map((await getStudents()).map((st) => [st.am, st.grade]));
+    const resets = [];
     for (const { key, value } of await store.list("teacherList:")) {
       const club = byCode.get(key.slice(12));
       if (!club) {
@@ -343,13 +350,26 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       }
       const ams = (value.ams ?? []).filter((am) => club.grades.includes(gradeOf.get(am)));
       const blocked = (value.blocked ?? []).filter((am) => club.grades.includes(gradeOf.get(am)));
-      const { capacity: _old, ...rest } = value;
-      await store.set(key, { ...rest, ams, ...(value.blocked ? { blocked } : {}) });
+      const { capacity: _old, reset: _oldReset, ...rest } = value;
       if (ams.length < (value.ams ?? []).length) {
         reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${value.ams.length - ams.length} μαθητές βγήκαν, γιατί δεν είναι πια στις τάξεις του ομίλου.` }];
       }
       if (ams.length > club.capacity) {
-        reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${ams.length} μαθητές, περισσότεροι από τις ${club.capacity} θέσεις του νέου αρχείου. Διορθώστε τη λίστα.` }];
+        const reset = { at: new Date(now()).toISOString(), starred: ams.length, capacity: club.capacity, ...(value.closed ? { wasClosed: true } : {}) };
+        const { closed: _closed, ...open } = rest;
+        const others = value.closed ? [...gradeOf].filter(([am, grade]) => club.grades.includes(grade) && !ams.includes(am)).map(([am]) => am) : blocked;
+        await store.set(key, { ...open, ams: [], ...(others.length ? { blocked: others } : {}), reset, updatedBy: "admin-file", updatedAt: reset.at });
+        const text = resetText(club, reset);
+        reply.problems = [...reply.problems, { level: "warning", message: `Λίστα εκπαιδευτικού «${club.name}»: ${text} Οι εκπαιδευτικοί του ομίλου ενημερώθηκαν.` }];
+        await logEvent("admin", "teacher_list_reset", { club: club.code, starred: ams.length, capacity: club.capacity });
+        resets.push({ club, text });
+        continue;
+      }
+      await store.set(key, { ...rest, ams, ...(value.blocked ? { blocked } : {}) });
+    }
+    for (const { club, text } of resets) {
+      for (const t of report.teachers.filter((t) => t.clubs.includes(club.code))) {
+        await mail(t.email, `Η λίστα του ομίλου «${club.name}» μηδενίστηκε`, `${text}\nΣυνδεθείτε στην πλατφόρμα και ορίστε ξανά τους προτιμώμενους μαθητές (⭐), έως ${club.capacity}.`);
       }
     }
     await logEvent("admin", "clubs_uploaded", { clubs: report.clubs.length, teachers: report.teachers.length, fileName: fileNameOf(fileName) });
@@ -607,7 +627,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     await store.set("resultsLog", logByDay);
     // Each student's story, stored per student so a parent reads only theirs.
     const byCode = new Map(input.clubs.map((c) => [String(c.code), c]));
-    const stories = storiesByStudent(logByDay, (code) => byCode.get(String(code))?.name ?? code, (code) => byCode.get(String(code))?.days ?? []);
+    const stories = storiesByStudent(logByDay, (code) => byCode.get(String(code))?.name ?? code, (code) => byCode.get(String(code))?.days ?? [], cutoffNotes(input, results));
     for (const { key } of await store.list("story:")) if (!stories[key.slice(6)]) await store.delete(key);
     await store.setMany(Object.entries(stories).map(([am, story]) => ({ key: `story:${am}`, value: story })));
     await store.update("settings", (s = {}) => ({ ...s, phase: "allocated" }));
@@ -854,6 +874,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       closed: Boolean(lists[c.code]?.closed),
       updatedBy: lists[c.code]?.updatedBy ?? null,
       updatedAt: lists[c.code]?.updatedAt ?? null,
+      reset: lists[c.code]?.reset ? resetText(c, lists[c.code].reset) : null,
       coTeachers: teachers.filter((t) => t.email !== email && t.clubs.includes(c.code)).map((t) => `${t.name} ${t.surname}`),
       eligible: students.filter((s) => c.grades.includes(s.grade)).map(({ am, surname, name, grade }) => ({ am, surname, name, grade, section: sectionOf(sections, am, grade) })),
     }));
@@ -881,6 +902,11 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       closed: closed === undefined ? undefined : Boolean(closed),
     });
     return json(200, { list: entry });
+  }
+
+  /** Why a teacher's ⭐ list was emptied, for the admin, the teacher and the email. */
+  function resetText(club, reset) {
+    return `Οι προτιμώμενοι μαθητές (⭐) μηδενίστηκαν: ήταν ${reset.starred}, ενώ ο όμιλος έχει πλέον ${reset.capacity} θέσεις (νέο αρχείο ομίλων).${reset.wasClosed ? " Η λίστα ήταν κλειστή: όσοι ήταν ⭐ έγιναν ουδέτεροι (○, κλήρωση) και όλοι οι άλλοι ⛔." : ""}`;
   }
 
   /**

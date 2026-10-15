@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { allocateWeek, seededRandom, DAYS } from "../src/algorithm/index.js";
-import { buildVerification } from "../src/export/verification.js";
+import { buildVerification, cutoffNotes } from "../src/export/verification.js";
 import { randomInstance } from "./random-instance.js";
 
 const club = (code, days, capacity, grades = ["Α", "Β", "Γ"]) => ({ code, name: `Όμιλος ${code}`, days, grades, capacity });
@@ -121,4 +121,25 @@ test("verification: a teacher's list longer than the capacity shows the ⭐ posi
   input.clubs[0].capacity = 2;
   const two = run(input).v;
   assert.match(sheet(two, "Γύροι")[1][7], /^1 \(⭐ · κλ\. 1\), 2 \(⭐ · κλ\. 2\)$/);
+});
+
+test("cut-off notes for the student's report: lottery, ⭐ and mandatory grade", () => {
+  const input = {
+    students: [{ am: "1", grade: "Α" }, { am: "2", grade: "Α" }, { am: "3", grade: "Β" }],
+    clubs: [club(10, ["mon"], 1), club(11, ["mon"], 5), club(12, ["mon"], 1), club(13, ["mon"], 1)],
+    preferences: { 1: { mon: [10, 12, 11] }, 2: { mon: [10, 11] }, 3: { mon: [13, 11] } },
+    teacherLists: { 12: ["2"] },
+    lottery: new Map([["1", 1], ["2", 2], ["3", 3]]),
+    mandatoryGrades: ["Β"],
+  };
+  // 10: 1 gets it, 2 is out (lottery). 12: nobody else applies ⇒ 1 gets 10 anyway.
+  const { results } = run(input);
+  const note = cutoffNotes(input, results);
+  assert.equal(note("2", "10"), " Ο τελευταίος μαθητής που μπήκε είχε αριθμό κλήρωσης 1· ο μαθητής έχει 2 (μικρότερος αριθμός προηγείται).");
+  assert.equal(note("2", "11"), "", "a club with room says nothing more");
+  // As if 2 (⭐) had taken club 12, and 3 (mandatory grade) club 13
+  const byStudent = { 1: { mon: "11" }, 2: { mon: "12" }, 3: { mon: "13" } };
+  const other = cutoffNotes(input, { byStudent });
+  assert.equal(other("1", "12"), " Ο τελευταίος μαθητής που μπήκε ήταν στους προτιμώμενους (⭐) του εκπαιδευτικού.");
+  assert.equal(other("1", "13"), " Ο τελευταίος μαθητής που μπήκε ήταν σε τάξη με υποχρεωτική ένταξη.");
 });

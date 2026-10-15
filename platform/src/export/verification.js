@@ -60,6 +60,39 @@ export function priorities({ students, clubs = [], teacherLists = {}, mandatoryG
 const ordinal = (n) => `${n}η`;
 
 /**
+ * For the student's report (admin and parent): why a full club did not
+ * take the student, compared with the last student it admitted — no name
+ * or ΑΜ, only what decided (⭐, mandatory grade, or the two lottery numbers).
+ * A club that turned a student away never takes them later (its cut-off
+ * only rises), so the end-of-day cut-off explains every rejection.
+ * @param {object} input the allocation's input (students, clubs, teacherLists, mandatoryGrades, lottery)
+ * @param {{ byStudent: Record<string, Record<string, string|null>> }} results
+ * @returns {(am: string, code: string) => string} "" when there is nothing to add
+ */
+export function cutoffNotes(input, results) {
+  const prio = priorities(input);
+  const clubBy = new Map(input.clubs.map((c) => [String(c.code), c]));
+  const lastIn = new Map();
+  for (const club of clubBy.values()) {
+    const code = String(club.code);
+    const keys = Object.entries(results.byStudent).filter(([, days]) => days[club.days[0]] === code).map(([am]) => prio.key(am, code)).sort(prio.compare);
+    if (keys.length >= club.capacity && keys.length) lastIn.set(code, keys.at(-1));
+  }
+  return (am, code) => {
+    const last = lastIn.get(String(code));
+    if (!last) return "";
+    const mine = prio.key(am, code);
+    if (last.pos < mine.pos) {
+      return mine.star
+        ? " Ο τελευταίος μαθητής που μπήκε ήταν πιο ψηλά στη λίστα προτιμώμενων του εκπαιδευτικού."
+        : " Ο τελευταίος μαθητής που μπήκε ήταν στους προτιμώμενους (⭐) του εκπαιδευτικού.";
+    }
+    if (last.mandatory && !mine.mandatory) return " Ο τελευταίος μαθητής που μπήκε ήταν σε τάξη με υποχρεωτική ένταξη.";
+    return ` Ο τελευταίος μαθητής που μπήκε είχε αριθμό κλήρωσης ${last.lottery}· ο μαθητής έχει ${mine.lottery} (μικρότερος αριθμός προηγείται).`;
+  };
+}
+
+/**
  * @param {{ students: {am: string, grade: string, surname?: string, name?: string}[], clubs: object[],
  *           preferences: Record<string, Record<string, string[]>>, teacherLists?: Record<string, string[]>,
  *           exclusions?: Record<string, string[]>, lottery: Map<string, number>, mandatoryGrades?: string[] }} input
