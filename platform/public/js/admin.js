@@ -590,11 +590,20 @@ function teacherLinks() {
       el("tbody", {}, rows))) : el("p.muted", {}, "Δεν υπάρχουν εκπαιδευτικοί ακόμα (ανεβάστε το αρχείο ομίλων)."));
 }
 
+// What the last «Κατάργηση» did, shown once above the table
+let clubNotice = null;
+
 function clubsTable() {
   const editable = ["setup", "teachers"].includes(state.settings.phase); // clubs and «Παρεμφερείς»
   const listEditable = listsEditable();
+  // Until the allocation; afterwards: «Επιστροφή» first
+  const removable = !["allocated", "published"].includes(state.settings.phase);
   const byAm = new Map(state.students.map((s) => [s.am, s]));
+  const notice = clubNotice;
+  clubNotice = null;
   return el("section.card", {},
+    notice,
+    removable && state.clubs.length ? el("p.small.muted", {}, "«Κατάργηση»: ο όμιλος διαγράφεται οριστικά, και από τις δηλώσεις που τον έχουν ήδη (οι επόμενοι όμιλοι ανεβαίνουν μία θέση). Για εκπαιδευτικό που αποχωρεί, όμιλο που δεν εγκρίθηκε κ.λπ." ) : null,
     el("div.table-wrap", {}, el("table", {},
       el("thead", {}, el("tr", {}, el("th.num", {}, "Κωδ."), el("th", {}, "Όμιλος"), el("th", {}, "Ημέρες"), el("th", {}, "Τάξεις"), el("th.num", {}, "Θέσεις"), el("th", {}, "Παρεμφερείς"), el("th", {}, "Εκπαιδευτικοί"), el("th", {}, "Λίστα εκπαιδευτικού"))),
       el("tbody", {}, state.clubs.map((c) => {
@@ -609,12 +618,39 @@ function clubsTable() {
           listEditable ? el("div", {}, el("button.small", { type: "button", onclick: () => editList(c, list, cell) }, "Διόρθωση")) : null);
         summary();
         return el("tr", {},
-          el("td.num", {}, c.code), el("td", {}, c.name), el("td", {}, c.days.map((d) => DAY_LABELS[d]).join(" + ")),
+          el("td.num", {}, c.code), el("td", {}, c.name, removable ? el("div", {}, removeClubButton(c)) : null), el("td", {}, c.days.map((d) => DAY_LABELS[d]).join(" + ")),
           el("td", {}, c.grades.join(", ")), el("td.num", {}, c.capacity),
           similarCell(c, editable),
           el("td.small", {}, teachers.map((t) => el("div", {}, `${t.name} ${t.surname}`, el("br"), el("span.muted", {}, t.email)))),
           cell);
       })))));
+}
+
+// Removes a club for good, also from the declarations that rank it
+function removeClubButton(club) {
+  const declared = Object.values(state.submissions).filter((sub) => (sub.clubs ?? []).includes(String(club.code))).length;
+  const button = el("button.small.danger", { type: "button", "aria-label": `Κατάργηση του ομίλου ${club.code}` }, "Κατάργηση");
+  button.addEventListener("click", async () => {
+    const text = [
+      `Κατάργηση του ομίλου ${club.code} «${club.name}»;`,
+      "Ο όμιλος διαγράφεται οριστικά, μαζί με τη λίστα του εκπαιδευτικού.",
+      declared ? `Βγαίνει από ${declared === 1 ? "τη δήλωση 1 μαθητή" : `τις δηλώσεις ${declared} μαθητών`}: οι επόμενοι όμιλοι ανεβαίνουν μία θέση και ο γονέας βλέπει σχετικό μήνυμα. Αν ο όμιλος ξαναγίνει, οι γονείς πρέπει να τον ξαναβάλουν στη σειρά τους.` : "Δεν τον έχει δηλώσει κανείς ακόμα.",
+      "Δεν αναιρείται.",
+    ].join("\n\n");
+    if (!confirm(text)) return;
+    button.disabled = true;
+    try {
+      const r = await api("DELETE", `/api/admin/clubs/${club.code}`);
+      clubNotice = el("div", {},
+        message("ok", `Ο όμιλος ${r.removed.code} «${r.removed.name}» καταργήθηκε${r.declarations ? `· βγήκε από ${r.declarations === 1 ? "1 δήλωση" : `${r.declarations} δηλώσεις`}` : ""}.`),
+        r.warnings.length ? message("err", `ΠΡΟΣΟΧΗ: ${r.warnings.join(" ")} Αυξήστε θέσεις σε άλλους ομίλους («Διόρθωση»).`) : null);
+      await refresh();
+    } catch (err) {
+      button.disabled = false;
+      alert(err.message);
+    }
+  });
+  return button;
 }
 
 // «Παρεμφερείς»: clubs with the same word — a student gets at most one
