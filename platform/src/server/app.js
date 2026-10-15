@@ -390,34 +390,29 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     await store.update("clubs", (clubs = []) => clubs.filter((c) => String(c.code) !== key));
     await store.update("teachers", (teachers = []) => teachers.map((t) => ({ ...t, clubs: (t.clubs ?? []).filter((c) => String(c) !== key) })));
     await store.delete(`teacherList:${key}`);
-    // Declarations: the club leaves every day's ranking
+    // Declarations: the club leaves every day's ranking. Each one is
+    // rewritten from its latest version, so a parent's save at the same
+    // moment is not lost (the club list changed first: see the parent's PUT).
     const at = new Date(now()).toISOString();
-    const changed = [];
+    let changed = 0;
     for (const [am, sub] of Object.entries(await getSubmissions())) {
       if (!ranksClub(sub, key)) continue;
-      const preferences = Object.fromEntries(Object.entries(sub.preferences ?? {})
-        .map(([day, list]) => [day, (list ?? []).filter((c) => String(c) !== key)])
-        .filter(([, list]) => list.length));
-      changed.push({
-        key: `submission:${am}`,
-        value: {
-          ...sub,
-          preferences,
-          removedClubs: [...(sub.removedClubs ?? []), { code: key, name: club.name }],
-          history: [...(sub.history ?? []), { at, email: `(διαχείριση: κατάργηση ομίλου «${club.name}»)`, preferences }],
-        },
+      let hit = false; // update() may retry: the last attempt counts
+      await store.update(`submission:${am}`, (latest) => {
+        hit = Boolean(latest && ranksClub(latest, key));
+        return hit ? withoutClubs(latest, [{ code: key, name: club.name }], at) : latest;
       });
+      if (hit) changed++;
     }
-    if (changed.length) await store.setMany(changed);
     // An earlier allocation (before a step back) no longer applies
     await Promise.all([store.delete("results"), store.delete("resultsLog"), store.deletePrefix("story:")]);
-    await logEvent("admin", "club_removed", { club: club.code, name: club.name, declarations: changed.length });
+    await logEvent("admin", "club_removed", { club: club.code, name: club.name, declarations: changed });
     // Fewer seats: the mandatory grades may no longer fit (a warning only)
     const [students, clubs] = await Promise.all([getStudents(), getClubs()]);
     const warnings = phaseAtLeast(settings.phase, "parents")
       ? checkReadiness(students, clubs, settings, await getExclusions(clubs, students)).filter((p) => p.level === "error").map((p) => p.message)
       : [];
-    return json(200, { removed: { code: key, name: club.name }, declarations: changed.length, warnings });
+    return json(200, { removed: { code: key, name: club.name }, declarations: changed, warnings });
   });
 
   route("PUT", "/api/admin/settings", async (req) => {
@@ -930,6 +925,20 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     };
   }
 
+  /** A declaration without the removed clubs: the ones after them move up. */
+  function withoutClubs(sub, removed, at) {
+    const gone = new Set(removed.map((c) => c.code));
+    const preferences = Object.fromEntries(Object.entries(sub.preferences ?? {})
+      .map(([day, list]) => [day, (list ?? []).map(String).filter((c) => !gone.has(c))])
+      .filter(([, list]) => list.length));
+    return {
+      ...sub,
+      preferences,
+      removedClubs: [...(sub.removedClubs ?? []), ...removed],
+      history: [...(sub.history ?? []), { at, email: `(διαχείριση: κατάργηση ${removed.map((c) => `ομίλου «${c.name}»`).join(", ")})`, preferences }],
+    };
+  }
+
   /** Whether a declaration ranks the club (on any day). */
   const ranksClub = (submission, code) => Object.values(submission?.preferences ?? {}).some((list) => (list ?? []).map(String).includes(String(code)));
 
@@ -1043,16 +1052,28 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       };
     });
     await logEvent(`parent:${am}`, "submission", { email: parentEmail });
+    // A club removed while this save was on its way (checked against the
+    // clubs read before): it leaves the declaration as for everyone else.
+    const current = new Set((await store.get("clubs") ?? []).map((c) => String(c.code)));
+    let saved = clean;
+    if (Object.values(clean).flat().some((c) => !current.has(c))) {
+      const latest = await store.update(`submission:${am}`, (sub) => {
+        // Unless the removal itself already took it out
+        const lost = [...new Set(Object.values(sub?.preferences ?? {}).flat().map(String))].filter((c) => !current.has(c));
+        return lost.length ? withoutClubs(sub, lost.map((c) => ({ code: c, name: clubs.find((x) => String(x.code) === c)?.name ?? c })), at) : sub;
+      });
+      saved = latest?.preferences ?? {};
+    }
 
     const byCode = new Map(clubs.map((c) => [String(c.code), c.name]));
-    const summary = DAYS.filter((d) => clean[d]).map((d) => `${DAY_LABELS[d]}:\n${clean[d].map((c, i) => `  ${i + 1}. ${byCode.get(c)}`).join("\n")}`).join("\n\n");
+    const summary = DAYS.filter((d) => saved[d]).map((d) => `${DAY_LABELS[d]}:\n${saved[d].map((c, i) => `  ${i + 1}. ${byCode.get(c)}`).join("\n")}`).join("\n\n");
     const text = `Καταχωρίστηκε η δήλωση ομίλων για τον/την μαθητή/τρια ${student.surname} ${student.name} (${at.slice(0, 16).replace("T", " ")}).\n\n${summary}\n\nΜπορείτε να την αλλάξετε μέχρι την προθεσμία.`;
     await mail(parentEmail, "Επιβεβαίωση δήλωσης ομίλων", text);
     if (previousEmail && previousEmail !== parentEmail) {
       await mail(previousEmail, "Αλλαγή δήλωσης ομίλων",
         `Η δήλωση ομίλων για τον/την μαθητή/τρια ${student.surname} ${student.name} άλλαξε από άλλη διεύθυνση email (${parentEmail}). Αν δεν το κάνατε εσείς, επικοινωνήστε με το σχολείο.`);
     }
-    return json(200, { submittedAt: at, receipt: receiptCode(am, at, clean) });
+    return json(200, { submittedAt: at, receipt: receiptCode(am, at, saved) });
   });
 
   // The parent withdraws the declaration: the student is left without one,

@@ -943,3 +943,49 @@ test("removing a club after declarations opened: out of every declaration, the p
   assert.equal(await store.get("results"), undefined);
   assert.equal((await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "1" } })).status, 200);
 });
+
+test("removing a club while a parent saves: neither change is lost", async () => {
+  const store = createMemoryStore();
+  const { call } = setup({ store });
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z" } });
+  for (const phase of ["teachers", "parents"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+  const parent = (await call("POST", "/api/parent/login", { body: { password: "omiloi2026", am: "9001", surname: "ΠΑΠΑΔΟΠΟΥΛΟΣ", name: "ΝΙΚΟΛΑΟΣ", father: "ΓΕΩΡΓΙΟΣ", mother: "ΜΑΡΙΑ" } })).data.token;
+  const declare = (mon) => call("PUT", "/api/parent/submission", { token: parent, body: { parent: { name: "Γ", email: "g@example.com" }, preferences: { mon, thu: ["102"] } } });
+
+  // The removal lands after the save was checked against the old clubs
+  const append = store.append.bind(store);
+  let race = true;
+  store.append = async (kind, item) => {
+    if (race && item.what === "submission") {
+      race = false;
+      assert.equal((await call("DELETE", "/api/admin/clubs/101", { token: admin })).status, 200);
+    }
+    return append(kind, item);
+  };
+  assert.equal((await declare(["101", "100"])).status, 200);
+  let sub = await store.get("submission:9001");
+  assert.deepEqual(sub.preferences, { mon: ["100"], thu: ["102"] }, "the removed club leaves the late save too");
+  assert.deepEqual(sub.removedClubs, [{ code: "101", name: "Ρομποτική" }]);
+
+  // The parent's newer save is not overwritten by the removal's older read
+  const update = store.update.bind(store);
+  race = false;
+  let once = true;
+  store.update = async (key, fn) => {
+    if (once && key === "submission:9001") {
+      once = false;
+      const r = await call("PUT", "/api/parent/submission", { token: parent, body: { parent: { name: "Γ2", email: "g2@example.com" }, preferences: { mon: ["100"] } } });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+    }
+    return update(key, fn);
+  };
+  await store.set("submission:9001", { ...sub, preferences: { mon: ["100"], thu: ["102"] } });
+  assert.equal((await call("DELETE", "/api/admin/clubs/102", { token: admin })).status, 200);
+  sub = await store.get("submission:9001");
+  assert.deepEqual(sub.preferences, { mon: ["100"] }, "the parent's save kept (no longer ranking the club)");
+  assert.deepEqual(sub.removedClubs, undefined, "a new save starts without notes");
+  assert.equal(sub.parent.email, "g2@example.com", "the parent's newer details kept");
+});
