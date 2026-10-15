@@ -103,3 +103,22 @@ test("verification: the path shows a seat lost in a later round and the move to 
   const r2 = sheet(v, "Γύροι").find((r) => r[1] === 2 && r[2] === "10");
   assert.deepEqual(r2.slice(5), ["2 (κλ. 3)", "1 (κλ. 2, 2η επιλ.)", "1 (κλ. 2)", "2 (κλ. 3)"]);
 });
+
+test("verification: a teacher's list longer than the capacity shows the ⭐ position, which decides", () => {
+  // Capacity 1, two ⭐: the 1st on the list wins despite the worse lottery number
+  const input = {
+    students: [{ am: "1", grade: "Α" }, { am: "2", grade: "Α" }],
+    clubs: [club(10, ["mon"], 1), club(11, ["mon"], 5)],
+    preferences: { 1: { mon: [10, 11] }, 2: { mon: [10, 11] } },
+    teacherLists: { 10: ["2", "1"] },
+    lottery: new Map([["1", 1], ["2", 2]]),
+  };
+  const { v } = run(input);
+  assert.equal(v.problems, 0);
+  const one = sheet(v, "Μαθητές").find((r) => r[0] === "1");
+  assert.equal(one[8], "✗ Όμιλος 10: γεμάτος (τελευταίος που μπήκε: ⭐ 1ος στη λίστα · κλ. 2 · μαθητής: ⭐ 2ος στη λίστα · κλ. 1)");
+  // Within the capacity the order does not matter, and is not shown
+  input.clubs[0].capacity = 2;
+  const two = run(input).v;
+  assert.match(sheet(two, "Γύροι")[1][7], /^1 \(⭐ · κλ\. 1\), 2 \(⭐ · κλ\. 2\)$/);
+});

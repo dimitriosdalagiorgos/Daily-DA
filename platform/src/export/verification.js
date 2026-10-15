@@ -30,23 +30,30 @@ export const DROP_REASONS = {
 /**
  * A club's priority over students, as in allocate.js: teacher's list (⭐),
  * then grades with mandatory placement, then the lottery (lower first).
+ * The ⭐ students' order matters only when a list is longer than the club's
+ * capacity (a later clubs file may lower it); only then is it shown.
  * @returns {{ key: (am: string, code: string) => object, compare: (a: object, b: object) => number,
  *            text: (k: object) => string, category: (k: object) => string }}
  */
-export function priorities({ students, teacherLists = {}, mandatoryGrades = [], lottery }) {
+export function priorities({ students, clubs = [], teacherLists = {}, mandatoryGrades = [], lottery }) {
   const gradeOf = new Map(students.map((s) => [String(s.am), s.grade]));
   const pos = new Map(Object.entries(teacherLists).map(([code, ams]) => [String(code), new Map(ams.map((am, i) => [String(am), i + 1]))]));
+  const capacity = new Map(clubs.map((c) => [String(c.code), c.capacity]));
+  const ordered = new Set(Object.entries(teacherLists).filter(([code, ams]) => capacity.has(String(code)) && ams.length > capacity.get(String(code))).map(([code]) => String(code)));
   const mandatory = (am) => mandatoryGrades.includes(gradeOf.get(am));
   // When all grades (or none) are mandatory, the grade decides nothing: not shown
   const gradeMatters = students.some((s) => mandatory(String(s.am))) && students.some((s) => !mandatory(String(s.am)));
   const key = (am, code) => {
     const p = pos.get(String(code))?.get(String(am));
-    return { am: String(am), star: p !== undefined, pos: p ?? Infinity, mandatory: mandatory(String(am)), lottery: lottery.get(String(am)) };
+    // Within the capacity every ⭐ gets in: their order is left out, so the lottery orders them
+    const inOrder = ordered.has(String(code));
+    return { am: String(am), star: p !== undefined, pos: p === undefined ? Infinity : inOrder ? p : 1, ordered: inOrder, mandatory: mandatory(String(am)), lottery: lottery.get(String(am)) };
   };
   // Infinity - Infinity is NaN, which || skips like 0
   const compare = (a, b) => a.pos - b.pos || (a.mandatory === b.mandatory ? 0 : a.mandatory ? -1 : 1) || a.lottery - b.lottery;
-  const text = (k) => [k.star ? "⭐" : null, gradeMatters && k.mandatory ? "υποχρ." : null, `κλ. ${k.lottery}`].filter(Boolean).join(" · ");
-  const category = (k) => (k.star ? "⭐ λίστα εκπαιδευτικού" : gradeMatters && k.mandatory ? "τάξη με υποχρεωτική ένταξη" : "—");
+  const star = (k) => (k.ordered ? `⭐ ${k.pos}ος στη λίστα` : "⭐");
+  const text = (k) => [k.star ? star(k) : null, gradeMatters && k.mandatory ? "υποχρ." : null, `κλ. ${k.lottery}`].filter(Boolean).join(" · ");
+  const category = (k) => (k.star ? (k.ordered ? `⭐ ${k.pos}ος στη λίστα εκπαιδευτικού` : "⭐ λίστα εκπαιδευτικού") : gradeMatters && k.mandatory ? "τάξη με υποχρεωτική ένταξη" : "—");
   return { key, compare, text, category };
 }
 
