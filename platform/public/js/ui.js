@@ -60,10 +60,14 @@ export function createApi(role) {
   };
   api.setToken = (t) => { token = t; store.set(t); };
   api.hasToken = () => Boolean(token);
-  api.download = async (path, filename) => {
+  const fetchFile = async (path) => {
     const res = await fetch(path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `Σφάλμα ${res.status}`);
-    const url = URL.createObjectURL(await res.blob());
+    return res;
+  };
+  api.bytes = async (path) => new Uint8Array(await (await fetchFile(path)).arrayBuffer());
+  api.download = async (path, filename) => {
+    const url = URL.createObjectURL(await (await fetchFile(path)).blob());
     const a = el("a", { href: url, download: filename });
     document.body.append(a);
     a.click();

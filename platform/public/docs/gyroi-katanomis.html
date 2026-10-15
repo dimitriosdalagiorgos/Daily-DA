@@ -22,6 +22,7 @@
   --c4: #a98bf0; --c4-t: #2e2350; --c5: #3cc4c9; --c5-t: #133c3e; --c6: #f09a50; --c6-t: #45291a; --c7: #ee7fb4; --c7-t: #472036;
   color-scheme: dark } }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 16px; line-height: 1.5; }
 .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 16px 80px; }
 h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 0 0 6px; }
@@ -42,6 +43,7 @@ button { font: inherit; cursor: pointer; }
 .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .btn:disabled { opacity: .4; cursor: default; }
 #error { color: var(--bad); font-weight: 600; }
+.warning { margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: var(--bad-t); color: var(--bad); font-weight: 600; }
 #source { font-size: .9rem; }
 
 /* navigation */
@@ -50,6 +52,9 @@ button { font: inherit; cursor: pointer; }
 .pill { padding: 3px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: .92rem; }
 .pill[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .tabs.days .pill { font-weight: 700; }
+.tabs.clubs .pill { font-size: .85rem; padding: 2px 10px; }
+.tabs.clubs .pill[data-code]::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 6px; }
+.tabs.clubs .pill[data-code][aria-pressed="true"] { background: var(--ct); color: var(--ink); border-color: var(--c); }
 #search { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; min-width: 16em; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .85rem; color: var(--muted); }
 .legend span { display: inline-flex; gap: 6px; align-items: center; }
@@ -110,7 +115,9 @@ details > summary { cursor: pointer; font-weight: 600; }
     <button class="btn" id="sample" type="button">Παράδειγμα με φανταστικό σχολείο</button>
     <span class="muted" style="font-size:.9rem">Το zip είναι τα «Δεδομένα για R (.zip)» της διαχείρισης, καρτέλα «Κατανομή» (αρχείο <span class="num">omiloi_dedomena_R.zip</span>). Μπορείτε και να το σύρετε εδώ. Τα στοιχεία μένουν στον υπολογιστή σας: η σελίδα δεν στέλνει τίποτα πουθενά και λειτουργεί και χωρίς internet.</span>
   </div>
+  <p id="loading" class="muted" hidden>Φόρτωση της κατανομής από την πλατφόρμα…</p>
   <p id="error" role="alert"></p>
+  <p id="warning" class="warning" role="alert" hidden></p>
 
   <div id="view" hidden>
     <div class="bar">
@@ -122,6 +129,7 @@ details > summary { cursor: pointer; font-weight: 600; }
         <button class="btn" id="next" type="button" title="Επόμενο (→)">→</button>
         <input id="search" type="search" placeholder="Αναζήτηση: ΑΜ ή επώνυμο" aria-label="Αναζήτηση μαθητή">
       </div>
+      <div class="tabs clubs" id="clubs" aria-label="Όμιλος"></div>
     </div>
     <div id="content" class="stack"></div>
   </div>
@@ -814,19 +822,35 @@ function h(tag, attrs = {}, ...children) {
 }
 
 const STATUS = { ACCEPTED: "Νέα θέση", RETAINED: "Μένει", REJECTED: "Περισσεύει", DISPLACED: "Εκτοπίζεται" };
-let state = null; // { days, input, colors, dayIdx, step }  step: 0 = before, 1..N = rounds, N+1 = result
+let state = null; // { days, input, colors, dayIdx, step, club }  step: 0 = before, 1..N = rounds, N+1 = result; club: filter or null
 
-function load(files, label) {
+/** Days and students whose rerun differs from the result the platform stored. */
+function differences(byStudent, expected) {
+  let n = 0;
+  for (const [am, days] of Object.entries(expected)) {
+    for (const [d, code] of Object.entries(days)) if (String(byStudent[am]?.[d] ?? "") !== String(code ?? "")) n++;
+  }
+  return n;
+}
+
+function load(files, label, expected) {
   $("error").textContent = "";
+  $("loading").hidden = true;
+  $("warning").hidden = true;
   try {
     const input = readRPackage(files, drawLottery);
     const result = allocateWeek(input);
+    const diff = expected ? differences(result.byStudent, expected) : 0;
+    if (diff) {
+      $("warning").hidden = false;
+      $("warning").textContent = `Προσοχή: με τα σημερινά δεδομένα της πλατφόρμας η κατανομή βγαίνει διαφορετική από την αποθηκευμένη (${diff} θέσεις μαθητή × ημέρα). Κάτι άλλαξε μετά την κατανομή (π.χ. θέσεις ή λίστες): ξανατρέξτε την κατανομή με το ίδιο seed. Οι γύροι εδώ είναι της νέας εκτέλεσης.`;
+    }
     const days = buildRounds(input, result);
     if (days.length === 0) throw new Error("Δεν βρέθηκαν όμιλοι στο αρχείο.");
     const colors = new Map();
     for (const d of days) d.clubs.forEach((c, i) => colors.set(c.code, i % 8));
     const declared = Object.keys(input.preferences).length;
-    state = { days, input, colors, dayIdx: 0, step: 1, student: new Map(input.students.map((s) => [s.am, s])) };
+    state = { days, input, colors, dayIdx: 0, step: 1, club: null, student: new Map(input.students.map((s) => [s.am, s])) };
     $("source").textContent = `${label} · ${input.students.length} μαθητές, ${input.clubs.length} όμιλοι, ${declared} δηλώσεις${input.seed ? ` · seed κλήρωσης: ${input.seed}` : ""}`;
     $("view").hidden = false;
     render();
@@ -857,7 +881,13 @@ function setStep(step) {
 function render() {
   const d = day();
   $("days").replaceChildren(...state.days.map((x, i) => h("button", { class: "pill", type: "button", "aria-pressed": String(i === state.dayIdx),
-    onclick: () => { state.dayIdx = i; state.step = Math.min(state.step, lastStep()); render(); } }, x.label)));
+    onclick: () => { state.dayIdx = i; state.club = null; state.step = Math.min(state.step, lastStep()); render(); } }, x.label)));
+  // Club filter: all of the day's clubs, or one of them through every round.
+  $("clubs").replaceChildren(...(d.clubs.length > 1 ? [
+    h("button", { class: "pill", type: "button", "aria-pressed": String(state.club === null), onclick: () => { state.club = null; render(); } }, "Όλοι οι όμιλοι"),
+    ...d.clubs.map((c) => h("button", { class: "pill", type: "button", "data-code": c.code, style: clubVars(c.code), "aria-pressed": String(state.club === c.code),
+      onclick: () => { state.club = state.club === c.code ? null : c.code; render(); } }, c.name)),
+  ] : []));
   const labels = ["Πριν", ...d.rounds.map((r) => `Γύρος ${r.round}`), "Αποτέλεσμα"];
   $("steps").replaceChildren(...labels.map((l, i) => h("button", { class: "pill", type: "button", "aria-pressed": String(i === state.step), onclick: () => setStep(i) }, l)));
   $("prev").disabled = state.step === 0;
@@ -879,7 +909,7 @@ function roundView(d, r) {
   const intro = h("p", { class: "lede" }, r.round === 1
     ? `${d.label}, γύρος 1: κάθε μαθητής κάνει αίτηση στον πρώτο όμιλο που έμεινε στη λίστα του, συνήθως την 1η του επιλογή (${r.applicants} αιτήσεις· όσοι όμιλοι φεύγουν από λίστες φαίνονται στο «Πριν»). Κάθε όμιλος βάζει τους υποψηφίους σε σειρά: πρώτα τη λίστα ⭐ του εκπαιδευτικού, μετά τις τάξεις με υποχρεωτική ένταξη (αν υπάρχουν), μετά τον λαχνό.`
     : `${d.label}, γύρος ${r.round}: όσοι περίσσεψαν στον γύρο ${r.round - 1} κάνουν αίτηση στην επόμενη επιλογή τους (${r.applicants} αιτήσεις). Οι όμιλοι που τις δέχονται ξαναβάζουν σε σειρά όσους ήδη κρατούν μαζί με τους νέους.`);
-  return [intro, legend(), ...r.clubs.map((c) => clubCard(c, r.round))];
+  return [intro, legend(), ...r.clubs.filter((c) => state.club === null || c.code === state.club).map((c) => clubCard(c, r.round))];
 }
 
 function clubCard(c, round) {
@@ -987,6 +1017,21 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowLeft") setStep(state.step - 1);
 });
 if (location.hash === "#paradeigma") $("sample").click();
+
+// Opened from the platform's admin page («Γύροι κατανομής»): it sends the R
+// data package and the stored result by postMessage (same site only).
+window.addEventListener("message", (e) => {
+  if (e.origin !== location.origin || e.data?.type !== "gyroi-data") return;
+  $("error").textContent = "";
+  $("drop").hidden = true;
+  readZip(e.data.zip).then((files) => load(files, e.data.label, e.data.byStudent)).catch((err) => { $("error").textContent = err.message; });
+});
+if (window.opener && location.protocol.startsWith("http")) {
+  try {
+    window.opener.postMessage({ type: "gyroi-ready" }, location.origin);
+    $("loading").hidden = false;
+  } catch { /* opened from another site */ }
+}
 </script>
 </body>
 </html>

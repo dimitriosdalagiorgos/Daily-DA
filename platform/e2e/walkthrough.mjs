@@ -424,6 +424,15 @@ try {
     const [d] = await Promise.all([admin.waitForEvent("download"), admin.click(`button:has-text('${label}')`)]);
     step(`admin: ${file} downloaded (${d.suggestedFilename()})`);
   }
+  const [rounds] = await Promise.all([admin.waitForEvent("popup"), admin.click("button:has-text('Γύροι κατανομής')")]);
+  await rounds.waitForSelector(".club tr.in");
+  if (await rounds.isVisible("#warning")) throw new Error(`round view: ${await rounds.textContent("#warning")}`);
+  if (!(await rounds.textContent("#source")).includes("Κατανομή της πλατφόρμας")) throw new Error("round view: not loaded from the platform");
+  await rounds.click("#clubs .pill[data-code] >> nth=0");
+  if ((await rounds.locator(".club").count()) !== 1) throw new Error("round view: the club filter should leave one club");
+  await shot(rounds, "07f-admin-rounds");
+  await rounds.close();
+  step("admin: the allocation round by round, in a new tab");
   const [download] = await Promise.all([admin.waitForEvent("download"), admin.click("text=Δεδομένα για R (.zip)")]);
   step(`admin: R package downloaded (${download.suggestedFilename()})`);
   await admin.click("text=Επόμενη φάση: Ανακοίνωση");
