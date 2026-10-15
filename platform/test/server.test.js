@@ -813,7 +813,7 @@ test("deleting a declaration: the parent until the deadline, the admin until the
   assert.equal((await call("DELETE", "/api/admin/submissions/9001", { token: admin })).status, 409);
 });
 
-test("teachers' exclusions: ⛔ and closed lists, hidden from parents, only lifted once declarations open, used by the allocation", async () => {
+test("teachers' exclusions: ⛔ and closed lists, hidden from parents, added or lifted while they declare, used by the allocation", async () => {
   const { call } = setup();
   const admin = await adminLogin(call);
   await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
@@ -853,18 +853,23 @@ test("teachers' exclusions: ⛔ and closed lists, hidden from parents, only lift
   assert.equal((await submit(ntoka, { mon: ["100"], thu: ["102"] })).status, 200);
   assert.equal((await submit(dimou, { thu: ["103"] })).status, 200);
 
-  // While parents declare: lifting is fine, adding is not
-  r = await save({ ams: ["9001"], closed: true });
-  assert.equal(r.status, 409, "9002 would become excluded");
-  assert.match(r.data.error, /μόνο να αφαιρεθούν/);
+  // While parents declare: an exclusion can be lifted…
   r = await save({ ams: ["9001", "9002", "9004"], closed: true });
   assert.equal(r.status, 200);
   assert.equal(r.data.list.liftedAfterSubmission, 1, "9004 had already declared without Ρομποτική");
   assert.deepEqual((await call("GET", "/api/parent/me", { token: ntoka })).data.days.find((d) => d.day === "mon").clubs.map((c) => c.code), ["100", "101"]);
-  const file = [["Κωδικός ομίλου", 101], ["Κλειστή λίστα", "ΟΧΙ"], ["Επιλογή", "ΑΜ"], ["Χ", 9001], ["ΟΧΙ", 9002], ["", 9003], ["", 9004]];
+  assert.equal((await submit(ntoka, { mon: ["101", "100"], thu: ["102"] })).status, 200, "Ρομποτική now 1st");
+  // …and added again (decided 15/10/2026): the club leaves 9004's declaration
+  const file = [["Κωδικός ομίλου", 101], ["Κλειστή λίστα", "ΟΧΙ"], ["Επιλογή", "ΑΜ"], ["Χ", 9001], ["Χ", 9002], ["", 9003], ["ΟΧΙ", 9004]];
   r = await call("POST", "/api/admin/teacher-lists/import", { token: admin, body: { files: [{ fileName: "101.xlsx", rows: file }] } });
-  assert.equal(r.data.ok, false);
-  assert.match(r.data.report[0].problems[0], /μόνο να αφαιρεθούν/, "the file would exclude 9002, now accepted");
+  assert.equal(r.data.ok, true);
+  assert.match(r.data.report[0].warnings.join(" "), /αποκλείει 1 μαθητή που έχει ήδη δηλώσει τον όμιλο/);
+  r = await save({ ams: ["9001", "9002"], closed: true });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.list.excludedAfterSubmission, r.data.list.liftedAfterSubmission], [1, 0]);
+  const mon = (await call("GET", "/api/parent/me", { token: ntoka })).data.days.find((d) => d.day === "mon");
+  assert.deepEqual(mon.clubs.map((c) => c.code), ["100"]);
+  assert.deepEqual(mon.withdrawn, [{ code: "101", name: "Ρομποτική" }], "the parent is told");
 
   await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
   r = await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "Κλήρωση 2026" } });
@@ -872,8 +877,9 @@ test("teachers' exclusions: ⛔ and closed lists, hidden from parents, only lift
   assert.equal(r.data.results.byStudent["9003"].mon, null);
   assert.equal(r.data.results.gaps["9003"].mon, "excluded");
   assert.equal(r.data.results.gapCounts.mon.excluded, 1);
+  assert.equal(r.data.results.byStudent["9004"].mon, "100", "Ρομποτική skipped, the next club of the declaration");
   const zip = new TextDecoder().decode((await call("GET", "/api/admin/export/r-package.zip", { token: admin })).data);
   assert.match(zip, /exclusions\.csv/);
-  assert.match(zip, /club_code,RegistryNr\n101,9003\n/);
+  assert.match(zip, /club_code,RegistryNr\n101,9003\n101,9004\n/);
   assert.match(new TextDecoder().decode((await call("GET", "/api/admin/export/results.csv", { token: admin })).data), /9003,ΔΗΜΟΥ,ΣΟΦΙΑ,Α,— αποκλεισμός/);
 });

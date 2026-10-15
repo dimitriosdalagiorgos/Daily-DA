@@ -200,6 +200,13 @@ function mainView(me, { justSubmitted = false } = {}) {
   const panels = {};
   for (const d of days) {
     const panel = el("div.day", { role: "tabpanel", "aria-label": d.label });
+    // A teacher excluded the child after the declaration: the club is left out
+    if (d.withdrawn?.length) {
+      const names = d.withdrawn.map((c) => `«${c.name}»`).join(", ");
+      panel.append(message("warn", d.withdrawn.length === 1
+        ? `Ο όμιλος ${names}, που είχατε δηλώσει, δεν δέχεται πια το παιδί (απόφαση του εκπαιδευτικού του) και δεν θα ληφθεί υπόψη. Η σειρά των υπόλοιπων ομίλων μένει ίδια.`
+        : `Οι όμιλοι ${names}, που είχατε δηλώσει, δεν δέχονται πια το παιδί (απόφαση των εκπαιδευτικών τους) και δεν θα ληφθούν υπόψη. Η σειρά των υπόλοιπων ομίλων μένει ίδια.`));
+    }
     if (d.clubs.length) {
       panel.append(el("p.day-intro", {},
         `Βάλτε σε σειρά `, el("strong", {}, `όλους τους ομίλους ${DAY_GEN[d.day]}`),
@@ -333,7 +340,10 @@ function doneView() {
 
 function receiptView(me, open) {
   const { student, days, submission } = me;
-  const nameOf = new Map(days.flatMap((d) => d.clubs.map((c) => [c.code, c.name])));
+  const nameOf = new Map(days.flatMap((d) => [
+    ...d.clubs.map((c) => [c.code, c.name]),
+    ...(d.withdrawn ?? []).map((c) => [c.code, `${c.name} (δεν ισχύει πια: αποκλεισμός)`]),
+  ]));
   const print = el("button", { type: "button", onclick: () => window.print() }, "Εκτύπωση / αποθήκευση ως PDF");
   // Closed unless just submitted: the parent opens it when needed.
   return el("details.card.receipt", { open },

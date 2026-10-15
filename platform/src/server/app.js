@@ -456,11 +456,14 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const [clubs, students, lists] = await Promise.all([getClubs(), getStudents(), getTeacherLists()]);
     const report = importTeacherLists(files.map((f) => ({ fileName: fileNameOf(f.fileName), rows: f.rows })), { clubs, students, lists });
     if (settings.phase === "parents") {
+      // New exclusions while parents declare: the club leaves those students' declarations
+      const submissions = await getSubmissions();
       for (const r of report) {
         const club = clubs.find((c) => c.code === r.code);
         if (!club || r.problems.length) continue;
         const added = addedExclusions(club, lists[club.code], { ...lists[club.code], ams: r.ams, blocked: r.blocked ?? lists[club.code]?.blocked, closed: r.closed ?? lists[club.code]?.closed }, students);
-        if (added.length) r.problems.push(`Αφού άνοιξαν οι δηλώσεις, οι αποκλεισμοί μπορούν μόνο να αφαιρεθούν: το αρχείο αποκλείει ${added.length} ακόμα μαθητές.`);
+        const declared = added.filter((am) => ranksClub(submissions[am], club.code)).length;
+        if (declared) r.warnings.push(`Το αρχείο αποκλείει ${declared} ${declared === 1 ? "μαθητή που έχει" : "μαθητές που έχουν"} ήδη δηλώσει τον όμιλο· ο όμιλος θα παραλειφθεί από τη δήλωσή ${declared === 1 ? "του" : "τους"}.`);
       }
     }
     const ok = report.every((r) => r.problems.length === 0);
@@ -856,17 +859,14 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       ...(out.length ? { blocked: out } : {}), ...(isClosed ? { closed: true } : {}),
       updatedBy: who, updatedAt: new Date(now()).toISOString(),
     };
-    // While parents declare, exclusions may be lifted but not added: the
-    // parents' forms leave out the clubs that exclude their child.
+    // While parents declare, exclusions may be added or lifted (decided
+    // 15/10/2026). The parents' forms follow: an added one leaves the
+    // declarations (the allocation skips the club), a lifted one has to be
+    // ranked by the parent (the form puts it last).
     const before = new Set(exclusionsOf([club], { [club.code]: previous ?? {} }, students)[club.code] ?? []);
     const after = exclusionsOf([club], { [club.code]: entry }, students)[club.code] ?? [];
-    if (settings.phase === "parents") {
-      const added = addedExclusions(club, previous, entry, students);
-      if (added.length) {
-        throw new HttpError(409, `Αφού άνοιξαν οι δηλώσεις, οι αποκλεισμοί μπορούν μόνο να αφαιρεθούν: ${added.length} ${added.length === 1 ? "μαθητής θα αποκλειόταν" : "μαθητές θα αποκλείονταν"} τώρα.`);
-      }
-    }
     const lifted = [...before].filter((am) => !after.includes(am));
+    const added = after.filter((am) => !before.has(am));
     await store.set(`teacherList:${club.code}`, entry);
     await logEvent(who, "teacher_list", { club: club.code, capacity, count: list.length, excluded: after.length, ...(isClosed ? { closed: true } : {}) });
     // Tell the club's teachers (except the one who saved).
@@ -874,12 +874,17 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       await mail(t.email, `Αλλαγή στον όμιλο «${club.name}»`,
         `Η λίστα μαθητών του ομίλου «${club.name}» άλλαξε από ${who === "admin" || who === "admin-file" ? "τον διαχειριστή" : who}.\nΘέσεις: ${capacity}, μαθητές στη λίστα: ${list.length}${isClosed ? " (κλειστή λίστα)" : after.length ? `, αποκλεισμένοι: ${after.length}` : ""}.`);
     }
-    // Lifted while parents declare: who already declared has not ranked the club
-    const declared = settings.phase === "parents" && lifted.length
-      ? (await Promise.all(lifted.map((am) => store.get(`submission:${am}`)))).filter(Boolean).length
-      : 0;
-    return { ...entry, liftedAfterSubmission: declared };
+    // While parents declare: who already declared and is affected
+    const submissionsOf = async (ams) => (settings.phase === "parents" && ams.length ? Promise.all(ams.map((am) => store.get(`submission:${am}`))) : []);
+    return {
+      ...entry,
+      liftedAfterSubmission: (await submissionsOf(lifted)).filter(Boolean).length,
+      excludedAfterSubmission: (await submissionsOf(added)).filter((s) => ranksClub(s, club.code)).length,
+    };
   }
+
+  /** Whether a declaration ranks the club (on any day). */
+  const ranksClub = (submission, code) => Object.values(submission?.preferences ?? {}).some((list) => (list ?? []).map(String).includes(String(code)));
 
   /** Students a new version of a club's list excludes that the old one did not. */
   function addedExclusions(club, previous, next, students) {
@@ -927,11 +932,14 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const days = DAYS.map((day) => ({
       day,
       label: DAY_LABELS[day],
+      // Ranked in the declaration, excluded since: left out by the allocation
+      withdrawn: (submission?.preferences?.[day] ?? []).map(String).filter((code) => byCode.has(code) && isExcluded(code))
+        .map((code) => ({ code, name: byCode.get(code).name })),
       clubs: clubsToRank(clubs, student.grade, day, isExcluded).map((code) => publicClub(byCode.get(code))),
       // Multi-day clubs ranked on an earlier day: shown locked.
       locked: clubs.filter((c) => c.days.indexOf(day) > 0 && c.grades.includes(student.grade) && !isExcluded(String(c.code)))
         .map((c) => ({ ...publicClub(c), firstDay: c.days[0], firstDayLabel: DAY_LABELS[c.days[0]] })),
-    })).filter((d) => d.clubs.length || d.locked.length);
+    })).filter((d) => d.clubs.length || d.locked.length || d.withdrawn.length);
     const published = settings.phase === "published" && results;
     return json(200, {
       student: { am, surname: student.surname, name: student.name, grade: student.grade },

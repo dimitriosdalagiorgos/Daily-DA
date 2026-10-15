@@ -2,8 +2,9 @@
 // eligible student in one of three states, ⭐ preferred (priority, up to the
 // seats), ○ neutral (the lottery decides) or ⛔ excluded (never placed in
 // the club). A closed list excludes everyone without ⭐. Excluded students
-// do not see the club in their parents' form. While parents declare,
-// exclusions may only be lifted (the server checks it too).
+// do not see the club in their parents' form. While parents declare, an
+// exclusion takes the club out of a declaration already made (the server
+// says how many, after saving).
 
 import { el, message, show } from "./ui.js";
 import { normalizeName } from "/lib/import/names.js";
@@ -23,7 +24,7 @@ const STATES = [
  *   eligible: {am: string, surname: string, name: string, grade: string, section?: string}[],
  *   list: {ams?: string[], blocked?: string[], closed?: boolean},
  *   canEdit: boolean,
- *   parentsPhase: boolean,   // exclusions may only be lifted
+ *   parentsPhase: boolean,   // parents are declaring: explain what an exclusion does to them
  *   capacityInput?: HTMLInputElement, // the admin's: the seats may change before saving
  *   onSave: (payload: {ams: string[], blocked: string[], closed: boolean}) => Promise<object>,
  *   onDirty?: (dirty: boolean) => void,
@@ -40,9 +41,6 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
   const wish = new Set(saved.ams);
   const blocked = new Set(saved.blocked);
   let closed = saved.closed;
-  // Excluded when the page opened: while parents declare, only these may stay ⛔
-  const excludedAtStart = () => new Set(students.filter((s) => (saved.closed ? !saved.ams.includes(s.am) : saved.blocked.includes(s.am))).map((s) => s.am));
-  let mayStayOut = excludedAtStart();
 
   const stateOf = (am) => (wish.has(am) ? WISH : closed || blocked.has(am) ? OUT : NONE);
   const counts = () => {
@@ -51,12 +49,11 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     return c;
   };
   const full = () => wish.size >= capacity();
-  const canBeOut = (am) => !parentsPhase || mayStayOut.has(am);
   const allowed = (am, state) => {
     if (!canEdit) return false;
     if (state === WISH) return wish.has(am) || !full();
     if (state === NONE) return !closed;
-    return canBeOut(am); // in a closed list: takes the ⭐ away
+    return true; // in a closed list: takes the ⭐ away
   };
   const setState = (am, state) => {
     wish.delete(am);
@@ -106,7 +103,6 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
         el("button.small", { type: "button", onclick: () => { show(question, null); update(); } }, "Να μείνουν ⛔ (αποκλεισμένοι)"),
         el("button.small", {
           type: "button",
-          disabled: parentsPhase,
           onclick: () => { for (const am of others) blocked.delete(am); show(question, null); update(); },
         }, "Να γίνουν ○ (κλήρωση)"))));
     update();
@@ -116,12 +112,6 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     toClosed();
   });
   function toClosed() {
-    const add = students.filter((s) => !wish.has(s.am) && !canBeOut(s.am));
-    if (add.length) {
-      closedRadio.checked = false; openRadio.checked = true;
-      show(out, message("warn", `Αφού άνοιξαν οι δηλώσεις, δεν μπορούν να προστεθούν αποκλεισμοί: η κλειστή λίστα θα απέκλειε ${add.length} μαθητές που τώρα δέχεται ο όμιλος.`));
-      return;
-    }
     closed = true;
     blocked.clear();
     show(question, null);
@@ -139,13 +129,6 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
       }
     }
     if (state === NONE && closed) return;
-    if (state === OUT) {
-      const refused = rows.filter((s) => !canBeOut(s.am));
-      if (refused.length) {
-        show(out, message("warn", `Αφού άνοιξαν οι δηλώσεις, δεν μπορούν να προστεθούν αποκλεισμοί (${refused.length} μαθητές).`));
-        return;
-      }
-    }
     for (const s of rows) setState(s.am, state);
     show(out, null);
     update();
@@ -211,7 +194,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     const accepted = c[WISH] + c[NONE];
     const chips = wish.size
       ? el("div.small", {}, "⭐ ", [...wish].map((am) => el("span.chip", {}, byAm.get(am) ? label(byAm.get(am)) : `ΑΜ ${am}`,
-        canEdit && (!closed || canBeOut(am)) ? el("button.small.link", { type: "button", "aria-label": `Αφαίρεση ${byAm.get(am)?.surname ?? am}`, onclick: () => { setState(am, closed ? OUT : NONE); update(); } }, "✕") : null)))
+        canEdit ? el("button.small.link", { type: "button", "aria-label": `Αφαίρεση ${byAm.get(am)?.surname ?? am}`, onclick: () => { setState(am, closed ? OUT : NONE); update(); } }, "✕") : null)))
       : null;
     let meaning;
     if (closed) {
@@ -219,7 +202,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
         ? message("warn", "Κλειστή λίστα χωρίς μαθητές: ο όμιλος δεν θα δεχτεί κανέναν.")
         : message(c[WISH] < cap ? "warn" : "info", `Κλειστή λίστα: ο όμιλος δέχεται μόνο αυτούς τους ${c[WISH]}, αν τον δηλώσουν.${c[WISH] < cap ? ` Θα μείνουν τουλάχιστον ${cap - c[WISH]} κενές θέσεις.` : ""}`);
     } else if (c[OUT]) {
-      meaning = message(accepted < cap ? "warn" : "info", `Ο όμιλος δεν δέχεται ${c[OUT]} μαθητές· τον βλέπουν μόνο οι υπόλοιποι ${accepted}.${accepted < cap ? ` Θα μείνουν τουλάχιστον ${cap - accepted} κενές θέσεις.` : ""}`);
+      meaning = message(accepted < cap ? "warn" : "info", `Ο όμιλος δεν δέχεται ${c[OUT]} ${c[OUT] === 1 ? "μαθητή" : "μαθητές"}· τον βλέπουν μόνο οι υπόλοιποι ${accepted}.${accepted < cap ? ` Θα μείνουν τουλάχιστον ${cap - accepted} κενές θέσεις.` : ""}`);
     } else {
       meaning = el("p.small.muted", {}, c[WISH] ? "Οι ⭐ έχουν προτεραιότητα αν δηλώσουν τον όμιλο· οι υπόλοιποι κρίνονται με την κλήρωση." : "Χωρίς λίστα: όσοι δηλώσουν τον όμιλο κρίνονται με την κλήρωση.");
     }
@@ -253,9 +236,9 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     try {
       const entry = await onSave({ ams: [...wish], blocked: closed ? [] : [...blocked], closed });
       saved = { ams: [...(entry.ams ?? [])], blocked: [...(entry.blocked ?? [])], closed: Boolean(entry.closed) };
-      mayStayOut = excludedAtStart();
       update();
       show(out, message("ok", "Αποθηκεύτηκε."),
+        entry.excludedAfterSubmission ? message("info", `${entry.excludedAfterSubmission} από τους μαθητές που αποκλείσατε τώρα είχαν ήδη δηλώσει τον όμιλο. Στην κατανομή ο όμιλος θα παραλειφθεί από τη δήλωσή τους (η υπόλοιπη σειρά μένει ίδια), και οι γονείς τους θα το δουν αν ξαναμπούν.`) : null,
         entry.liftedAfterSubmission ? message("warn", `${entry.liftedAfterSubmission} από τους μαθητές που δεν είναι πια αποκλεισμένοι έχουν ήδη δήλωση χωρίς αυτόν τον όμιλο. Ο όμιλος θα ληφθεί υπόψη μόνο αν ο γονέας ξαναμπεί και αποθηκεύσει τη δήλωση (θα του εμφανιστεί στο τέλος της σειράς). Ενημερώστε τη διαχείριση.`) : null);
     } catch (err) {
       show(out, message("err", err.message));
@@ -269,7 +252,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     modeBox,
     question,
     summary,
-    parentsPhase && canEdit ? message("info", "Οι δηλώσεις των γονέων είναι ανοιχτές: μπορείτε να αφαιρέσετε αποκλεισμούς (⛔ → ○ ή ⭐), όχι να προσθέσετε.") : null,
+    parentsPhase && canEdit ? message("info", "Οι δηλώσεις των γονέων είναι ανοιχτές. Αν αποκλείσετε (⛔) μαθητή που έχει ήδη δηλώσει τον όμιλο, ο όμιλος θα παραλειφθεί από τη δήλωσή του. Αν άρετε έναν αποκλεισμό, ο γονέας πρέπει να ξαναμπεί για να βάλει τον όμιλο στη σειρά του.") : null,
     el("div.filters", {}, search, gradeFilter, sectionFilter, stateFilter),
     canEdit ? el("div", {}, bulkButtons, shortcuts) : null,
     listBox,
