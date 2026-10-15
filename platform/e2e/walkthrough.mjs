@@ -82,11 +82,11 @@ try {
   step("teacher: logged in with the magic link");
   if (await teacher.locator("input[type=number]").count()) throw new Error("teachers must not edit the capacity");
   await teacher.fill("input[type=search]", "γεωργ");
-  await teacher.locator(".check-list .tri button.s-wish >> nth=0").click();
+  await teacher.locator(".tri-list .tri button.s-wish >> nth=0").click();
   await teacher.fill("input[type=search]", "");
-  await teacher.locator(".check-list .tri-row.none button.s-wish >> nth=0").click();
-  const badge = await teacher.locator(".list-summary .badge >> nth=0").textContent();
-  if (badge.trim() !== "⭐ 2 / 20 θέσεις") throw new Error(`teacher count: ${badge}`);
+  await teacher.locator(".tri-list .tri-row.none button.s-wish >> nth=0").click();
+  const badge = await teacher.locator(".counter.c-wish").textContent();
+  if (badge.trim() !== "⭐ 2 / 20") throw new Error(`teacher count: ${badge}`);
   await teacher.click("text=Αποθήκευση");
   await teacher.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
   step("teacher: two students ticked and saved (capacity shown, not editable)");
@@ -113,41 +113,46 @@ try {
   const puzzles = colleague.locator("section.card:has(h2:has-text('Μαθηματικοί γρίφοι'))");
   const algebra = colleague.locator("section.card:has(h2:has-text('Άλγεβρα'))");
   // The bulk buttons take whoever the filters show
-  const wishBadge = (card) => card.locator(".list-summary .badge >> nth=0").textContent().then((t) => t.trim());
+  // Changing everyone shown appears only once the rows are narrowed (and asks first)
+  const wishBadge = (card) => card.locator(".counter.c-wish").textContent().then((t) => t.trim());
+  const outBadge = (card) => card.locator(".counter.c-out").textContent().then((t) => t.trim());
+  if (await puzzles.locator(".bulk button").count()) throw new Error("bulk change shown without a filter");
   await puzzles.locator("input[type=search]").fill("γεωργ");
-  await puzzles.locator("button:has-text('⭐ Προτίμηση')").click();
+  await puzzles.locator(".bulk button:has-text('⭐')").click();
   const picked = Number((await wishBadge(puzzles)).match(/⭐ (\d+)/)[1]);
   if (picked < 1) throw new Error("bulk ⭐ picked nobody");
-  await puzzles.locator("button:has-text('○ Ουδέτεροι')").click();
-  if (await wishBadge(puzzles) !== "⭐ 0 / 15 θέσεις") throw new Error("bulk ○ left some ⭐");
-  await puzzles.locator("button:has-text('⭐ Προτίμηση')").click();
+  await puzzles.locator(".bulk button:has-text('○')").click();
+  if (await wishBadge(puzzles) !== "⭐ 0 / 15") throw new Error("bulk ○ left some ⭐");
+  await puzzles.locator(".bulk button:has-text('⭐')").click();
   await puzzles.locator("input[type=search]").fill("");
   await puzzles.locator("text=Μη αποθηκευμένες αλλαγές").waitFor();
   await puzzles.locator("button:has-text('Αποθήκευση')").click();
   await puzzles.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   if (await puzzles.locator("text=Μη αποθηκευμένες αλλαγές").count()) throw new Error("still marked unsaved after saving");
   // Wish list → closed list in one click; the others become ⛔
-  await algebra.locator(".check-list .tri button.s-wish >> nth=0").click();
+  await algebra.locator(".tri-list .tri button.s-wish >> nth=0").click();
   await algebra.locator("button:has-text('Μόνο οι ⭐')").click();
-  await algebra.locator(".msg:has-text('Κλειστή λίστα: ο όμιλος δέχεται μόνο αυτούς τους 1')").waitFor();
-  // …and back to open: the others stay ⛔ (a block list) or become ○
-  await algebra.locator("label:has-text('Ανοιχτή') input").check();
-  await algebra.locator("button:has-text('Να γίνουν ○')").click();
-  if ((await algebra.locator(".list-summary .badge >> nth=2").textContent()).trim() !== "⛔ 0") throw new Error("closed → open → ○ left exclusions");
+  await algebra.locator(".list-type:has-text('Κλειστή λίστα'):has-text('μόνο τον 1 ⭐')").waitFor();
+  // One ○ makes it open again, no switch; «Καθαρισμός» clears everything
+  await algebra.locator(".tri-list .tri-row.out button.s-none >> nth=0").click();
+  await algebra.locator(".list-type:has-text('Ανοιχτή λίστα με αποκλεισμούς')").waitFor();
+  await algebra.locator("button:has-text('Καθαρισμός')").click();
+  if (await outBadge(algebra) !== "⛔ 0" || await wishBadge(algebra) !== "⭐ 0 / 15") throw new Error("«Καθαρισμός» left some ⭐/⛔");
+  await algebra.locator(".tri-list .tri button.s-wish >> nth=0").click();
   // One ⛔: the student will not see the club
-  await algebra.locator(".check-list .tri-row.none button.s-out >> nth=0").click();
+  await algebra.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
   await algebra.locator("button:has-text('Αποθήκευση')").click();
   await algebra.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   // After a reload both lists are still there
   await colleague.reload();
   await colleague.waitForSelector("h2:has-text('Μαθηματικοί γρίφοι')");
-  if (await wishBadge(puzzles) !== `⭐ ${picked} / 15 θέσεις`) throw new Error("first club's list not kept");
-  if (await wishBadge(algebra) !== "⭐ 1 / 15 θέσεις") throw new Error("second club's list not kept");
-  if ((await algebra.locator(".list-summary .badge >> nth=2").textContent()).trim() !== "⛔ 1") throw new Error("the ⛔ was not kept");
+  if (await wishBadge(puzzles) !== `⭐ ${picked} / 15`) throw new Error("first club's list not kept");
+  if (await wishBadge(algebra) !== "⭐ 1 / 15") throw new Error("second club's list not kept");
+  if (await outBadge(algebra) !== "⛔ 1") throw new Error("the ⛔ was not kept");
   await colleague.click("header button:has-text('Βοήθεια')");
   await colleague.waitForSelector("#help-panel h2:has-text('Σύνδεση')");
   await shot(colleague, "03b-teacher-code");
-  await algebra.locator(".check-list .tri-row.none button.s-wish >> nth=0").click(); // unsaved: logging out asks first
+  await algebra.locator(".tri-list .tri-row.none button.s-wish >> nth=0").click(); // unsaved: logging out asks first
   await colleague.click("text=Αποσύνδεση εκπαιδευτικού");
   await colleague.waitForSelector("#tcode");
   step("teacher: common code + own ΑΜ/ΑΦΜ → only their clubs; select/clear all; lists kept after a reload; in-page help");
@@ -165,7 +170,7 @@ try {
   const chess = admin.locator("tr:has-text('Σκάκι')");
   await chess.locator("button:has-text('Διόρθωση')").click();
   const editor = admin.locator("tr.list-edit");
-  await editor.locator(".check-list .tri-row.none button.s-out >> nth=0").click();
+  await editor.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
   await editor.locator("button:has-text('Αποθήκευση')").click();
   await editor.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   await shot(admin, "02c-admin-list-editor");

@@ -302,22 +302,45 @@ label.inline { display: inline-flex; gap: 6px; align-items: center; font-weight:
 label.check-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 6px 12px; font-weight: 400; margin: 0; cursor: pointer; }
 label.check-row:hover { background: var(--surface-2); }
 label.check-row input { width: 18px; height: 18px; }
-/* Teacher's list: one row per student, three states ⭐ / ○ / ⛔ */
-.tri-row { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 5px 12px; }
-.tri-row:hover { background: var(--surface-2); }
+/* Teacher's list (listEditor.js): a bar that stays on screen, then one row
+   per student with three buttons ⭐ / ○ / ⛔ */
+.list-bar { position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 1px solid var(--border); padding: 8px 0; margin-bottom: 8px; }
+.list-type { padding: 6px 10px; border-radius: 8px; background: var(--surface-2); }
+.list-type.warn { background: var(--warn-soft); color: var(--warn); }
+.list-type .block { display: block; }
+.counters { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.counter { min-height: 34px; padding: 4px 12px; border-radius: 999px; font-size: 0.95rem; font-weight: 400; }
+.counter[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+.bar-actions { margin-top: 8px; }
+.unsaved { color: var(--warn); font-weight: 600; }
+.shortcuts { margin: 6px 0; }
+.bulk { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 8px 10px; margin: 6px 0; border: 1px dashed var(--primary); border-radius: 8px; background: var(--primary-soft); }
+.bulk:empty { display: none; }
+.tri-list { border: 1px solid var(--border); border-radius: 8px; padding: 4px 0; }
+.tri-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--surface-2); }
+.tri-row:last-child { border-bottom: 0; }
 .tri-row.wish { background: var(--primary-soft); }
 .tri-row.out .tri-name { color: var(--muted); text-decoration: line-through; }
 .tri { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.tri button { min-height: 32px; min-width: 38px; padding: 2px 8px; border: 0; border-radius: 0; background: transparent; font-size: 1rem; line-height: 1; }
+.tri button { min-height: 36px; min-width: 44px; padding: 2px 8px; border: 0; border-radius: 0; background: transparent; font-size: 1.05rem; line-height: 1; }
 .tri button + button { border-left: 1px solid var(--border); }
-.tri button[aria-pressed="false"] { filter: grayscale(1); opacity: 0.55; }
+.tri button[aria-pressed="false"] { filter: grayscale(1); opacity: 0.5; }
 .tri button[aria-pressed="false"]:not(:disabled):hover { filter: none; opacity: 1; }
 .tri button[aria-pressed="true"].s-wish { background: var(--primary); color: var(--primary-ink); }
 .tri button[aria-pressed="true"].s-none { background: var(--surface-2); }
 .tri button[aria-pressed="true"].s-out { background: var(--err); color: #fff; }
-.mode { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 10px; }
-.mode label { font-weight: 400; }
-.list-summary { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 6px 0; }
+.list-editor [hidden] { display: none !important; }
+@media (max-width: 560px) {
+  .list-type { font-size: 0.9rem; padding: 4px 8px; }
+  .counters { gap: 4px; margin-top: 6px; }
+  .counter { min-height: 32px; padding: 2px 10px; font-size: 0.9rem; }
+  .bar-actions { margin-top: 6px; gap: 8px; }
+  .bar-actions button.primary { min-height: 38px; padding: 4px 14px; }
+  .tri-row { grid-template-columns: 1fr; }
+  .tri { justify-self: start; }
+  .tri button { min-height: 42px; min-width: 64px; }
+  .list-bar { margin-left: -18px; margin-right: -18px; padding-left: 18px; padding-right: 18px; }
+}
 .badge.err { background: var(--err-soft); color: var(--err); }
 .chip { display: inline-flex; align-items: center; gap: 2px; background: var(--surface-2); border-radius: 999px; padding: 1px 4px 1px 10px; margin: 2px 2px; }
 button.link { border: 0; background: transparent; padding: 0 6px; min-height: 0; color: var(--muted); }
