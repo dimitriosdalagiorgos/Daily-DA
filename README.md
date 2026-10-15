@@ -61,6 +61,7 @@
 | Υπεύθυνο ομίλων — εκτέλεση σε R (offline) | [docs/manual-R.md](docs/manual-R.md) · [PDF](docs/Egxeiridio_R.pdf) · [Word](docs/Egxeiridio_R.docx) |
 | Πώς γίνεται η κατανομή (απλά, με παράδειγμα) | [docs/algorithm.md](docs/algorithm.md) |
 | Θεωρητικό υπόβαθρο, με βιβλιογραφία | [docs/algorithm-theory.md](docs/algorithm-theory.md) |
+| Η κατανομή του σχολείου γύρο-γύρο (σελίδα που διαβάζει τα «Δεδομένα για R (.zip)», και offline) | [docs/gyroi-katanomis.html](docs/gyroi-katanomis.html) |
 | Προδιαγραφές (όλες οι αποφάσεις σχεδιασμού) | [platform/SPEC.md](platform/SPEC.md) |
 
 Τα Word και PDF περιέχουν και την εξήγηση του αλγορίθμου (των εκπαιδευτικών και το θεωρητικό κείμενο ως παράρτημα), και διατίθενται και μέσα στην πλατφόρμα (σελίδα «Βοήθεια»). Αν αλλάξετε τα κείμενα `.md`, ξαναφτιάξτε τα με `python3 docs/build.py` (οδηγίες στην αρχή του αρχείου).

@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Built by platform/scripts/build-gyroi.mjs from platform/scripts/gyroi-template.html: edit those, not this file. -->
+<title>Η κατανομή γύρο-γύρο</title>
+<style>
+:root {
+  --bg: #f5f7fa; --surface: #ffffff; --ink: #18202e; --muted: #5b6577; --line: #d9dfe8; --soft: #eceff4;
+  --accent: #3a4a8c; --out-t: #f1f2f5; --bad: #b42d2d; --bad-t: #fbe1e1;
+  --c0: #23935a; --c0-t: #e3f4ea; --c1: #2d68cf; --c1-t: #e3ecfb; --c2: #cf3f3f; --c2-t: #fbe6e6; --c3: #b88a00; --c3-t: #fbf2d6;
+  --c4: #7a4fc4; --c4-t: #eee7fa; --c5: #12898f; --c5-t: #dff3f3; --c6: #d06a1b; --c6-t: #fcebdc; --c7: #c2417f; --c7-t: #fae4ef;
+  --f-body: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: ui-monospace, Consolas, "Cascadia Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #121722; --surface: #1a2130; --ink: #e7ebf2; --muted: #9aa4b5; --line: #2e3748; --soft: #222a3a;
+  --accent: #a9b6f0; --out-t: #20252f; --bad: #ef7b7b; --bad-t: #47201f;
+  --c0: #3cbf7a; --c0-t: #173a29; --c1: #5b8ef0; --c1-t: #1b2c4f; --c2: #ef6b6b; --c2-t: #47201f; --c3: #f0c23a; --c3-t: #40330d;
+  --c4: #a98bf0; --c4-t: #2e2350; --c5: #3cc4c9; --c5-t: #133c3e; --c6: #f09a50; --c6-t: #45291a; --c7: #ee7fb4; --c7-t: #472036;
+  color-scheme: dark } }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 16px 80px; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 0 0 6px; }
+h2 { font-size: 1.3rem; margin: 0; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.lede { color: var(--muted); max-width: 72ch; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+button { font: inherit; cursor: pointer; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* loading */
+#drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 18px; }
+#drop.over { border-color: var(--accent); background: var(--soft); }
+.btn { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 600; }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn:disabled { opacity: .4; cursor: default; }
+#error { color: var(--bad); font-weight: 600; }
+.warning { margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: var(--bad-t); color: var(--bad); font-weight: 600; }
+#source { font-size: .9rem; }
+
+/* navigation */
+.bar { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; border-bottom: 1px solid var(--line); margin: 18px 0 14px; display: flex; flex-direction: column; gap: 8px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { padding: 3px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: .92rem; }
+.pill[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.tabs.days .pill { font-weight: 700; }
+.tabs.clubs .pill { font-size: .85rem; padding: 2px 10px; }
+.tabs.clubs .pill[data-code]::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 6px; }
+.tabs.clubs .pill[data-code][aria-pressed="true"] { background: var(--ct); color: var(--ink); border-color: var(--c); }
+#search { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; min-width: 16em; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .85rem; color: var(--muted); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.sw { width: 18px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid var(--line); }
+
+/* club cards */
+.club { border-left: 6px solid var(--c); padding: 0; overflow: hidden; }
+.club > header { padding: 10px 14px; background: var(--ct); display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+.club > header h3 { margin: 0; font-size: 1.12rem; color: var(--ink); }
+.club > header h3::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--c); margin-right: 8px; vertical-align: 1px; }
+.club > header .facts { font-size: .9rem; color: var(--muted); }
+.club > header .facts b { color: var(--ink); }
+.club.idle > header { background: var(--surface); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { padding: 5px 10px; text-align: left; vertical-align: top; }
+th { font-size: .75rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.who { white-space: nowrap; }
+td.note { min-width: 22em; }
+tr.in td { background: var(--ct); }
+tr.in + tr.in td { border-top: 1px solid var(--surface); }
+tr.out td { background: var(--out-t); color: var(--muted); }
+tr.out td.who, tr.out td.note { color: var(--ink); }
+tr.cut td { border-top: 3px solid var(--c); }
+tr.hit td { outline: 2px solid var(--accent); outline-offset: -2px; }
+tr.toggle td { background: var(--surface); padding: 6px 10px; }
+tr.toggle button { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 0; }
+table.collapsed tr.retained { display: none; }
+.st { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 0 6px; border-radius: 4px; margin-right: 6px; white-space: nowrap; }
+.st.ACCEPTED { background: var(--c); color: var(--surface); }
+.st.RETAINED { background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+.st.REJECTED { background: var(--bad-t); color: var(--bad); }
+.st.DISPLACED { background: var(--bad); color: var(--surface); }
+.star { color: var(--c3); }
+.idle-note { padding: 10px 14px; color: var(--muted); font-size: .92rem; }
+
+/* summary tables */
+.plain td, .plain th { border-bottom: 1px solid var(--line); }
+.bad { color: var(--bad); font-weight: 600; }
+details > summary { cursor: pointer; font-weight: 600; }
+
+@media print {
+  .bar, #drop, .noprint { display: none !important; }
+  table.collapsed tr.retained { display: table-row; }
+  tr.toggle { display: none; }
+  .club { break-inside: avoid-page; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Η κατανομή γύρο-γύρο</h1>
+  <p class="lede">Ο αλγόριθμος της πλατφόρμας με τα πραγματικά δεδομένα μιας κατανομής: σε κάθε ημέρα και σε κάθε γύρο, ποιοι κάνουν αίτηση σε κάθε όμιλο, ποιοι μένουν (προσωρινά) και ποιοι περισσεύουν, και γιατί. Όπως «Οι όμιλοι των χρωμάτων», αλλά για όλο το σχολείο.</p>
+
+  <div id="drop" class="noprint">
+    <label class="btn primary">Άνοιγμα αρχείου zip…<input id="file" type="file" accept=".zip" hidden></label>
+    <button class="btn" id="sample" type="button">Παράδειγμα με φανταστικό σχολείο</button>
+    <span class="muted" style="font-size:.9rem">Το zip είναι τα «Δεδομένα για R (.zip)» της διαχείρισης, καρτέλα «Κατανομή» (αρχείο <span class="num">omiloi_dedomena_R.zip</span>). Μπορείτε και να το σύρετε εδώ. Τα στοιχεία μένουν στον υπολογιστή σας: η σελίδα δεν στέλνει τίποτα πουθενά και λειτουργεί και χωρίς internet.</span>
+  </div>
+  <p id="loading" class="muted" hidden>Φόρτωση της κατανομής από την πλατφόρμα…</p>
+  <p id="error" role="alert"></p>
+  <p id="warning" class="warning" role="alert" hidden></p>
+
+  <div id="view" hidden>
+    <div class="bar">
+      <p id="source" class="muted"></p>
+      <div class="tabs days" id="days" aria-label="Ημέρα"></div>
+      <div class="row">
+        <button class="btn" id="prev" type="button" title="Προηγούμενο (←)">←</button>
+        <div class="tabs" id="steps" aria-label="Γύρος"></div>
+        <button class="btn" id="next" type="button" title="Επόμενο (→)">→</button>
+        <input id="search" type="search" placeholder="Αναζήτηση: ΑΜ ή επώνυμο" aria-label="Αναζήτηση μαθητή">
+      </div>
+      <div class="tabs clubs" id="clubs" aria-label="Όμιλος"></div>
+    </div>
+    <div id="content" class="stack"></div>
+  </div>
+</div>
+
+<script>
+/*@CODE@*/
+/*@SAMPLE@*/
+
+// ---- page ----
+const $ = (id) => document.getElementById(id);
+function h(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === "class") node.className = v;
+    else if (k === "style") node.setAttribute("style", v);
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const c of children.flat(Infinity)) if (c !== null && c !== undefined && c !== false) node.append(c instanceof Node ? c : String(c));
+  return node;
+}
+
+const STATUS = { ACCEPTED: "Νέα θέση", RETAINED: "Μένει", REJECTED: "Περισσεύει", DISPLACED: "Εκτοπίζεται" };
+let state = null; // { days, input, colors, dayIdx, step, club }  step: 0 = before, 1..N = rounds, N+1 = result; club: filter or null
+
+/** Days and students whose rerun differs from the result the platform stored. */
+function differences(byStudent, expected) {
+  let n = 0;
+  for (const [am, days] of Object.entries(expected)) {
+    for (const [d, code] of Object.entries(days)) if (String(byStudent[am]?.[d] ?? "") !== String(code ?? "")) n++;
+  }
+  return n;
+}
+
+function load(files, label, expected) {
+  $("error").textContent = "";
+  $("loading").hidden = true;
+  $("warning").hidden = true;
+  try {
+    const input = readRPackage(files, drawLottery);
+    const result = allocateWeek(input);
+    const diff = expected ? differences(result.byStudent, expected) : 0;
+    if (diff) {
+      $("warning").hidden = false;
+      $("warning").textContent = `Προσοχή: με τα σημερινά δεδομένα της πλατφόρμας η κατανομή βγαίνει διαφορετική από την αποθηκευμένη (${diff} θέσεις μαθητή × ημέρα). Κάτι άλλαξε μετά την κατανομή (π.χ. θέσεις ή λίστες): ξανατρέξτε την κατανομή με το ίδιο seed. Οι γύροι εδώ είναι της νέας εκτέλεσης.`;
+    }
+    const days = buildRounds(input, result);
+    if (days.length === 0) throw new Error("Δεν βρέθηκαν όμιλοι στο αρχείο.");
+    const colors = new Map();
+    for (const d of days) d.clubs.forEach((c, i) => colors.set(c.code, i % 8));
+    const declared = Object.keys(input.preferences).length;
+    state = { days, input, colors, dayIdx: 0, step: 1, club: null, student: new Map(input.students.map((s) => [s.am, s])) };
+    $("source").textContent = `${label} · ${input.students.length} μαθητές, ${input.clubs.length} όμιλοι, ${declared} δηλώσεις${input.seed ? ` · seed κλήρωσης: ${input.seed}` : ""}`;
+    $("view").hidden = false;
+    render();
+  } catch (err) {
+    $("error").textContent = err.message;
+  }
+}
+
+async function loadZip(file) {
+  try {
+    load(await readZip(new Uint8Array(await file.arrayBuffer())), file.name);
+  } catch (err) {
+    $("error").textContent = err.message;
+  }
+}
+
+const day = () => state.days[state.dayIdx];
+const lastStep = () => day().rounds.length + 1;
+const clubVars = (code) => { const i = state.colors.get(code) ?? 0; return `--c: var(--c${i}); --ct: var(--c${i}-t)`; };
+const clubName = (code) => state.input.clubs.find((c) => String(c.code) === String(code))?.name ?? code;
+const nameOf = (am) => { const s = state.student.get(am); return s ? `${s.surname} ${s.name}`.trim() : ""; };
+
+function setStep(step) {
+  state.step = Math.max(0, Math.min(lastStep(), step));
+  render();
+}
+
+function render() {
+  const d = day();
+  $("days").replaceChildren(...state.days.map((x, i) => h("button", { class: "pill", type: "button", "aria-pressed": String(i === state.dayIdx),
+    onclick: () => { state.dayIdx = i; state.club = null; state.step = Math.min(state.step, lastStep()); render(); } }, x.label)));
+  // Club filter: all of the day's clubs, or one of them through every round.
+  $("clubs").replaceChildren(...(d.clubs.length > 1 ? [
+    h("button", { class: "pill", type: "button", "aria-pressed": String(state.club === null), onclick: () => { state.club = null; render(); } }, "Όλοι οι όμιλοι"),
+    ...d.clubs.map((c) => h("button", { class: "pill", type: "button", "data-code": c.code, style: clubVars(c.code), "aria-pressed": String(state.club === c.code),
+      onclick: () => { state.club = state.club === c.code ? null : c.code; render(); } }, c.name)),
+  ] : []));
+  const labels = ["Πριν", ...d.rounds.map((r) => `Γύρος ${r.round}`), "Αποτέλεσμα"];
+  $("steps").replaceChildren(...labels.map((l, i) => h("button", { class: "pill", type: "button", "aria-pressed": String(i === state.step), onclick: () => setStep(i) }, l)));
+  $("prev").disabled = state.step === 0;
+  $("next").disabled = state.step === lastStep();
+  const body = state.step === 0 ? before(d) : state.step === lastStep() ? final(d) : roundView(d, d.rounds[state.step - 1]);
+  $("content").replaceChildren(...body);
+  highlight();
+}
+
+function legend() {
+  return h("div", { class: "legend" },
+    h("span", {}, h("i", { class: "sw", style: "background:var(--c0-t)" }), "Μένουν στον όμιλο (προσωρινά, μέχρι το τέλος της ημέρας)"),
+    h("span", {}, h("i", { class: "sw", style: "background:var(--c0-t);border:0;border-bottom:3px solid var(--c0)" }), "Η βάση: όσοι είναι κάτω από τη γραμμή δεν χωράνε"),
+    h("span", {}, h("i", { class: "sw", style: "background:var(--out-t)" }), "Περισσεύουν: πάνε στην επόμενη επιλογή τους"),
+    h("span", {}, h("b", { class: "star" }, "⭐"), "Λίστα εκπαιδευτικού"));
+}
+
+function roundView(d, r) {
+  const intro = h("p", { class: "lede" }, r.round === 1
+    ? `${d.label}, γύρος 1: κάθε μαθητής κάνει αίτηση στον πρώτο όμιλο που έμεινε στη λίστα του, συνήθως την 1η του επιλογή (${r.applicants} αιτήσεις· όσοι όμιλοι φεύγουν από λίστες φαίνονται στο «Πριν»). Κάθε όμιλος βάζει τους υποψηφίους σε σειρά: πρώτα τη λίστα ⭐ του εκπαιδευτικού, μετά τις τάξεις με υποχρεωτική ένταξη (αν υπάρχουν), μετά τον λαχνό.`
+    : `${d.label}, γύρος ${r.round}: όσοι περίσσεψαν στον γύρο ${r.round - 1} κάνουν αίτηση στην επόμενη επιλογή τους (${r.applicants} αιτήσεις). Οι όμιλοι που τις δέχονται ξαναβάζουν σε σειρά όσους ήδη κρατούν μαζί με τους νέους.`);
+  return [intro, legend(), ...r.clubs.filter((c) => state.club === null || c.code === state.club).map((c) => clubCard(c, r.round))];
+}
+
+function clubCard(c, round) {
+  if (!c.reconsidered) {
+    return h("section", { class: "card club idle", style: clubVars(c.code) },
+      h("header", {}, h("h3", {}, c.name), h("span", { class: "facts" }, `${c.capacity} θέσεις`)),
+      h("p", { class: "idle-note" }, `Καμία νέα αίτηση σε αυτόν τον γύρο: κρατά ${c.held} ${c.held === 1 ? "μαθητή" : "μαθητές"} όπως πριν.`));
+  }
+  const retained = c.rows.filter((x) => x.status === "RETAINED").length;
+  const collapse = round > 1 && retained > 0;
+  const table = h("table", { class: collapse ? "collapsed" : "" });
+  const toggle = collapse ? h("tr", { class: "toggle" }, h("td", { colspan: 7 }, h("button", { type: "button", onclick: (e) => {
+    const open = table.classList.toggle("collapsed");
+    e.currentTarget.textContent = open ? showText : hideText;
+  } }, `▸ ${retained} ${retained === 1 ? "μαθητής μένει" : "μαθητές μένουν"} από προηγούμενους γύρους: εμφάνιση`))) : null;
+  const showText = `▸ ${retained} ${retained === 1 ? "μαθητής μένει" : "μαθητές μένουν"} από προηγούμενους γύρους: εμφάνιση`;
+  const hideText = `▾ απόκρυψη όσων μένουν από προηγούμενους γύρους`;
+  table.append(
+    h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "Λαχνός"), h("th", {}, "ΑΜ"), h("th", {}, "Ονοματεπώνυμο"), h("th", {}, "Τάξη"), h("th", {}, "Επιλογή"), h("th", {}, "Παρατηρήσεις"))),
+    h("tbody", {}, toggle, c.rows.map((x, i) => {
+      const inside = x.status === "ACCEPTED" || x.status === "RETAINED";
+      const cls = [inside ? "in" : "out", i === c.kept && c.kept > 0 ? "cut" : "", x.status === "RETAINED" ? "retained" : ""].filter(Boolean).join(" ");
+      return h("tr", { class: cls, "data-am": x.am },
+        h("td", { class: "n" }, x.pos),
+        h("td", { class: "n" }, x.lottery),
+        h("td", { class: "n" }, x.am),
+        h("td", { class: "who" }, x.starred ? h("b", { class: "star", title: "Λίστα εκπαιδευτικού" }, "⭐ ") : null, x.name),
+        h("td", {}, x.grade),
+        h("td", {}, x.choice ? `${x.choice}η` : "—"),
+        h("td", { class: "note" }, h("span", { class: `st ${x.status}` }, STATUS[x.status]), x.note));
+    })));
+  const facts = [h("span", {}, h("b", {}, c.capacity), " θέσεις"), h("span", {}, h("b", {}, c.applicants), " υποψήφιοι"), round > 1 ? h("span", {}, h("b", {}, c.fresh), c.fresh === 1 ? " νέα αίτηση" : " νέες αιτήσεις") : null,
+    c.base ? h("span", {}, "βάση: ", h("b", {}, c.base)) : h("span", {}, "χωράνε όλοι")];
+  return h("section", { class: "card club", style: clubVars(c.code) },
+    h("header", {}, h("h3", {}, c.name), h("span", { class: "facts row" }, facts)),
+    h("div", { class: "scroll" }, table));
+}
+
+function before(d) {
+  const out = [h("p", { class: "lede" }, `${d.label}: πριν από τον 1ο γύρο. Όσοι έχουν ήδη θέση σε όμιλο πολλών ημερών δεν παίρνουν μέρος, και από τις λίστες των υπολοίπων φεύγουν οι όμιλοι που δεν μπορούν να πάρουν.`)];
+  const clubs = h("section", { class: "card stack" }, h("h2", {}, `Όμιλοι που κρίνονται τη ${d.label}`),
+    h("div", { class: "scroll" }, h("table", { class: "plain" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Όμιλος"), h("th", {}, "Θέσεις"), h("th", {}, "Ημέρες"))),
+      h("tbody", {}, d.clubs.map((c) => h("tr", { style: clubVars(c.code) }, h("td", {}, h("b", { style: "color:var(--c)" }, "● "), c.name), h("td", { class: "n" }, c.capacity),
+        h("td", {}, c.days.map((x) => DAY_LABELS[x]).join(", "))))))));
+  if (d.clubs.length) out.push(clubs);
+  if (d.carried.length) {
+    const byClub = new Map();
+    for (const x of d.carried) byClub.set(x.club, [...(byClub.get(x.club) ?? []), x.am]);
+    out.push(h("section", { class: "card stack" }, h("h2", {}, `Έχουν ήδη θέση (${d.carried.length})`),
+      h("p", { class: "muted" }, "Μπήκαν την πρώτη ημέρα ενός ομίλου πολλών ημερών και κρατούν τη θέση τους σήμερα, χωρίς να κάνουν αίτηση."),
+      [...byClub].map(([code, ams]) => h("details", {}, h("summary", {}, `«${clubName(code)}»: ${ams.length}`),
+        h("p", { class: "muted" }, ams.map((am) => `${am} ${nameOf(am)}`).join(" · "))))));
+  }
+  if (d.dropped.length) {
+    out.push(h("section", { class: "card stack" }, h("h2", {}, `Όμιλοι που φεύγουν από λίστες (${d.dropped.length})`),
+      h("div", { class: "scroll" }, h("table", { class: "plain" },
+        h("thead", {}, h("tr", {}, h("th", {}, "ΑΜ"), h("th", {}, "Ονοματεπώνυμο"), h("th", {}, "Όμιλος"), h("th", {}, "Γιατί"))),
+        h("tbody", {}, d.dropped.map((x) => h("tr", { "data-am": x.am }, h("td", { class: "n" }, x.am), h("td", { class: "who" }, nameOf(x.am)), h("td", {}, clubName(x.club)), h("td", {}, x.text))))))));
+  }
+  return out;
+}
+
+function final(d) {
+  const out = [h("p", { class: "lede" }, d.rounds.length === 0
+    ? `${d.label}: δεν κρίνεται κανένας όμιλος αυτή την ημέρα· υπάρχουν μόνο θέσεις από ομίλους πολλών ημερών.`
+    : `${d.label}: η κατανομή τελείωσε μετά από ${d.rounds.length} ${d.rounds.length === 1 ? "γύρο" : "γύρους"}. Οι προσωρινές θέσεις γίνονται οριστικές.`)];
+  if (d.clubs.length) out.push(h("section", { class: "card stack" }, h("h2", {}, "Θέσεις"),
+    h("div", { class: "scroll" }, h("table", { class: "plain" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Όμιλος"), h("th", {}, "Μαθητές"), h("th", {}, "Θέσεις"), h("th", {}, "Κενές"))),
+      h("tbody", {}, d.clubs.map((c) => h("tr", { style: clubVars(c.code) }, h("td", {}, h("b", { style: "color:var(--c)" }, "● "), c.name),
+        h("td", { class: "n" }, d.final.counts[c.code]), h("td", { class: "n" }, c.capacity), h("td", { class: "n" }, c.capacity - d.final.counts[c.code]))))))));
+  if (d.carried.length) out.push(h("p", { class: "muted" }, `Επιπλέον ${d.carried.length} μαθητές έχουν όμιλο αυτή την ημέρα από όμιλο πολλών ημερών.`));
+  const missing = d.final.unassigned.filter((u) => u.declared);
+  out.push(h("section", { class: "card stack" }, h("h2", {}, `Χωρίς όμιλο, ενώ δήλωσαν (${missing.length})`),
+    missing.length === 0 ? h("p", { class: "muted" }, "Κανείς.") : h("div", { class: "scroll" }, h("table", { class: "plain" },
+      h("thead", {}, h("tr", {}, h("th", {}, "ΑΜ"), h("th", {}, "Ονοματεπώνυμο"), h("th", {}, "Τάξη"), h("th", {}, "Λαχνός"), h("th", {}, "Γιατί"))),
+      h("tbody", {}, missing.map((u) => h("tr", { "data-am": u.am }, h("td", { class: "n" }, u.am), h("td", { class: "who" }, nameOf(u.am)),
+        h("td", {}, state.student.get(u.am)?.grade ?? ""), h("td", { class: "n" }, state.input.lottery.get(u.am)), h("td", { class: "bad" }, u.text))))))));
+  return out;
+}
+
+function highlight() {
+  const q = $("search").value.trim().toLocaleUpperCase("el");
+  for (const tr of document.querySelectorAll("tr[data-am]")) {
+    const am = tr.dataset.am;
+    const hit = q !== "" && (am === q || nameOf(am).toLocaleUpperCase("el").includes(q));
+    tr.classList.toggle("hit", hit);
+    if (hit) tr.closest("table")?.classList.remove("collapsed");
+  }
+}
+
+$("file").addEventListener("change", (e) => { if (e.target.files[0]) loadZip(e.target.files[0]); });
+$("sample").addEventListener("click", () => load(SAMPLE, "Παράδειγμα: φανταστικό σχολείο με φανταστικές δηλώσεις"));
+$("prev").addEventListener("click", () => setStep(state.step - 1));
+$("next").addEventListener("click", () => setStep(state.step + 1));
+$("search").addEventListener("input", highlight);
+const drop = $("drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) loadZip(e.dataTransfer.files[0]); });
+document.addEventListener("keydown", (e) => {
+  if (!state || e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowRight") setStep(state.step + 1);
+  if (e.key === "ArrowLeft") setStep(state.step - 1);
+});
+if (location.hash === "#paradeigma") $("sample").click();
+
+// Opened from the platform's admin page («Γύροι κατανομής»): it sends the R
+// data package and the stored result by postMessage (same site only).
+window.addEventListener("message", (e) => {
+  if (e.origin !== location.origin || e.data?.type !== "gyroi-data") return;
+  $("error").textContent = "";
+  $("drop").hidden = true;
+  readZip(e.data.zip).then((files) => load(files, e.data.label, e.data.byStudent)).catch((err) => { $("error").textContent = err.message; });
+});
+if (window.opener && location.protocol.startsWith("http")) {
+  try {
+    window.opener.postMessage({ type: "gyroi-ready" }, location.origin);
+    $("loading").hidden = false;
+  } catch { /* opened from another site */ }
+}
+</script>
+</body>
+</html>

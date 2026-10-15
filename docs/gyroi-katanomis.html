@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Built by platform/scripts/build-gyroi.mjs from platform/scripts/gyroi-template.html: edit those, not this file. -->
+<title>Η κατανομή γύρο-γύρο</title>
+<style>
+:root {
+  --bg: #f5f7fa; --surface: #ffffff; --ink: #18202e; --muted: #5b6577; --line: #d9dfe8; --soft: #eceff4;
+  --accent: #3a4a8c; --out-t: #f1f2f5; --bad: #b42d2d; --bad-t: #fbe1e1;
+  --c0: #23935a; --c0-t: #e3f4ea; --c1: #2d68cf; --c1-t: #e3ecfb; --c2: #cf3f3f; --c2-t: #fbe6e6; --c3: #b88a00; --c3-t: #fbf2d6;
+  --c4: #7a4fc4; --c4-t: #eee7fa; --c5: #12898f; --c5-t: #dff3f3; --c6: #d06a1b; --c6-t: #fcebdc; --c7: #c2417f; --c7-t: #fae4ef;
+  --f-body: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: ui-monospace, Consolas, "Cascadia Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #121722; --surface: #1a2130; --ink: #e7ebf2; --muted: #9aa4b5; --line: #2e3748; --soft: #222a3a;
+  --accent: #a9b6f0; --out-t: #20252f; --bad: #ef7b7b; --bad-t: #47201f;
+  --c0: #3cbf7a; --c0-t: #173a29; --c1: #5b8ef0; --c1-t: #1b2c4f; --c2: #ef6b6b; --c2-t: #47201f; --c3: #f0c23a; --c3-t: #40330d;
+  --c4: #a98bf0; --c4-t: #2e2350; --c5: #3cc4c9; --c5-t: #133c3e; --c6: #f09a50; --c6-t: #45291a; --c7: #ee7fb4; --c7-t: #472036;
+  color-scheme: dark } }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 16px 80px; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 0 0 6px; }
+h2 { font-size: 1.3rem; margin: 0; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.lede { color: var(--muted); max-width: 72ch; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+button { font: inherit; cursor: pointer; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* loading */
+#drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 18px; }
+#drop.over { border-color: var(--accent); background: var(--soft); }
+.btn { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 600; }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn:disabled { opacity: .4; cursor: default; }
+#error { color: var(--bad); font-weight: 600; }
+.warning { margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: var(--bad-t); color: var(--bad); font-weight: 600; }
+#source { font-size: .9rem; }
+
+/* navigation */
+.bar { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; border-bottom: 1px solid var(--line); margin: 18px 0 14px; display: flex; flex-direction: column; gap: 8px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { padding: 3px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: .92rem; }
+.pill[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.tabs.days .pill { font-weight: 700; }
+.tabs.clubs .pill { font-size: .85rem; padding: 2px 10px; }
+.tabs.clubs .pill[data-code]::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 6px; }
+.tabs.clubs .pill[data-code][aria-pressed="true"] { background: var(--ct); color: var(--ink); border-color: var(--c); }
+#search { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; min-width: 16em; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .85rem; color: var(--muted); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.sw { width: 18px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid var(--line); }
+
+/* club cards */
+.club { border-left: 6px solid var(--c); padding: 0; overflow: hidden; }
+.club > header { padding: 10px 14px; background: var(--ct); display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+.club > header h3 { margin: 0; font-size: 1.12rem; color: var(--ink); }
+.club > header h3::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--c); margin-right: 8px; vertical-align: 1px; }
+.club > header .facts { font-size: .9rem; color: var(--muted); }
+.club > header .facts b { color: var(--ink); }
+.club.idle > header { background: var(--surface); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { padding: 5px 10px; text-align: left; vertical-align: top; }
+th { font-size: .75rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.who { white-space: nowrap; }
+td.note { min-width: 22em; }
+tr.in td { background: var(--ct); }
+tr.in + tr.in td { border-top: 1px solid var(--surface); }
+tr.out td { background: var(--out-t); color: var(--muted); }
+tr.out td.who, tr.out td.note { color: var(--ink); }
+tr.cut td { border-top: 3px solid var(--c); }
+tr.hit td { outline: 2px solid var(--accent); outline-offset: -2px; }
+tr.toggle td { background: var(--surface); padding: 6px 10px; }
+tr.toggle button { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 0; }
+table.collapsed tr.retained { display: none; }
+.st { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 0 6px; border-radius: 4px; margin-right: 6px; white-space: nowrap; }
+.st.ACCEPTED { background: var(--c); color: var(--surface); }
+.st.RETAINED { background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+.st.REJECTED { background: var(--bad-t); color: var(--bad); }
+.st.DISPLACED { background: var(--bad); color: var(--surface); }
+.star { color: var(--c3); }
+.idle-note { padding: 10px 14px; color: var(--muted); font-size: .92rem; }
+
+/* summary tables */
+.plain td, .plain th { border-bottom: 1px solid var(--line); }
+.bad { color: var(--bad); font-weight: 600; }
+details > summary { cursor: pointer; font-weight: 600; }
+
+@media print {
+  .bar, #drop, .noprint { display: none !important; }
+  table.collapsed tr.retained { display: table-row; }
+  tr.toggle { display: none; }
+  .club { break-inside: avoid-page; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Η κατανομή γύρο-γύρο</h1>
+  <p class="lede">Ο αλγόριθμος της πλατφόρμας με τα πραγματικά δεδομένα μιας κατανομής: σε κάθε ημέρα και σε κάθε γύρο, ποιοι κάνουν αίτηση σε κάθε όμιλο, ποιοι μένουν (προσωρινά) και ποιοι περισσεύουν, και γιατί. Όπως «Οι όμιλοι των χρωμάτων», αλλά για όλο το σχολείο.</p>
+
+  <div id="drop" class="noprint">
+    <label class="btn primary">Άνοιγμα αρχείου zip…<input id="file" type="file" accept=".zip" hidden></label>
+    <button class="btn" id="sample" type="button">Παράδειγμα με φανταστικό σχολείο</button>
+    <span class="muted" style="font-size:.9rem">Το zip είναι τα «Δεδομένα για R (.zip)» της διαχείρισης, καρτέλα «Κατανομή» (αρχείο <span class="num">omiloi_dedomena_R.zip</span>). Μπορείτε και να το σύρετε εδώ. Τα στοιχεία μένουν στον υπολογιστή σας: η σελίδα δεν στέλνει τίποτα πουθενά και λειτουργεί και χωρίς internet.</span>
+  </div>
+  <p id="loading" class="muted" hidden>Φόρτωση της κατανομής από την πλατφόρμα…</p>
+  <p id="error" role="alert"></p>
+  <p id="warning" class="warning" role="alert" hidden></p>
+
+  <div id="view" hidden>
+    <div class="bar">
+      <p id="source" class="muted"></p>
+      <div class="tabs days" id="days" aria-label="Ημέρα"></div>
+      <div class="row">
+        <button class="btn" id="prev" type="button" title="Προηγούμενο (←)">←</button>
+        <div class="tabs" id="steps" aria-label="Γύρος"></div>
+        <button class="btn" id="next" type="button" title="Επόμενο (→)">→</button>
+        <input id="search" type="search" placeholder="Αναζήτηση: ΑΜ ή επώνυμο" aria-label="Αναζήτηση μαθητή">
+      </div>
+      <div class="tabs clubs" id="clubs" aria-label="Όμιλος"></div>
+    </div>
+    <div id="content" class="stack"></div>
+  </div>
+</div>
+
+<script>
+// ---- src/algorithm/days.js ----
+// School days in the order the allocation runs (Monday → Friday).
+const DAYS = ["mon", "tue", "wed", "thu", "fri"];
+
+const DAY_LABELS = {
+  mon: "Δευτέρα",
+  tue: "Τρίτη",
+  wed: "Τετάρτη",
+  thu: "Πέμπτη",
+  fri: "Παρασκευή",
+};
+
+const LABEL_TO_DAY = Object.fromEntries(
+  Object.entries(DAY_LABELS).map(([day, label]) => [label, day]),
+);
+
+/** Greek day label (as in the clubs template) → day key, or null. */
+function dayFromLabel(label) {
+  return LABEL_TO_DAY[String(label ?? "").trim()] ?? null;
+}
+
+function dayIndex(day) {
+  const i = DAYS.indexOf(day);
+  if (i < 0) throw new Error(`Άγνωστη ημέρα: ${day}`);
+  return i;
+}
+
+// ---- src/algorithm/lottery.js ----
+// Lottery: one fixed number per student, drawn once before the allocation
+// from a published seed. Anyone with the seed and the list of registry
+// numbers (ΑΜ) can reproduce it.
+//
+// Procedure:
+//   1. Sort the ΑΜ numerically (ties impossible: ΑΜ is unique).
+//   2. Seed a PRNG (sfc32) from the seed string via the cyrb128 hash.
+//   3. Fisher–Yates shuffle the sorted list.
+//   4. The student at position i (1-based) gets lottery number i.
+// A lower number wins ties.
+
+function cyrb128(str) {
+  let h1 = 1779033703, h2 = 3144134277, h3 = 1013904242, h4 = 2773480762;
+  for (let i = 0; i < str.length; i++) {
+    const k = str.charCodeAt(i);
+    h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+    h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+    h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+    h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+  }
+  h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+  h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+  h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+  h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+  h1 ^= h2 ^ h3 ^ h4;
+  h2 ^= h1;
+  h3 ^= h1;
+  h4 ^= h1;
+  return [h1 >>> 0, h2 >>> 0, h3 >>> 0, h4 >>> 0];
+}
+
+function sfc32(a, b, c, d) {
+  return function next() {
+    a |= 0; b |= 0; c |= 0; d |= 0;
+    const t = (((a + b) | 0) + d) | 0;
+    d = (d + 1) | 0;
+    a = b ^ (b >>> 9);
+    b = (c + (c << 3)) | 0;
+    c = (c << 21) | (c >>> 11);
+    c = (c + t) | 0;
+    return (t >>> 0) / 4294967296;
+  };
+}
+
+/** Deterministic PRNG in [0, 1) from a seed string. */
+function seededRandom(seed) {
+  if (typeof seed !== "string" || seed.trim() === "") {
+    throw new Error("Η κλήρωση χρειάζεται μη κενό seed.");
+  }
+  const rng = sfc32(...cyrb128(seed));
+  for (let i = 0; i < 16; i++) rng(); // discard warm-up outputs
+  return rng;
+}
+
+function compareAm(a, b) {
+  const na = Number(a), nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+  return String(a).localeCompare(String(b));
+}
+
+/**
+ * Draw the lottery.
+ * @param {string[]} ams registry numbers of all students
+ * @param {string} seed published seed
+ * @returns {Map<string, number>} ΑΜ → lottery number (1..N, lower wins)
+ */
+function drawLottery(ams, seed) {
+  const list = [...new Set(ams.map(String))];
+  if (list.length !== ams.length) throw new Error("Διπλότυπος ΑΜ στην κλήρωση.");
+  list.sort(compareAm);
+  const rng = seededRandom(seed);
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return new Map(list.map((am, i) => [am, i + 1]));
+}
+
+// ---- src/algorithm/allocate.js ----
+// Weekly club allocation: student-proposing Deferred Acceptance per day,
+// Monday → Friday (see platform/SPEC.md, «Αλγόριθμος»).
+//
+// Club priority over students (lower tuple wins):
+//   1. position in the teacher's list for the club (not listed = ∞)
+//   2. students of grades with mandatory placement before the others
+//      (only when mandatoryGrades is given)
+//   3. the student's lottery number
+// The student's own ranking decides only where and in which order they
+// apply — not their priority at a club (pure Gale–Shapley, decided
+// 27/9/2026). Priorities that do not depend on what students declare keep
+// DA strategy-proof: ranking clubs truthfully is always best.
+// The result does not depend on the order in which proposals are handled;
+// rounds are just one way of computing it (tested in allocate.test.js).
+//
+// Similar clubs (same `similar` word, different days): a student gets at
+// most one of them in the week. Once placed in one, the others leave the
+// student's lists on the following days (like a day clash) and the remaining
+// clubs are renumbered.
+//
+// Teachers' exclusions (⛔, or a closed list = everyone not on the list):
+// an excluded student is not acceptable to the club at all. The club
+// leaves the student's lists before the allocation (like a day clash), so
+// it may keep seats empty, and the student may end up without a club.
+// Excluding students only removes them from a club's acceptable set, so DA
+// stays stable and strategy-proof for students.
+//
+// Multi-day clubs (2 or 3 days) take part only in the allocation of their
+// first day. Students placed there keep the seat on the club's later days
+// and sit out those days' allocations. Everyone else simply loses the club
+// from their later-day lists, and the remaining clubs are renumbered.
+//
+// Input shapes:
+//   students:     [{ am, grade }]
+//   clubs:        [{ code, name, days: ["mon", "thu"], grades: ["Α", "Β"], capacity, similar? }]
+//   preferences:  { [am]: { [day]: [clubCode, ...] } }   best first
+//   teacherLists: { [clubCode]: [am, ...] }              teacher's order
+//   exclusions:   { [clubCode]: [am, ...] }              students the club does not accept
+//   lottery:      Map<am, number>                        from drawLottery()
+//   mandatoryGrades: ["Α", ...]                          grades placed first
+
+
+/** Event names written to the audit log. */
+const EVENTS = {
+  ROUND_START: "ROUND_START",
+  PROPOSAL: "PROPOSAL",
+  ACCEPTED: "ACCEPTED", // new proposal kept
+  RETAINED: "RETAINED", // seat from an earlier round kept
+  REJECTED: "REJECTED", // new proposal turned away
+  DISPLACED: "DISPLACED", // seat from an earlier round lost to higher priority
+  CARRIED: "CARRIED", // seat on a later day of a multi-day club
+  CLUB_DROPPED: "CLUB_DROPPED", // club removed from a list (later day, clash, similar, excluded)
+  NO_MORE_PROPOSALS: "NO_MORE_PROPOSALS",
+};
+
+const UNASSIGNED_REASONS = {
+  NO_PREFERENCES: "no_preferences",
+  ALL_REJECTED: "all_rejected",
+};
+
+function indexClubs(clubs) {
+  const byCode = new Map();
+  for (const club of clubs) {
+    const code = String(club.code);
+    if (byCode.has(code)) throw new Error(`Διπλός κωδικός ομίλου: ${code}`);
+    if (!Array.isArray(club.days) || club.days.length === 0) {
+      throw new Error(`Ο όμιλος ${code} δεν έχει ημέρες.`);
+    }
+    const idx = club.days.map(dayIndex);
+    for (let i = 1; i < idx.length; i++) {
+      if (idx[i] <= idx[i - 1]) {
+        throw new Error(`Ο όμιλος ${code}: οι ημέρες πρέπει να είναι διαφορετικές και με τη σειρά της εβδομάδας.`);
+      }
+    }
+    if (!Number.isInteger(club.capacity) || club.capacity < 0) {
+      throw new Error(`Ο όμιλος ${code}: μη έγκυρη χωρητικότητα.`);
+    }
+    byCode.set(code, { ...club, code, grades: new Set(club.grades) });
+  }
+  return byCode;
+}
+
+function comparePriority(a, b) {
+  return a.teacherPos - b.teacherPos || a.group - b.group || a.lottery - b.lottery;
+}
+
+/**
+ * Deferred Acceptance for one day.
+ * @param {Map<string, {code: string, capacity: number}>} dayClubs clubs in today's allocation
+ * @param {Map<string, string[]>} lists am → today's list (already filtered, best first)
+ * @param {(am: string, code: string, rank: number) => object} priorityOf
+ * @param {(entry: object) => void} log
+ * @returns {Map<string, {code: string, rank: number}>} am → seat
+ */
+function deferredAcceptance(dayClubs, lists, priorityOf, log) {
+  const held = new Map([...dayClubs.keys()].map((code) => [code, []]));
+  const next = new Map([...lists.keys()].map((am) => [am, 0]));
+  let free = [...lists.keys()];
+
+  for (let round = 1; ; round++) {
+    const proposers = free.filter((am) => next.get(am) < lists.get(am).length);
+    if (proposers.length === 0) {
+      if (free.length > 0) {
+        log({ round, event: EVENTS.NO_MORE_PROPOSALS, count: free.length });
+      }
+      break;
+    }
+    log({ round, event: EVENTS.ROUND_START, count: proposers.length });
+
+    const incoming = new Map();
+    for (const am of proposers) {
+      const i = next.get(am);
+      next.set(am, i + 1);
+      const code = lists.get(am)[i];
+      const rank = i + 1;
+      log({ round, event: EVENTS.PROPOSAL, am, club: code, rank });
+      if (!incoming.has(code)) incoming.set(code, []);
+      incoming.get(code).push(priorityOf(am, code, rank));
+    }
+
+    const proposed = new Set(proposers);
+    free = free.filter((am) => !proposed.has(am));
+    for (const [code, fresh] of incoming) {
+      const previous = held.get(code);
+      const all = [...previous.map((c) => ({ ...c, isNew: false })), ...fresh.map((c) => ({ ...c, isNew: true }))];
+      all.sort(comparePriority);
+      const capacity = dayClubs.get(code).capacity;
+      const kept = all.slice(0, capacity);
+      const out = all.slice(capacity);
+      for (const c of kept) {
+        log({ round, event: c.isNew ? EVENTS.ACCEPTED : EVENTS.RETAINED, am: c.am, club: code, rank: c.rank });
+      }
+      for (const c of out) {
+        log({ round, event: c.isNew ? EVENTS.REJECTED : EVENTS.DISPLACED, am: c.am, club: code, rank: c.rank });
+        free.push(c.am);
+      }
+      held.set(code, kept.map(({ isNew, ...c }) => c));
+    }
+  }
+
+  const seats = new Map();
+  for (const [code, list] of held) {
+    for (const c of list) seats.set(c.am, { code, rank: c.rank });
+  }
+  return seats;
+}
+
+/**
+ * Run the allocation for the whole week.
+ * @returns {{
+ *   days: Record<string, {
+ *     assignments: {am: string, club: string, rank: number|null, originalRank: number|null, via: "da"|"carried"}[],
+ *     unassigned: {am: string, reason: string}[],
+ *     log: object[],
+ *   }>,
+ *   byStudent: Record<string, Record<string, string|null>>,
+ * }}
+ */
+function allocateWeek({ students, clubs, preferences, teacherLists = {}, exclusions = {}, lottery, mandatoryGrades = [] }) {
+  const clubsByCode = indexClubs(clubs);
+  const studentsByAm = new Map();
+  for (const s of students) {
+    const am = String(s.am);
+    if (studentsByAm.has(am)) throw new Error(`Διπλός ΑΜ: ${am}`);
+    if (!lottery.has(am)) throw new Error(`Ο ΑΜ ${am} δεν έχει αριθμό κλήρωσης.`);
+    studentsByAm.set(am, { ...s, am });
+  }
+
+  const teacherPos = new Map();
+  for (const [code, ams] of Object.entries(teacherLists)) {
+    if (!clubsByCode.has(String(code))) throw new Error(`Λίστα εκπαιδευτικού για άγνωστο όμιλο ${code}.`);
+    teacherPos.set(String(code), new Map(ams.map((am, i) => [String(am), i + 1])));
+  }
+
+  const excluded = new Map();
+  for (const [code, ams] of Object.entries(exclusions)) {
+    if (!clubsByCode.has(String(code))) throw new Error(`Αποκλεισμοί για άγνωστο όμιλο ${code}.`);
+    excluded.set(String(code), new Set(ams.map(String)));
+  }
+
+  // am → Map(day → code) for seats already fixed by multi-day clubs
+  const committed = new Map([...studentsByAm.keys()].map((am) => [am, new Map()]));
+  // am → Set of `similar` groups the student already has a club from
+  const groupsTaken = new Map([...studentsByAm.keys()].map((am) => [am, new Set()]));
+  const byStudent = Object.fromEntries([...studentsByAm.keys()].map((am) => [am, Object.fromEntries(DAYS.map((d) => [d, null]))]));
+  const result = { days: {}, byStudent };
+
+  for (const day of DAYS) {
+    const dayLog = [];
+    const log = (entry) => dayLog.push({ day, ...entry });
+    const assignments = [];
+    const unassigned = [];
+
+    // Clubs whose allocation happens today = clubs whose first day is today.
+    const dayClubs = new Map([...clubsByCode].filter(([, c]) => c.days[0] === day));
+
+    // Seats carried over from the first day of multi-day clubs.
+    for (const [am, days] of committed) {
+      const code = days.get(day);
+      if (code === undefined) continue;
+      log({ round: 0, event: EVENTS.CARRIED, am, club: code });
+      assignments.push({ am, club: code, rank: null, originalRank: null, via: "carried" });
+      byStudent[am][day] = code;
+    }
+
+    // Today's lists for everyone not already seated today.
+    const lists = new Map();
+    for (const [am, student] of studentsByAm) {
+      if (committed.get(am).has(day)) continue;
+      const original = (preferences[am]?.[day] ?? []).map(String);
+      if (new Set(original).size !== original.length) {
+        throw new Error(`Ο ΑΜ ${am} έχει τον ίδιο όμιλο δύο φορές την ημέρα ${day}.`);
+      }
+      const list = [];
+      for (const code of original) {
+        const club = clubsByCode.get(code);
+        if (!club) throw new Error(`Ο ΑΜ ${am} δήλωσε άγνωστο όμιλο ${code}.`);
+        if (!club.days.includes(day)) throw new Error(`Ο όμιλος ${code} δεν γίνεται την ημέρα ${day} (ΑΜ ${am}).`);
+        if (!club.grades.has(student.grade)) {
+          throw new Error(`Ο όμιλος ${code} δεν απευθύνεται στην τάξη ${student.grade} (ΑΜ ${am}).`);
+        }
+        if (club.days[0] !== day) {
+          // Later day of a multi-day club: its allocation already happened.
+          log({ round: 0, event: EVENTS.CLUB_DROPPED, am, club: code, reason: "later_day" });
+          continue;
+        }
+        if (excluded.get(code)?.has(am)) {
+          // The club's teacher does not accept the student.
+          log({ round: 0, event: EVENTS.CLUB_DROPPED, am, club: code, reason: "excluded" });
+          continue;
+        }
+        if (club.days.some((d) => committed.get(am).has(d))) {
+          // The club would clash with a seat the student already holds.
+          log({ round: 0, event: EVENTS.CLUB_DROPPED, am, club: code, reason: "day_conflict" });
+          continue;
+        }
+        if (club.similar && groupsTaken.get(am).has(club.similar)) {
+          // The student already has a similar club on an earlier day.
+          log({ round: 0, event: EVENTS.CLUB_DROPPED, am, club: code, reason: "similar" });
+          continue;
+        }
+        list.push(code);
+      }
+      lists.set(am, list);
+    }
+
+    const priorityOf = (am, code, rank) => ({
+      am,
+      rank,
+      group: mandatoryGrades.includes(studentsByAm.get(am).grade) ? 0 : 1,
+      teacherPos: teacherPos.get(code)?.get(am) ?? Infinity,
+      lottery: lottery.get(am),
+    });
+    const seats = deferredAcceptance(dayClubs, lists, priorityOf, log);
+
+    for (const [am, list] of lists) {
+      const seat = seats.get(am);
+      if (!seat) {
+        unassigned.push({
+          am,
+          reason: list.length === 0 ? UNASSIGNED_REASONS.NO_PREFERENCES : UNASSIGNED_REASONS.ALL_REJECTED,
+        });
+        continue;
+      }
+      const originalRank = (preferences[am]?.[day] ?? []).map(String).indexOf(seat.code) + 1;
+      assignments.push({ am, club: seat.code, rank: seat.rank, originalRank, via: "da" });
+      byStudent[am][day] = seat.code;
+      const seatClub = clubsByCode.get(seat.code);
+      for (const d of seatClub.days.slice(1)) committed.get(am).set(d, seat.code);
+      if (seatClub.similar) groupsTaken.get(am).add(seatClub.similar);
+    }
+
+    result.days[day] = { assignments, unassigned, log: dayLog };
+  }
+  return result;
+}
+
+// ---- src/import/csv.js ----
+// CSV files as rows of cells. Handles UTF-8 (with or without BOM) and
+// Windows-1253 (Greek Excel "CSV"), comma or semicolon separators, quotes.
+
+/** Bytes → text: UTF-8 if valid, otherwise Windows-1253. */
+function decodeCsv(bytes) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^﻿/, "");
+  } catch {
+    return new TextDecoder("windows-1253").decode(bytes);
+  }
+}
+
+/** Text → rows of cells. The separator is guessed from the first line. */
+function parseCsv(text) {
+  const firstLine = text.slice(0, text.search(/\r?\n|$/));
+  const sep = (firstLine.match(/;/g) ?? []).length > (firstLine.match(/,/g) ?? []).length ? ";" : ",";
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else field += ch;
+    } else if (ch === '"' && field === "") quoted = true;
+    else if (ch === sep) { row.push(field); field = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else field += ch;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+// ---- src/export/rounds.js ----
+// The allocation round by round, for the offline page docs/gyroi-katanomis.html
+// (built by scripts/build-gyroi.mjs). Pure: the page reads the R data
+// package, reruns allocateWeek() and turns its log into one table per club
+// and round, with a note on why each student is where they are.
+//
+// A round of a club lists the students it holds from earlier rounds and the
+// new applications of the round, in the club's priority order (teacher's ⭐
+// list, then grades with mandatory placement, then the lottery number). The
+// first `capacity` stay, for now; the others are turned away and apply to
+// their next club in the next round. Clubs without new applications are not
+// reconsidered in a round (the log has no entries for them).
+
+
+const ordinal = (n) => `${n}η`;
+
+/** Rows of a CSV file as objects keyed by the header. */
+function records(text) {
+  const [header, ...rows] = parseCsv(text ?? "");
+  if (!header) return [];
+  return rows.filter((r) => r.some((c) => c.trim() !== "")).map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), (r[i] ?? "").trim()])));
+}
+
+/**
+ * Files of a stored or deflated ZIP (the platform's R data package is stored).
+ * @param {Uint8Array} bytes
+ * @returns {Promise<Record<string, Uint8Array>>} name (without folders) → contents
+ */
+async function readZip(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let end = bytes.length - 22;
+  while (end >= 0 && view.getUint32(end, true) !== 0x06054b50) end--;
+  if (end < 0) throw new Error("Δεν είναι αρχείο zip.");
+  const count = view.getUint16(end + 10, true);
+  let p = view.getUint32(end + 16, true);
+  const files = {};
+  for (let i = 0; i < count; i++) {
+    if (view.getUint32(p, true) !== 0x02014b50) throw new Error("Χαλασμένο αρχείο zip.");
+    const method = view.getUint16(p + 10, true);
+    const size = view.getUint32(p + 20, true);
+    const nameLen = view.getUint16(p + 28, true);
+    const extraLen = view.getUint16(p + 30, true);
+    const commentLen = view.getUint16(p + 32, true);
+    const local = view.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen));
+    p += 46 + nameLen + extraLen + commentLen;
+    if (name.endsWith("/")) continue;
+    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+    const data = bytes.subarray(start, start + size);
+    let content;
+    if (method === 0) content = data;
+    else if (method === 8) {
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      content = new Uint8Array(await new Response(stream).arrayBuffer());
+    } else throw new Error(`Το αρχείο ${name} του zip έχει άγνωστη συμπίεση.`);
+    files[name.split("/").pop()] = content;
+  }
+  return files;
+}
+
+/**
+ * The R data package (src/export/rPackage.js) → input of allocateWeek().
+ * @param {Record<string, string|Uint8Array>} files file name → contents
+ * @param {(ams: string[], seed: string) => Map<string, number>} [drawLottery] used when lottery.csv is missing
+ */
+function readRPackage(files, drawLottery) {
+  const text = (name) => {
+    const f = files[name];
+    return f === undefined ? undefined : typeof f === "string" ? f : decodeCsv(f);
+  };
+  for (const name of ["students.csv", "clubs.csv", "preferences.csv"]) {
+    if (text(name) === undefined) throw new Error(`Λείπει το ${name}: χρειάζεται το zip «Δεδομένα για R (.zip)» της διαχείρισης.`);
+  }
+  const students = records(text("students.csv")).map((r) => ({ am: r.RegistryNr, grade: r.grade, surname: r.Surname ?? "", name: r.Name ?? "" }));
+  const clubs = records(text("clubs.csv")).map((r) => ({
+    code: r.code, name: r.name, days: r.days.split(";").filter(Boolean), grades: r.grades.split(";").filter(Boolean),
+    capacity: Number(r.capacity), ...(r.similar ? { similar: r.similar } : {}),
+  }));
+  const preferences = {};
+  const byRank = records(text("preferences.csv")).sort((a, b) => Number(a.rank) - Number(b.rank));
+  for (const r of byRank) ((preferences[r.RegistryNr] ??= {})[r.day] ??= []).push(r.club_code);
+  const teacherLists = {};
+  for (const r of records(text("teacher_lists.csv")).sort((a, b) => Number(a.position) - Number(b.position))) (teacherLists[r.club_code] ??= []).push(r.RegistryNr);
+  const exclusions = {};
+  for (const r of records(text("exclusions.csv"))) (exclusions[r.club_code] ??= []).push(r.RegistryNr);
+  const mandatoryGrades = records(text("mandatory_grades.csv")).map((r) => r.grade);
+  const seed = text("seed.txt")?.trim() || undefined;
+  let lottery;
+  if (text("lottery.csv") !== undefined) lottery = new Map(records(text("lottery.csv")).map((r) => [r.RegistryNr, Number(r.lottery_number)]));
+  else if (seed && drawLottery) lottery = drawLottery(students.map((s) => s.am), seed);
+  else throw new Error("Λείπουν το lottery.csv και το seed.txt: δεν υπάρχει κλήρωση.");
+  return { students, clubs, preferences, teacherLists, exclusions, mandatoryGrades, lottery, seed };
+}
+
+const DROP_REASONS = {
+  later_day: "η κατανομή του γίνεται την πρώτη του ημέρα",
+  excluded: "ο εκπαιδευτικός δεν δέχεται τον μαθητή (⛔)",
+  day_conflict: "γίνεται και σε ημέρα όπου ο μαθητής έχει ήδη όμιλο",
+  similar: "έχει ήδη παρεμφερή όμιλο σε προηγούμενη ημέρα",
+};
+
+const UNASSIGNED_LABELS = {
+  all_rejected: "δεν χώρεσε σε κανέναν όμιλο της λίστας του",
+  no_preferences: "δεν έχει ομίλους να δηλώσει αυτή την ημέρα",
+  all_dropped: "όλοι οι όμιλοι της δήλωσής του έφυγαν από τη λίστα πριν από την κατανομή (δείτε «Πριν»)",
+};
+
+/**
+ * Round-by-round view of a week's allocation.
+ * @param {object} input the input of allocateWeek()
+ * @param {object} result its output
+ */
+function buildRounds(input, result) {
+  const { students, clubs, preferences, teacherLists = {}, mandatoryGrades = [], lottery } = input;
+  const student = new Map(students.map((s) => [String(s.am), s]));
+  const club = new Map(clubs.map((c) => [String(c.code), c]));
+  const clubName = (code) => club.get(String(code))?.name ?? String(code);
+  const listed = new Map(Object.entries(teacherLists).map(([code, ams]) => [String(code), new Set(ams.map(String))]));
+  const anyOptional = students.some((s) => !mandatoryGrades.includes(s.grade));
+  const isMandatory = (am) => anyOptional && mandatoryGrades.includes(student.get(am)?.grade);
+  const choiceOf = (am, day, code) => (preferences[am]?.[day] ?? []).map(String).indexOf(String(code)) + 1;
+
+  const days = [];
+  for (const day of DAYS) {
+    const dayResult = result.days[day];
+    const dayClubs = clubs.filter((c) => c.days[0] === day).map((c) => ({ code: String(c.code), name: c.name, capacity: c.capacity, days: c.days }));
+    // A day with only later sessions of multi-day clubs has no rounds, but
+    // still has seats to show.
+    if (!dayResult || (dayClubs.length === 0 && !dayResult.assignments.length)) continue;
+    const log = dayResult.log;
+
+    // Before the first round: seats carried from multi-day clubs, and clubs
+    // that left students' lists.
+    const carried = log.filter((e) => e.event === "CARRIED").map((e) => ({ am: e.am, club: e.club }));
+    const dropped = log.filter((e) => e.event === "CLUB_DROPPED" && e.reason !== "later_day").map((e) => ({ am: e.am, club: e.club, reason: e.reason, text: DROP_REASONS[e.reason] ?? e.reason }));
+
+    const proposalOf = new Map(); // `${round}|${am}` → club code
+    for (const e of log) if (e.event === "PROPOSAL") proposalOf.set(`${e.round}|${e.am}`, e.club);
+    const lastOutcome = new Map(); // am → { round, club, event } (latest)
+    const heldSince = new Map(); // am → round of the application that got the seat
+
+    const rounds = [];
+    const maxRound = Math.max(0, ...log.map((e) => e.round));
+    for (let round = 1; round <= maxRound; round++) {
+      const events = log.filter((e) => e.round === round && ["ACCEPTED", "RETAINED", "REJECTED", "DISPLACED"].includes(e.event));
+      if (events.length === 0) continue;
+      const roundClubs = [];
+      for (const c of dayClubs) {
+        const own = events.filter((e) => e.club === c.code);
+        if (own.length === 0) {
+          // Not reconsidered: same as at the end of its last round.
+          const holding = new Set();
+          for (const e of log) {
+            if (e.round >= round || e.club !== c.code) continue;
+            if (e.event === "ACCEPTED" || e.event === "RETAINED") holding.add(e.am);
+            if (e.event === "DISPLACED") holding.delete(e.am);
+          }
+          roundClubs.push({ ...c, reconsidered: false, held: holding.size, rows: [] });
+          continue;
+        }
+        const prio = (am) => ({
+          am,
+          teacher: listed.get(c.code)?.has(am) ? 0 : 1,
+          group: mandatoryGrades.includes(student.get(am)?.grade) ? 0 : 1,
+          lottery: lottery.get(am),
+        });
+        const cand = own.map((e) => ({ ...prio(e.am), event: e.event, rank: e.rank }));
+        // Same order as allocate.js (teacher's list position, then group, then lottery).
+        const pos = (am) => (teacherLists[c.code] ?? []).map(String).indexOf(am);
+        cand.sort((a, b) => (a.teacher - b.teacher) || (a.teacher === 0 ? pos(a.am) - pos(b.am) : 0) || a.group - b.group || a.lottery - b.lottery);
+        const kept = cand.filter((x) => x.event === "ACCEPTED" || x.event === "RETAINED");
+        const out = cand.filter((x) => x.event === "REJECTED" || x.event === "DISPLACED");
+        const overflow = out.length > 0;
+        const lastIn = kept[kept.length - 1];
+        const firstOut = out[0];
+        const fresh = cand.filter((x) => x.event === "ACCEPTED" || x.event === "REJECTED").length;
+
+        const rows = cand.map((x, i) => {
+          const s = student.get(x.am) ?? {};
+          const parts = [];
+          const prev = lastOutcome.get(x.am);
+          if (x.event === "RETAINED") parts.push(`Μένει από τον γύρο ${heldSince.get(x.am)}.`);
+          if (x.event === "ACCEPTED" && round > 1 && prev) {
+            parts.push(`Έρχεται από τον όμιλο «${clubName(prev.club)}», όπου ${prev.event === "DISPLACED" ? "εκτοπίστηκε" : "δεν χώρεσε"} στον γύρο ${prev.round}.`);
+          }
+          if (x.event === "ACCEPTED" || x.event === "RETAINED") {
+            if (x.teacher === 0) parts.push("⭐ Στη λίστα του εκπαιδευτικού: προηγείται όσων δεν είναι στη λίστα.");
+            else if (overflow && x.group === 0 && firstOut && firstOut.group === 1 && firstOut.teacher === 1 && isMandatory(x.am)) parts.push(`Τάξη ${s.grade} (υποχρεωτική ένταξη): προηγείται των άλλων τάξεων.`);
+            else if (overflow) parts.push("Χωράει με τον λαχνό του.");
+            else if (x.event === "ACCEPTED") parts.push("Υπάρχει ελεύθερη θέση.");
+          } else {
+            if (x.event === "DISPLACED") {
+              const by = kept.filter((k) => k.event === "ACCEPTED");
+              parts.push(`Είχε θέση από τον γύρο ${heldSince.get(x.am)}, αλλά ${by.length === 1 ? "ήρθε 1 νέος" : `ήρθαν ${by.length} νέοι`} με μεγαλύτερη προτεραιότητα.`);
+            }
+            if (!lastIn) parts.push("Ο όμιλος δεν έχει θέσεις.");
+            else if (lastIn.teacher < x.teacher) parts.push("Οι θέσεις πήγαν σε μαθητές της λίστας ⭐ του εκπαιδευτικού.");
+            else if (lastIn.group < x.group && isMandatory(lastIn.am)) parts.push("Οι θέσεις πήγαν σε μαθητές τάξεων με υποχρεωτική ένταξη.");
+            else parts.push(`Λαχνός ${x.lottery}, μετά τον ${lastIn.lottery} του τελευταίου που χωράει.`);
+            const next = proposalOf.get(`${round + 1}|${x.am}`);
+            parts.push(next !== undefined
+              ? `Στον γύρο ${round + 1} κάνει αίτηση στον όμιλο «${clubName(next)}» (${ordinal(choiceOf(x.am, day, next))} επιλογή).`
+              : "Δεν έχει άλλη επιλογή: μένει χωρίς όμιλο αυτή την ημέρα.");
+          }
+          return {
+            pos: i + 1, am: x.am, lottery: x.lottery, name: [s.surname, s.name].filter(Boolean).join(" "), grade: s.grade ?? "",
+            choice: choiceOf(x.am, day, c.code), status: x.event, starred: x.teacher === 0, mandatory: isMandatory(x.am),
+            note: parts.join(" "),
+          };
+        });
+        for (const x of cand) {
+          if (x.event === "ACCEPTED") heldSince.set(x.am, round);
+          if (x.event === "REJECTED" || x.event === "DISPLACED") { heldSince.delete(x.am); lastOutcome.set(x.am, { round, club: c.code, event: x.event }); }
+        }
+        let base = null;
+        if (overflow && lastIn) {
+          base = lastIn.teacher === 0 ? "λίστα ⭐ του εκπαιδευτικού"
+            : isMandatory(lastIn.am) && firstOut && firstOut.group === 1 ? `τάξη με υποχρεωτική ένταξη (λαχνός ${lastIn.lottery})`
+              : `λαχνός ${lastIn.lottery}${isMandatory(lastIn.am) ? " (τάξη με υποχρεωτική ένταξη)" : ""}`;
+        }
+        roundClubs.push({ ...c, reconsidered: true, applicants: cand.length, fresh, kept: kept.length, base, rows });
+      }
+      rounds.push({ round, applicants: events.filter((e) => e.event === "ACCEPTED" || e.event === "REJECTED").length, clubs: roundClubs });
+    }
+
+    const counts = Object.fromEntries(dayClubs.map((c) => [c.code, 0]));
+    for (const a of dayResult.assignments) if (a.via === "da" && a.club in counts) counts[a.club]++;
+    days.push({
+      day, label: DAY_LABELS[day], clubs: dayClubs, carried, dropped, rounds,
+      final: {
+        counts,
+        unassigned: dayResult.unassigned.map((u) => {
+          // Declared, but every club left the list (⛔, clash, similar).
+          const declared = (preferences[u.am]?.[day] ?? []).length > 0;
+          const reason = u.reason === "no_preferences" && declared ? "all_dropped" : u.reason;
+          return { am: u.am, reason, declared, text: UNASSIGNED_LABELS[reason] ?? reason };
+        }),
+      },
+    });
+  }
+  return days;
+}
+
+const SAMPLE = {"students.csv":"RegistryNr,Surname,Name,grade\n9001,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΝΙΚΟΛΑΟΣ,Α\n9002,ΓΕΩΡΓΙΟΥ,ΕΛΕΝΗ,Α\n9003,ΝΙΚΟΛΑΪΔΗΣ,ΙΩΑΝΝΗΣ,Α\n9004,ΔΗΜΗΤΡΙΟΥ,ΣΟΦΙΑ,Α\n9005,ΙΩΑΝΝΙΔΗΣ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Α\n9006,ΚΩΝΣΤΑΝΤΙΝΟΥ,ΒΑΪΑ,Α\n9007,ΑΘΑΝΑΣΙΟΥ,ΝΙΚΟΛΑΟΣ,Α\n9008,ΜΙΧΑΗΛΙΔΗ,ΕΛΕΝΗ,Α\n9009,ΠΕΤΡΙΔΗΣ,ΙΩΑΝΝΗΣ,Α\n9010,ΒΑΣΙΛΕΙΟΥ,ΣΟΦΙΑ,Α\n9011,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Α\n9012,ΓΕΩΡΓΙΟΥ,ΒΑΪΑ,Α\n9013,ΝΙΚΟΛΑΪΔΗΣ,ΝΙΚΟΛΑΟΣ,Α\n9014,ΔΗΜΗΤΡΙΟΥ,ΕΛΕΝΗ,Α\n9015,ΙΩΑΝΝΙΔΗΣ,ΙΩΑΝΝΗΣ,Α\n9016,ΚΩΝΣΤΑΝΤΙΝΟΥ,ΣΟΦΙΑ,Α\n9017,ΑΘΑΝΑΣΙΟΥ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Α\n9018,ΜΙΧΑΗΛΙΔΗ,ΒΑΪΑ,Α\n9019,ΠΕΤΡΙΔΗΣ,ΝΙΚΟΛΑΟΣ,Α\n9020,ΒΑΣΙΛΕΙΟΥ,ΕΛΕΝΗ,Α\n9021,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΝΙΚΟΛΑΟΣ,Β\n9022,ΓΕΩΡΓΙΟΥ,ΕΛΕΝΗ,Β\n9023,ΝΙΚΟΛΑΪΔΗΣ,ΙΩΑΝΝΗΣ,Β\n9024,ΔΗΜΗΤΡΙΟΥ,ΣΟΦΙΑ,Β\n9025,ΙΩΑΝΝΙΔΗΣ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Β\n9026,ΚΩΝΣΤΑΝΤΙΝΟΥ,ΒΑΪΑ,Β\n9027,ΑΘΑΝΑΣΙΟΥ,ΝΙΚΟΛΑΟΣ,Β\n9028,ΜΙΧΑΗΛΙΔΗ,ΕΛΕΝΗ,Β\n9029,ΠΕΤΡΙΔΗΣ,ΙΩΑΝΝΗΣ,Β\n9030,ΒΑΣΙΛΕΙΟΥ,ΣΟΦΙΑ,Β\n9031,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Β\n9032,ΓΕΩΡΓΙΟΥ,ΒΑΪΑ,Β\n9033,ΝΙΚΟΛΑΪΔΗΣ,ΝΙΚΟΛΑΟΣ,Β\n9034,ΔΗΜΗΤΡΙΟΥ,ΕΛΕΝΗ,Β\n9035,ΙΩΑΝΝΙΔΗΣ,ΙΩΑΝΝΗΣ,Β\n9036,ΚΩΝΣΤΑΝΤΙΝΟΥ,ΣΟΦΙΑ,Β\n9037,ΑΘΑΝΑΣΙΟΥ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Β\n9038,ΜΙΧΑΗΛΙΔΗ,ΒΑΪΑ,Β\n9039,ΠΕΤΡΙΔΗΣ,ΝΙΚΟΛΑΟΣ,Β\n9040,ΒΑΣΙΛΕΙΟΥ,ΕΛΕΝΗ,Β\n9041,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΝΙΚΟΛΑΟΣ,Γ\n9042,ΓΕΩΡΓΙΟΥ,ΕΛΕΝΗ,Γ\n9043,ΝΙΚΟΛΑΪΔΗΣ,ΙΩΑΝΝΗΣ,Γ\n9044,ΔΗΜΗΤΡΙΟΥ,ΣΟΦΙΑ,Γ\n9045,ΙΩΑΝΝΙΔΗΣ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Γ\n9046,ΚΩΝΣΤΑΝΤΙΝΟΥ,ΒΑΪΑ,Γ\n9047,ΑΘΑΝΑΣΙΟΥ,ΝΙΚΟΛΑΟΣ,Γ\n9048,ΜΙΧΑΗΛΙΔΗ,ΕΛΕΝΗ,Γ\n9049,ΠΕΤΡΙΔΗΣ,ΙΩΑΝΝΗΣ,Γ\n9050,ΒΑΣΙΛΕΙΟΥ,ΣΟΦΙΑ,Γ\n9051,ΠΑΠΑΔΟΠΟΥΛΟΣ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Γ\n9052,ΓΕΩΡΓΙΟΥ,ΒΑΪΑ,Γ\n9053,ΝΙΚΟΛΑΪΔΗΣ,ΝΙΚΟΛΑΟΣ,Γ\n9054,ΔΗΜΗΤΡΙΟΥ,ΕΛΕΝΗ,Γ\n9055,ΙΩΑΝΝΙΔΗΣ,ΙΩΑΝΝΗΣ,Γ\n9056,ΚΩΝΣΤΑΝΤΙΝΟΥ,ΣΟΦΙΑ,Γ\n9057,ΑΘΑΝΑΣΙΟΥ,ΚΩΝΣΤΑΝΤΙΝΟΣ,Γ\n9058,ΜΙΧΑΗΛΙΔΗ,ΒΑΪΑ,Γ\n9059,ΠΕΤΡΙΔΗΣ,ΝΙΚΟΛΑΟΣ,Γ\n9060,ΒΑΣΙΛΕΙΟΥ,ΕΛΕΝΗ,Γ\n","clubs.csv":"code,name,days,grades,capacity,similar\n101,Ρομποτική,mon,Α;Β;Γ,30,\n102,Θεατρική παράσταση «Αντιγόνη»,mon;thu,Β;Γ,20,\n103,Ζωγραφική,mon,Α;Β,15,\n104,Χορωδία,tue;wed;fri,Α;Β;Γ,25,\n105,Σκάκι,tue,Α;Β;Γ,20,ΠΑΙΧΝΙΔΙΑ\n106,Μαθηματικοί γρίφοι,tue,Α,15,\n107,Φωτογραφία,wed,Β;Γ,15,\n108,Περιβαλλοντική ομάδα,wed,Α;Β;Γ,25,\n109,Άλγεβρα για διαγωνισμούς,thu,Β;Γ,15,\n110,Επιτραπέζια παιχνίδια,thu,Α;Β;Γ,30,ΠΑΙΧΝΙΔΙΑ\n111,Αγγλικό θέατρο,fri,Α;Β;Γ,20,\n112,Προγραμματισμός,fri,Β;Γ,20,\n113,Ποδόσφαιρο,tue;thu,Α;Β;Γ,20,\n","preferences.csv":"RegistryNr,day,rank,club_code\n9001,mon,1,101\n9001,mon,2,103\n9001,tue,1,113\n9001,tue,2,104\n9001,tue,3,106\n9001,tue,4,105\n9001,wed,1,108\n9001,wed,2,104\n9001,thu,1,110\n9001,thu,2,113\n9001,fri,1,111\n9001,fri,2,104\n9002,mon,1,101\n9002,mon,2,103\n9002,tue,1,104\n9002,tue,2,106\n9002,tue,3,113\n9002,tue,4,105\n9002,wed,1,108\n9002,wed,2,104\n9002,thu,1,110\n9002,thu,2,113\n9002,fri,1,111\n9002,fri,2,104\n9003,mon,1,103\n9003,mon,2,101\n9003,tue,1,113\n9003,tue,2,105\n9003,tue,3,104\n9003,tue,4,106\n9003,wed,1,104\n9003,wed,2,108\n9003,thu,1,113\n9003,thu,2,110\n9003,fri,1,104\n9003,fri,2,111\n9004,mon,1,103\n9004,mon,2,101\n9004,tue,1,105\n9004,tue,2,113\n9004,tue,3,104\n9004,tue,4,106\n9004,wed,1,104\n9004,wed,2,108\n9004,thu,1,113\n9004,thu,2,110\n9004,fri,1,104\n9004,fri,2,111\n9005,mon,1,103\n9005,mon,2,101\n9005,tue,1,104\n9005,tue,2,105\n9005,tue,3,113\n9005,tue,4,106\n9005,wed,1,108\n9005,wed,2,104\n9005,thu,1,110\n9005,thu,2,113\n9005,fri,1,111\n9005,fri,2,104\n9006,mon,1,103\n9006,mon,2,101\n9006,tue,1,106\n9006,tue,2,113\n9006,tue,3,105\n9006,tue,4,104\n9006,wed,1,104\n9006,wed,2,108\n9006,thu,1,113\n9006,thu,2,110\n9006,fri,1,111\n9006,fri,2,104\n9007,mon,1,103\n9007,mon,2,101\n9007,tue,1,105\n9007,tue,2,106\n9007,tue,3,104\n9007,tue,4,113\n9007,wed,1,104\n9007,wed,2,108\n9007,thu,1,113\n9007,thu,2,110\n9007,fri,1,111\n9007,fri,2,104\n9008,mon,1,101\n9008,mon,2,103\n9008,tue,1,105\n9008,tue,2,104\n9008,tue,3,113\n9008,tue,4,106\n9008,wed,1,108\n9008,wed,2,104\n9008,thu,1,110\n9008,thu,2,113\n9008,fri,1,111\n9008,fri,2,104\n9009,mon,1,101\n9009,mon,2,103\n9009,tue,1,113\n9009,tue,2,106\n9009,tue,3,105\n9009,tue,4,104\n9009,wed,1,104\n9009,wed,2,108\n9009,thu,1,110\n9009,thu,2,113\n9009,fri,1,111\n9009,fri,2,104\n9010,mon,1,101\n9010,mon,2,103\n9010,tue,1,106\n9010,tue,2,105\n9010,tue,3,104\n9010,tue,4,113\n9010,wed,1,104\n9010,wed,2,108\n9010,thu,1,113\n9010,thu,2,110\n9010,fri,1,104\n9010,fri,2,111\n9011,mon,1,101\n9011,mon,2,103\n9011,tue,1,105\n9011,tue,2,113\n9011,tue,3,104\n9011,tue,4,106\n9011,wed,1,108\n9011,wed,2,104\n9011,thu,1,113\n9011,thu,2,110\n9011,fri,1,111\n9011,fri,2,104\n9012,mon,1,103\n9012,mon,2,101\n9012,tue,1,105\n9012,tue,2,106\n9012,tue,3,113\n9012,tue,4,104\n9012,wed,1,104\n9012,wed,2,108\n9012,thu,1,113\n9012,thu,2,110\n9012,fri,1,111\n9012,fri,2,104\n9013,mon,1,103\n9013,mon,2,101\n9013,tue,1,105\n9013,tue,2,106\n9013,tue,3,113\n9013,tue,4,104\n9013,wed,1,104\n9013,wed,2,108\n9013,thu,1,113\n9013,thu,2,110\n9013,fri,1,111\n9013,fri,2,104\n9014,mon,1,103\n9014,mon,2,101\n9014,tue,1,105\n9014,tue,2,113\n9014,tue,3,104\n9014,tue,4,106\n9014,wed,1,108\n9014,wed,2,104\n9014,thu,1,113\n9014,thu,2,110\n9014,fri,1,111\n9014,fri,2,104\n9015,mon,1,101\n9015,mon,2,103\n9015,tue,1,104\n9015,tue,2,105\n9015,tue,3,113\n9015,tue,4,106\n9015,wed,1,108\n9015,wed,2,104\n9015,thu,1,113\n9015,thu,2,110\n9015,fri,1,111\n9015,fri,2,104\n9016,mon,1,103\n9016,mon,2,101\n9016,tue,1,105\n9016,tue,2,106\n9016,tue,3,113\n9016,tue,4,104\n9016,wed,1,104\n9016,wed,2,108\n9016,thu,1,113\n9016,thu,2,110\n9016,fri,1,111\n9016,fri,2,104\n9017,mon,1,103\n9017,mon,2,101\n9017,tue,1,113\n9017,tue,2,105\n9017,tue,3,106\n9017,tue,4,104\n9017,wed,1,104\n9017,wed,2,108\n9017,thu,1,110\n9017,thu,2,113\n9017,fri,1,104\n9017,fri,2,111\n9018,mon,1,101\n9018,mon,2,103\n9018,tue,1,105\n9018,tue,2,113\n9018,tue,3,106\n9018,tue,4,104\n9018,wed,1,108\n9018,wed,2,104\n9018,thu,1,113\n9018,thu,2,110\n9018,fri,1,111\n9018,fri,2,104\n9019,mon,1,101\n9019,mon,2,103\n9019,tue,1,104\n9019,tue,2,113\n9019,tue,3,105\n9019,tue,4,106\n9019,wed,1,104\n9019,wed,2,108\n9019,thu,1,113\n9019,thu,2,110\n9019,fri,1,104\n9019,fri,2,111\n9020,mon,1,103\n9020,mon,2,101\n9020,tue,1,113\n9020,tue,2,105\n9020,tue,3,104\n9020,tue,4,106\n9020,wed,1,108\n9020,wed,2,104\n9020,thu,1,113\n9020,thu,2,110\n9020,fri,1,111\n9020,fri,2,104\n9021,mon,1,101\n9021,mon,2,103\n9021,mon,3,102\n9021,tue,1,105\n9021,tue,2,113\n9021,tue,3,104\n9021,wed,1,104\n9021,wed,2,107\n9021,wed,3,108\n9021,thu,1,110\n9021,thu,2,113\n9021,thu,3,102\n9021,thu,4,109\n9021,fri,1,104\n9021,fri,2,111\n9021,fri,3,112\n9022,mon,1,103\n9022,mon,2,101\n9022,mon,3,102\n9022,tue,1,105\n9022,tue,2,104\n9022,tue,3,113\n9022,wed,1,107\n9022,wed,2,108\n9022,wed,3,104\n9022,thu,1,110\n9022,thu,2,113\n9022,thu,3,109\n9022,thu,4,102\n9022,fri,1,111\n9022,fri,2,112\n9022,fri,3,104\n9023,mon,1,103\n9023,mon,2,101\n9023,mon,3,102\n9023,tue,1,113\n9023,tue,2,105\n9023,tue,3,104\n9023,wed,1,107\n9023,wed,2,104\n9023,wed,3,108\n9023,thu,1,109\n9023,thu,2,113\n9023,thu,3,110\n9023,thu,4,102\n9023,fri,1,112\n9023,fri,2,104\n9023,fri,3,111\n9024,mon,1,103\n9024,mon,2,101\n9024,mon,3,102\n9024,tue,1,105\n9024,tue,2,113\n9024,tue,3,104\n9024,wed,1,104\n9024,wed,2,107\n9024,wed,3,108\n9024,thu,1,113\n9024,thu,2,110\n9024,thu,3,102\n9024,thu,4,109\n9024,fri,1,111\n9024,fri,2,112\n9024,fri,3,104\n9025,mon,1,102\n9025,mon,2,101\n9025,mon,3,103\n9025,tue,1,105\n9025,tue,2,104\n9025,tue,3,113\n9025,wed,1,107\n9025,wed,2,108\n9025,wed,3,104\n9025,thu,1,109\n9025,thu,2,102\n9025,thu,3,113\n9025,thu,4,110\n9025,fri,1,111\n9025,fri,2,112\n9025,fri,3,104\n9026,mon,1,102\n9026,mon,2,101\n9026,mon,3,103\n9026,tue,1,113\n9026,tue,2,104\n9026,tue,3,105\n9026,wed,1,107\n9026,wed,2,104\n9026,wed,3,108\n9026,thu,1,110\n9026,thu,2,113\n9026,thu,3,109\n9026,thu,4,102\n9026,fri,1,111\n9026,fri,2,112\n9026,fri,3,104\n9027,mon,1,103\n9027,mon,2,102\n9027,mon,3,101\n9027,tue,1,113\n9027,tue,2,105\n9027,tue,3,104\n9027,wed,1,107\n9027,wed,2,108\n9027,wed,3,104\n9027,thu,1,109\n9027,thu,2,113\n9027,thu,3,110\n9027,thu,4,102\n9027,fri,1,111\n9027,fri,2,104\n9027,fri,3,112\n9028,mon,1,103\n9028,mon,2,101\n9028,mon,3,102\n9028,tue,1,113\n9028,tue,2,105\n9028,tue,3,104\n9028,wed,1,104\n9028,wed,2,107\n9028,wed,3,108\n9028,thu,1,109\n9028,thu,2,113\n9028,thu,3,110\n9028,thu,4,102\n9028,fri,1,111\n9028,fri,2,112\n9028,fri,3,104\n9029,mon,1,101\n9029,mon,2,103\n9029,mon,3,102\n9029,tue,1,113\n9029,tue,2,104\n9029,tue,3,105\n9029,wed,1,107\n9029,wed,2,104\n9029,wed,3,108\n9029,thu,1,113\n9029,thu,2,102\n9029,thu,3,109\n9029,thu,4,110\n9029,fri,1,104\n9029,fri,2,111\n9029,fri,3,112\n9030,mon,1,103\n9030,mon,2,101\n9030,mon,3,102\n9030,tue,1,113\n9030,tue,2,104\n9030,tue,3,105\n9030,wed,1,104\n9030,wed,2,108\n9030,wed,3,107\n9030,thu,1,102\n9030,thu,2,109\n9030,thu,3,110\n9030,thu,4,113\n9030,fri,1,111\n9030,fri,2,112\n9030,fri,3,104\n9031,mon,1,101\n9031,mon,2,103\n9031,mon,3,102\n9031,tue,1,113\n9031,tue,2,105\n9031,tue,3,104\n9031,wed,1,108\n9031,wed,2,107\n9031,wed,3,104\n9031,thu,1,102\n9031,thu,2,109\n9031,thu,3,113\n9031,thu,4,110\n9031,fri,1,104\n9031,fri,2,111\n9031,fri,3,112\n9032,mon,1,103\n9032,mon,2,101\n9032,mon,3,102\n9032,tue,1,104\n9032,tue,2,113\n9032,tue,3,105\n9032,wed,1,107\n9032,wed,2,108\n9032,wed,3,104\n9032,thu,1,110\n9032,thu,2,109\n9032,thu,3,113\n9032,thu,4,102\n9032,fri,1,111\n9032,fri,2,112\n9032,fri,3,104\n9033,mon,1,103\n9033,mon,2,101\n9033,mon,3,102\n9033,tue,1,113\n9033,tue,2,105\n9033,tue,3,104\n9033,wed,1,107\n9033,wed,2,108\n9033,wed,3,104\n9033,thu,1,102\n9033,thu,2,113\n9033,thu,3,110\n9033,thu,4,109\n9033,fri,1,104\n9033,fri,2,111\n9033,fri,3,112\n9034,mon,1,102\n9034,mon,2,103\n9034,mon,3,101\n9034,tue,1,105\n9034,tue,2,104\n9034,tue,3,113\n9034,wed,1,107\n9034,wed,2,108\n9034,wed,3,104\n9034,thu,1,102\n9034,thu,2,113\n9034,thu,3,109\n9034,thu,4,110\n9034,fri,1,104\n9034,fri,2,112\n9034,fri,3,111\n9035,mon,1,103\n9035,mon,2,101\n9035,mon,3,102\n9035,tue,1,113\n9035,tue,2,104\n9035,tue,3,105\n9035,wed,1,107\n9035,wed,2,104\n9035,wed,3,108\n9035,thu,1,109\n9035,thu,2,102\n9035,thu,3,113\n9035,thu,4,110\n9035,fri,1,104\n9035,fri,2,111\n9035,fri,3,112\n9036,mon,1,101\n9036,mon,2,103\n9036,mon,3,102\n9036,tue,1,105\n9036,tue,2,104\n9036,tue,3,113\n9036,wed,1,108\n9036,wed,2,107\n9036,wed,3,104\n9036,thu,1,113\n9036,thu,2,109\n9036,thu,3,102\n9036,thu,4,110\n9036,fri,1,111\n9036,fri,2,112\n9036,fri,3,104\n9037,mon,1,101\n9037,mon,2,103\n9037,mon,3,102\n9037,tue,1,104\n9037,tue,2,105\n9037,tue,3,113\n9037,wed,1,107\n9037,wed,2,104\n9037,wed,3,108\n9037,thu,1,102\n9037,thu,2,113\n9037,thu,3,109\n9037,thu,4,110\n9037,fri,1,111\n9037,fri,2,112\n9037,fri,3,104\n9038,mon,1,101\n9038,mon,2,102\n9038,mon,3,103\n9038,tue,1,104\n9038,tue,2,105\n9038,tue,3,113\n9038,wed,1,108\n9038,wed,2,107\n9038,wed,3,104\n9038,thu,1,110\n9038,thu,2,113\n9038,thu,3,109\n9038,thu,4,102\n9038,fri,1,111\n9038,fri,2,104\n9038,fri,3,112\n9039,mon,1,101\n9039,mon,2,103\n9039,mon,3,102\n9039,tue,1,113\n9039,tue,2,104\n9039,tue,3,105\n9039,wed,1,108\n9039,wed,2,107\n9039,wed,3,104\n9039,thu,1,102\n9039,thu,2,109\n9039,thu,3,110\n9039,thu,4,113\n9039,fri,1,104\n9039,fri,2,112\n9039,fri,3,111\n9040,mon,1,101\n9040,mon,2,102\n9040,mon,3,103\n9040,tue,1,105\n9040,tue,2,104\n9040,tue,3,113\n9040,wed,1,104\n9040,wed,2,107\n9040,wed,3,108\n9040,thu,1,109\n9040,thu,2,110\n9040,thu,3,102\n9040,thu,4,113\n9040,fri,1,111\n9040,fri,2,112\n9040,fri,3,104\n9041,mon,1,101\n9041,mon,2,102\n9041,tue,1,113\n9041,tue,2,105\n9041,tue,3,104\n9041,wed,1,104\n9041,wed,2,107\n9041,wed,3,108\n9041,thu,1,109\n9041,thu,2,102\n9041,thu,3,113\n9041,thu,4,110\n9041,fri,1,112\n9041,fri,2,111\n9041,fri,3,104\n9042,mon,1,101\n9042,mon,2,102\n9042,tue,1,113\n9042,tue,2,105\n9042,tue,3,104\n9042,wed,1,107\n9042,wed,2,108\n9042,wed,3,104\n9042,thu,1,110\n9042,thu,2,109\n9042,thu,3,113\n9042,thu,4,102\n9042,fri,1,112\n9042,fri,2,104\n9042,fri,3,111\n9043,mon,1,101\n9043,mon,2,102\n9043,tue,1,105\n9043,tue,2,113\n9043,tue,3,104\n9043,wed,1,104\n9043,wed,2,107\n9043,wed,3,108\n9043,thu,1,113\n9043,thu,2,109\n9043,thu,3,110\n9043,thu,4,102\n9043,fri,1,111\n9043,fri,2,104\n9043,fri,3,112\n9044,mon,1,101\n9044,mon,2,102\n9044,tue,1,104\n9044,tue,2,113\n9044,tue,3,105\n9044,wed,1,108\n9044,wed,2,107\n9044,wed,3,104\n9044,thu,1,109\n9044,thu,2,113\n9044,thu,3,110\n9044,thu,4,102\n9044,fri,1,111\n9044,fri,2,112\n9044,fri,3,104\n9045,mon,1,101\n9045,mon,2,102\n9045,tue,1,105\n9045,tue,2,113\n9045,tue,3,104\n9045,wed,1,108\n9045,wed,2,107\n9045,wed,3,104\n9045,thu,1,113\n9045,thu,2,109\n9045,thu,3,110\n9045,thu,4,102\n9045,fri,1,111\n9045,fri,2,104\n9045,fri,3,112\n9046,mon,1,102\n9046,mon,2,101\n9046,tue,1,104\n9046,tue,2,113\n9046,tue,3,105\n9046,wed,1,108\n9046,wed,2,104\n9046,wed,3,107\n9046,thu,1,113\n9046,thu,2,102\n9046,thu,3,109\n9046,thu,4,110\n9046,fri,1,104\n9046,fri,2,111\n9046,fri,3,112\n9047,mon,1,101\n9047,mon,2,102\n9047,tue,1,105\n9047,tue,2,113\n9047,tue,3,104\n9047,wed,1,108\n9047,wed,2,104\n9047,wed,3,107\n9047,thu,1,110\n9047,thu,2,109\n9047,thu,3,113\n9047,thu,4,102\n9047,fri,1,104\n9047,fri,2,111\n9047,fri,3,112\n9048,mon,1,102\n9048,mon,2,101\n9048,tue,1,113\n9048,tue,2,104\n9048,tue,3,105\n9048,wed,1,104\n9048,wed,2,108\n9048,wed,3,107\n9048,thu,1,113\n9048,thu,2,109\n9048,thu,3,102\n9048,thu,4,110\n9048,fri,1,111\n9048,fri,2,112\n9048,fri,3,104\n9049,mon,1,102\n9049,mon,2,101\n9049,tue,1,105\n9049,tue,2,104\n9049,tue,3,113\n9049,wed,1,108\n9049,wed,2,107\n9049,wed,3,104\n9049,thu,1,102\n9049,thu,2,113\n9049,thu,3,109\n9049,thu,4,110\n9049,fri,1,111\n9049,fri,2,112\n9049,fri,3,104\n9050,mon,1,101\n9050,mon,2,102\n9050,tue,1,105\n9050,tue,2,113\n9050,tue,3,104\n9050,wed,1,104\n9050,wed,2,107\n9050,wed,3,108\n9050,thu,1,110\n9050,thu,2,109\n9050,thu,3,113\n9050,thu,4,102\n9050,fri,1,111\n9050,fri,2,104\n9050,fri,3,112\n9051,mon,1,101\n9051,mon,2,102\n9051,tue,1,113\n9051,tue,2,105\n9051,tue,3,104\n9051,wed,1,107\n9051,wed,2,108\n9051,wed,3,104\n9051,thu,1,110\n9051,thu,2,109\n9051,thu,3,113\n9051,thu,4,102\n9051,fri,1,111\n9051,fri,2,112\n9051,fri,3,104\n9052,mon,1,101\n9052,mon,2,102\n9052,tue,1,105\n9052,tue,2,104\n9052,tue,3,113\n9052,wed,1,107\n9052,wed,2,104\n9052,wed,3,108\n9052,thu,1,109\n9052,thu,2,113\n9052,thu,3,110\n9052,thu,4,102\n9052,fri,1,111\n9052,fri,2,112\n9052,fri,3,104\n9053,mon,1,101\n9053,mon,2,102\n9053,tue,1,105\n9053,tue,2,113\n9053,tue,3,104\n9053,wed,1,104\n9053,wed,2,108\n9053,wed,3,107\n9053,thu,1,113\n9053,thu,2,102\n9053,thu,3,110\n9053,thu,4,109\n9053,fri,1,104\n9053,fri,2,111\n9053,fri,3,112\n9054,mon,1,101\n9054,mon,2,102\n9054,tue,1,105\n9054,tue,2,113\n9054,tue,3,104\n9054,wed,1,108\n9054,wed,2,107\n9054,wed,3,104\n9054,thu,1,113\n9054,thu,2,110\n9054,thu,3,109\n9054,thu,4,102\n9054,fri,1,111\n9054,fri,2,112\n9054,fri,3,104\n9055,mon,1,101\n9055,mon,2,102\n9055,tue,1,104\n9055,tue,2,105\n9055,tue,3,113\n9055,wed,1,104\n9055,wed,2,107\n9055,wed,3,108\n9055,thu,1,109\n9055,thu,2,110\n9055,thu,3,113\n9055,thu,4,102\n9055,fri,1,111\n9055,fri,2,104\n9055,fri,3,112\n9056,mon,1,101\n9056,mon,2,102\n9056,tue,1,105\n9056,tue,2,113\n9056,tue,3,104\n9056,wed,1,107\n9056,wed,2,108\n9056,wed,3,104\n9056,thu,1,109\n9056,thu,2,110\n9056,thu,3,113\n9056,thu,4,102\n9056,fri,1,111\n9056,fri,2,104\n9056,fri,3,112\n9057,mon,1,101\n9057,mon,2,102\n9057,tue,1,113\n9057,tue,2,104\n9057,tue,3,105\n9057,wed,1,104\n9057,wed,2,107\n9057,wed,3,108\n9057,thu,1,110\n9057,thu,2,109\n9057,thu,3,102\n9057,thu,4,113\n9057,fri,1,111\n9057,fri,2,112\n9057,fri,3,104\n9058,mon,1,101\n9058,mon,2,102\n9058,tue,1,113\n9058,tue,2,105\n9058,tue,3,104\n9058,wed,1,107\n9058,wed,2,104\n9058,wed,3,108\n9058,thu,1,109\n9058,thu,2,110\n9058,thu,3,113\n9058,thu,4,102\n9058,fri,1,112\n9058,fri,2,104\n9058,fri,3,111\n9059,mon,1,101\n9059,mon,2,102\n9059,tue,1,105\n9059,tue,2,113\n9059,tue,3,104\n9059,wed,1,104\n9059,wed,2,107\n9059,wed,3,108\n9059,thu,1,109\n9059,thu,2,113\n9059,thu,3,102\n9059,thu,4,110\n9059,fri,1,112\n9059,fri,2,111\n9059,fri,3,104\n9060,mon,1,101\n9060,mon,2,102\n9060,tue,1,105\n9060,tue,2,113\n9060,tue,3,104\n9060,wed,1,104\n9060,wed,2,107\n9060,wed,3,108\n9060,thu,1,109\n9060,thu,2,113\n9060,thu,3,110\n9060,thu,4,102\n9060,fri,1,111\n9060,fri,2,112\n9060,fri,3,104\n","teacher_lists.csv":"club_code,position,RegistryNr\n103,1,9025\n103,2,9032\n107,1,9047\n","exclusions.csv":"club_code,RegistryNr\n101,9056\n","mandatory_grades.csv":"grade\n","lottery.csv":"RegistryNr,lottery_number\n9031,1\n9052,2\n9014,3\n9029,4\n9030,5\n9053,6\n9007,7\n9046,8\n9034,9\n9010,10\n9058,11\n9001,12\n9056,13\n9032,14\n9039,15\n9003,16\n9026,17\n9009,18\n9040,19\n9019,20\n9047,21\n9021,22\n9038,23\n9043,24\n9016,25\n9017,26\n9036,27\n9005,28\n9024,29\n9006,30\n9057,31\n9060,32\n9048,33\n9035,34\n9022,35\n9023,36\n9028,37\n9027,38\n9015,39\n9033,40\n9013,41\n9042,42\n9041,43\n9008,44\n9002,45\n9012,46\n9055,47\n9044,48\n9020,49\n9051,50\n9059,51\n9018,52\n9037,53\n9049,54\n9011,55\n9045,56\n9054,57\n9050,58\n9004,59\n9025,60\n","seed.txt":"demo-2026\n"};
+
+// ---- page ----
+const $ = (id) => document.getElementById(id);
+function h(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === "class") node.className = v;
+    else if (k === "style") node.setAttribute("style", v);
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const c of children.flat(Infinity)) if (c !== null && c !== undefined && c !== false) node.append(c instanceof Node ? c : String(c));
+  return node;
+}
+
+const STATUS = { ACCEPTED: "Νέα θέση", RETAINED: "Μένει", REJECTED: "Περισσεύει", DISPLACED: "Εκτοπίζεται" };
+let state = null; // { days, input, colors, dayIdx, step, club }  step: 0 = before, 1..N = rounds, N+1 = result; club: filter or null
+
+/** Days and students whose rerun differs from the result the platform stored. */
+function differences(byStudent, expected) {
+  let n = 0;
+  for (const [am, days] of Object.entries(expected)) {
+    for (const [d, code] of Object.entries(days)) if (String(byStudent[am]?.[d] ?? "") !== String(code ?? "")) n++;
+  }
+  return n;
+}
+
+function load(files, label, expected) {
+  $("error").textContent = "";
+  $("loading").hidden = true;
+  $("warning").hidden = true;
+  try {
+    const input = readRPackage(files, drawLottery);
+    const result = allocateWeek(input);
+    const diff = expected ? differences(result.byStudent, expected) : 0;
+    if (diff) {
+      $("warning").hidden = false;
+      $("warning").textContent = `Προσοχή: με τα σημερινά δεδομένα της πλατφόρμας η κατανομή βγαίνει διαφορετική από την αποθηκευμένη (${diff} θέσεις μαθητή × ημέρα). Κάτι άλλαξε μετά την κατανομή (π.χ. θέσεις ή λίστες): ξανατρέξτε την κατανομή με το ίδιο seed. Οι γύροι εδώ είναι της νέας εκτέλεσης.`;
+    }
+    const days = buildRounds(input, result);
+    if (days.length === 0) throw new Error("Δεν βρέθηκαν όμιλοι στο αρχείο.");
+    const colors = new Map();
+    for (const d of days) d.clubs.forEach((c, i) => colors.set(c.code, i % 8));
+    const declared = Object.keys(input.preferences).length;
+    state = { days, input, colors, dayIdx: 0, step: 1, club: null, student: new Map(input.students.map((s) => [s.am, s])) };
+    $("source").textContent = `${label} · ${input.students.length} μαθητές, ${input.clubs.length} όμιλοι, ${declared} δηλώσεις${input.seed ? ` · seed κλήρωσης: ${input.seed}` : ""}`;
+    $("view").hidden = false;
+    render();
+  } catch (err) {
+    $("error").textContent = err.message;
+  }
+}
+
+async function loadZip(file) {
+  try {
+    load(await readZip(new Uint8Array(await file.arrayBuffer())), file.name);
+  } catch (err) {
+    $("error").textContent = err.message;
+  }
+}
+
+const day = () => state.days[state.dayIdx];
+const lastStep = () => day().rounds.length + 1;
+const clubVars = (code) => { const i = state.colors.get(code) ?? 0; return `--c: var(--c${i}); --ct: var(--c${i}-t)`; };
+const clubName = (code) => state.input.clubs.find((c) => String(c.code) === String(code))?.name ?? code;
+const nameOf = (am) => { const s = state.student.get(am); return s ? `${s.surname} ${s.name}`.trim() : ""; };
+
+function setStep(step) {
+  state.step = Math.max(0, Math.min(lastStep(), step));
+  render();
+}
+
+function render() {
+  const d = day();
+  $("days").replaceChildren(...state.days.map((x, i) => h("button", { class: "pill", type: "button", "aria-pressed": String(i === state.dayIdx),
+    onclick: () => { state.dayIdx = i; state.club = null; state.step = Math.min(state.step, lastStep()); render(); } }, x.label)));
+  // Club filter: all of the day's clubs, or one of them through every round.
+  $("clubs").replaceChildren(...(d.clubs.length > 1 ? [
+    h("button", { class: "pill", type: "button", "aria-pressed": String(state.club === null), onclick: () => { state.club = null; render(); } }, "Όλοι οι όμιλοι"),
+    ...d.clubs.map((c) => h("button", { class: "pill", type: "button", "data-code": c.code, style: clubVars(c.code), "aria-pressed": String(state.club === c.code),
+      onclick: () => { state.club = state.club === c.code ? null : c.code; render(); } }, c.name)),
+  ] : []));
+  const labels = ["Πριν", ...d.rounds.map((r) => `Γύρος ${r.round}`), "Αποτέλεσμα"];
+  $("steps").replaceChildren(...labels.map((l, i) => h("button", { class: "pill", type: "button", "aria-pressed": String(i === state.step), onclick: () => setStep(i) }, l)));
+  $("prev").disabled = state.step === 0;
+  $("next").disabled = state.step === lastStep();
+  const body = state.step === 0 ? before(d) : state.step === lastStep() ? final(d) : roundView(d, d.rounds[state.step - 1]);
+  $("content").replaceChildren(...body);
+  highlight();
+}
+
+function legend() {
+  return h("div", { class: "legend" },
+    h("span", {}, h("i", { class: "sw", style: "background:var(--c0-t)" }), "Μένουν στον όμιλο (προσωρινά, μέχρι το τέλος της ημέρας)"),
+    h("span", {}, h("i", { class: "sw", style: "background:var(--c0-t);border:0;border-bottom:3px solid var(--c0)" }), "Η βάση: όσοι είναι κάτω από τη γραμμή δεν χωράνε"),
+    h("span", {}, h("i", { class: "sw", style: "background:var(--out-t)" }), "Περισσεύουν: πάνε στην επόμενη επιλογή τους"),
+    h("span", {}, h("b", { class: "star" }, "⭐"), "Λίστα εκπαιδευτικού"));
+}
+
+function roundView(d, r) {
+  const intro = h("p", { class: "lede" }, r.round === 1
+    ? `${d.label}, γύρος 1: κάθε μαθητής κάνει αίτηση στον πρώτο όμιλο που έμεινε στη λίστα του, συνήθως την 1η του επιλογή (${r.applicants} αιτήσεις· όσοι όμιλοι φεύγουν από λίστες φαίνονται στο «Πριν»). Κάθε όμιλος βάζει τους υποψηφίους σε σειρά: πρώτα τη λίστα ⭐ του εκπαιδευτικού, μετά τις τάξεις με υποχρεωτική ένταξη (αν υπάρχουν), μετά τον λαχνό.`
+    : `${d.label}, γύρος ${r.round}: όσοι περίσσεψαν στον γύρο ${r.round - 1} κάνουν αίτηση στην επόμενη επιλογή τους (${r.applicants} αιτήσεις). Οι όμιλοι που τις δέχονται ξαναβάζουν σε σειρά όσους ήδη κρατούν μαζί με τους νέους.`);
+  return [intro, legend(), ...r.clubs.filter((c) => state.club === null || c.code === state.club).map((c) => clubCard(c, r.round))];
+}
+
+function clubCard(c, round) {
+  if (!c.reconsidered) {
+    return h("section", { class: "card club idle", style: clubVars(c.code) },
+      h("header", {}, h("h3", {}, c.name), h("span", { class: "facts" }, `${c.capacity} θέσεις`)),
+      h("p", { class: "idle-note" }, `Καμία νέα αίτηση σε αυτόν τον γύρο: κρατά ${c.held} ${c.held === 1 ? "μαθητή" : "μαθητές"} όπως πριν.`));
+  }
+  const retained = c.rows.filter((x) => x.status === "RETAINED").length;
+  const collapse = round > 1 && retained > 0;
+  const table = h("table", { class: collapse ? "collapsed" : "" });
+  const toggle = collapse ? h("tr", { class: "toggle" }, h("td", { colspan: 7 }, h("button", { type: "button", onclick: (e) => {
+    const open = table.classList.toggle("collapsed");
+    e.currentTarget.textContent = open ? showText : hideText;
+  } }, `▸ ${retained} ${retained === 1 ? "μαθητής μένει" : "μαθητές μένουν"} από προηγούμενους γύρους: εμφάνιση`))) : null;
+  const showText = `▸ ${retained} ${retained === 1 ? "μαθητής μένει" : "μαθητές μένουν"} από προηγούμενους γύρους: εμφάνιση`;
+  const hideText = `▾ απόκρυψη όσων μένουν από προηγούμενους γύρους`;
+  table.append(
+    h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "Λαχνός"), h("th", {}, "ΑΜ"), h("th", {}, "Ονοματεπώνυμο"), h("th", {}, "Τάξη"), h("th", {}, "Επιλογή"), h("th", {}, "Παρατηρήσεις"))),
+    h("tbody", {}, toggle, c.rows.map((x, i) => {
+      const inside = x.status === "ACCEPTED" || x.status === "RETAINED";
+      const cls = [inside ? "in" : "out", i === c.kept && c.kept > 0 ? "cut" : "", x.status === "RETAINED" ? "retained" : ""].filter(Boolean).join(" ");
+      return h("tr", { class: cls, "data-am": x.am },
+        h("td", { class: "n" }, x.pos),
+        h("td", { class: "n" }, x.lottery),
+        h("td", { class: "n" }, x.am),
+        h("td", { class: "who" }, x.starred ? h("b", { class: "star", title: "Λίστα εκπαιδευτικού" }, "⭐ ") : null, x.name),
+        h("td", {}, x.grade),
+        h("td", {}, x.choice ? `${x.choice}η` : "—"),
+        h("td", { class: "note" }, h("span", { class: `st ${x.status}` }, STATUS[x.status]), x.note));
+    })));
+  const facts = [h("span", {}, h("b", {}, c.capacity), " θέσεις"), h("span", {}, h("b", {}, c.applicants), " υποψήφιοι"), round > 1 ? h("span", {}, h("b", {}, c.fresh), c.fresh === 1 ? " νέα αίτηση" : " νέες αιτήσεις") : null,
+    c.base ? h("span", {}, "βάση: ", h("b", {}, c.base)) : h("span", {}, "χωράνε όλοι")];
+  return h("section", { class: "card club", style: clubVars(c.code) },
+    h("header", {}, h("h3", {}, c.name), h("span", { class: "facts row" }, facts)),
+    h("div", { class: "scroll" }, table));
+}
+
+function before(d) {
+  const out = [h("p", { class: "lede" }, `${d.label}: πριν από τον 1ο γύρο. Όσοι έχουν ήδη θέση σε όμιλο πολλών ημερών δεν παίρνουν μέρος, και από τις λίστες των υπολοίπων φεύγουν οι όμιλοι που δεν μπορούν να πάρουν.`)];
+  const clubs = h("section", { class: "card stack" }, h("h2", {}, `Όμιλοι που κρίνονται τη ${d.label}`),
+    h("div", { class: "scroll" }, h("table", { class: "plain" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Όμιλος"), h("th", {}, "Θέσεις"), h("th", {}, "Ημέρες"))),
+      h("tbody", {}, d.clubs.map((c) => h("tr", { style: clubVars(c.code) }, h("td", {}, h("b", { style: "color:var(--c)" }, "● "), c.name), h("td", { class: "n" }, c.capacity),
+        h("td", {}, c.days.map((x) => DAY_LABELS[x]).join(", "))))))));
+  if (d.clubs.length) out.push(clubs);
+  if (d.carried.length) {
+    const byClub = new Map();
+    for (const x of d.carried) byClub.set(x.club, [...(byClub.get(x.club) ?? []), x.am]);
+    out.push(h("section", { class: "card stack" }, h("h2", {}, `Έχουν ήδη θέση (${d.carried.length})`),
+      h("p", { class: "muted" }, "Μπήκαν την πρώτη ημέρα ενός ομίλου πολλών ημερών και κρατούν τη θέση τους σήμερα, χωρίς να κάνουν αίτηση."),
+      [...byClub].map(([code, ams]) => h("details", {}, h("summary", {}, `«${clubName(code)}»: ${ams.length}`),
+        h("p", { class: "muted" }, ams.map((am) => `${am} ${nameOf(am)}`).join(" · "))))));
+  }
+  if (d.dropped.length) {
+    out.push(h("section", { class: "card stack" }, h("h2", {}, `Όμιλοι που φεύγουν από λίστες (${d.dropped.length})`),
+      h("div", { class: "scroll" }, h("table", { class: "plain" },
+        h("thead", {}, h("tr", {}, h("th", {}, "ΑΜ"), h("th", {}, "Ονοματεπώνυμο"), h("th", {}, "Όμιλος"), h("th", {}, "Γιατί"))),
+        h("tbody", {}, d.dropped.map((x) => h("tr", { "data-am": x.am }, h("td", { class: "n" }, x.am), h("td", { class: "who" }, nameOf(x.am)), h("td", {}, clubName(x.club)), h("td", {}, x.text))))))));
+  }
+  return out;
+}
+
+function final(d) {
+  const out = [h("p", { class: "lede" }, d.rounds.length === 0
+    ? `${d.label}: δεν κρίνεται κανένας όμιλος αυτή την ημέρα· υπάρχουν μόνο θέσεις από ομίλους πολλών ημερών.`
+    : `${d.label}: η κατανομή τελείωσε μετά από ${d.rounds.length} ${d.rounds.length === 1 ? "γύρο" : "γύρους"}. Οι προσωρινές θέσεις γίνονται οριστικές.`)];
+  if (d.clubs.length) out.push(h("section", { class: "card stack" }, h("h2", {}, "Θέσεις"),
+    h("div", { class: "scroll" }, h("table", { class: "plain" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Όμιλος"), h("th", {}, "Μαθητές"), h("th", {}, "Θέσεις"), h("th", {}, "Κενές"))),
+      h("tbody", {}, d.clubs.map((c) => h("tr", { style: clubVars(c.code) }, h("td", {}, h("b", { style: "color:var(--c)" }, "● "), c.name),
+        h("td", { class: "n" }, d.final.counts[c.code]), h("td", { class: "n" }, c.capacity), h("td", { class: "n" }, c.capacity - d.final.counts[c.code]))))))));
+  if (d.carried.length) out.push(h("p", { class: "muted" }, `Επιπλέον ${d.carried.length} μαθητές έχουν όμιλο αυτή την ημέρα από όμιλο πολλών ημερών.`));
+  const missing = d.final.unassigned.filter((u) => u.declared);
+  out.push(h("section", { class: "card stack" }, h("h2", {}, `Χωρίς όμιλο, ενώ δήλωσαν (${missing.length})`),
+    missing.length === 0 ? h("p", { class: "muted" }, "Κανείς.") : h("div", { class: "scroll" }, h("table", { class: "plain" },
+      h("thead", {}, h("tr", {}, h("th", {}, "ΑΜ"), h("th", {}, "Ονοματεπώνυμο"), h("th", {}, "Τάξη"), h("th", {}, "Λαχνός"), h("th", {}, "Γιατί"))),
+      h("tbody", {}, missing.map((u) => h("tr", { "data-am": u.am }, h("td", { class: "n" }, u.am), h("td", { class: "who" }, nameOf(u.am)),
+        h("td", {}, state.student.get(u.am)?.grade ?? ""), h("td", { class: "n" }, state.input.lottery.get(u.am)), h("td", { class: "bad" }, u.text))))))));
+  return out;
+}
+
+function highlight() {
+  const q = $("search").value.trim().toLocaleUpperCase("el");
+  for (const tr of document.querySelectorAll("tr[data-am]")) {
+    const am = tr.dataset.am;
+    const hit = q !== "" && (am === q || nameOf(am).toLocaleUpperCase("el").includes(q));
+    tr.classList.toggle("hit", hit);
+    if (hit) tr.closest("table")?.classList.remove("collapsed");
+  }
+}
+
+$("file").addEventListener("change", (e) => { if (e.target.files[0]) loadZip(e.target.files[0]); });
+$("sample").addEventListener("click", () => load(SAMPLE, "Παράδειγμα: φανταστικό σχολείο με φανταστικές δηλώσεις"));
+$("prev").addEventListener("click", () => setStep(state.step - 1));
+$("next").addEventListener("click", () => setStep(state.step + 1));
+$("search").addEventListener("input", highlight);
+const drop = $("drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) loadZip(e.dataTransfer.files[0]); });
+document.addEventListener("keydown", (e) => {
+  if (!state || e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowRight") setStep(state.step + 1);
+  if (e.key === "ArrowLeft") setStep(state.step - 1);
+});
+if (location.hash === "#paradeigma") $("sample").click();
+
+// Opened from the platform's admin page («Γύροι κατανομής»): it sends the R
+// data package and the stored result by postMessage (same site only).
+window.addEventListener("message", (e) => {
+  if (e.origin !== location.origin || e.data?.type !== "gyroi-data") return;
+  $("error").textContent = "";
+  $("drop").hidden = true;
+  readZip(e.data.zip).then((files) => load(files, e.data.label, e.data.byStudent)).catch((err) => { $("error").textContent = err.message; });
+});
+if (window.opener && location.protocol.startsWith("http")) {
+  try {
+    window.opener.postMessage({ type: "gyroi-ready" }, location.origin);
+    $("loading").hidden = false;
+  } catch { /* opened from another site */ }
+}
+</script>
+</body>
+</html>

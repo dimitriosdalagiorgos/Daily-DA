@@ -790,6 +790,27 @@ function allocation() {
   verify.addEventListener("click", () => busy(verify, out, async () => saveWorkbook("epalitheusi_katanomis.xlsx", (await api("GET", "/api/admin/export/verification")).sheets)));
   const lotteryCsv = el("button", { type: "button" }, "Κλήρωση: ΑΜ και αριθμός (.csv)");
   lotteryCsv.addEventListener("click", () => busy(lotteryCsv, out, () => api.download(`/api/admin/export/lottery.csv${state.results ? "" : `?seed=${encodeURIComponent(seed.value)}`}`, "klirosi.csv")));
+  // The round-by-round page (docs/gyroi-katanomis.html) in a new tab: it gets
+  // the R data package and the stored result from this page by postMessage,
+  // so the students' data never goes into its address.
+  const rounds = el("button", { type: "button", disabled: !state.results }, "Γύροι κατανομής");
+  rounds.addEventListener("click", () => {
+    const win = window.open("/docs/gyroi-katanomis.html", "_blank");
+    busy(rounds, out, async () => {
+      if (!win) throw new Error("Ο browser δεν άνοιξε νέα καρτέλα: επιτρέψτε τα αναδυόμενα παράθυρα για αυτή τη σελίδα.");
+      const ready = new Promise((resolve) => {
+        const onMessage = (e) => {
+          if (e.source !== win || e.origin !== location.origin || e.data?.type !== "gyroi-ready") return;
+          window.removeEventListener("message", onMessage);
+          resolve();
+        };
+        window.addEventListener("message", onMessage);
+      });
+      const [zip, { results }] = await Promise.all([api.bytes("/api/admin/export/r-package.zip"), api("GET", "/api/admin/results")]);
+      await ready;
+      win.postMessage({ type: "gyroi-data", zip, byStudent: results.byStudent, label: `Κατανομή της πλατφόρμας: ${formatDateTime(results.at)}` }, location.origin);
+    });
+  });
   const summary = el("button", { type: "button", disabled: !state.results }, "Σύνοψη ανά όμιλο (.csv)");
   summary.addEventListener("click", () => busy(summary, out, () => api.download("/api/admin/export/club_summary.csv", "synopsi_omilon.csv")));
 
@@ -805,7 +826,8 @@ function allocation() {
       out,
       el("div.actions", {}, run, randomSeed),
       el("h3", {}, "Εξαγωγές"),
-      el("div.actions", {}, xlsx, csv, audit, verify, summary, lotteryCsv, rZip),
+      el("div.actions", {}, rounds, xlsx, csv, audit, verify, summary, lotteryCsv, rZip),
+      el("p.small.muted", {}, "«Γύροι κατανομής»: ανοίγει σε νέα καρτέλα την κατανομή γύρο-γύρο, όπως στο παράδειγμα «Οι όμιλοι των χρωμάτων»: για κάθε ημέρα και γύρο, οι υποψήφιοι κάθε ομίλου σε σειρά προτεραιότητας, η βάση του ομίλου και γιατί ο καθένας μένει ή περισσεύει."),
       el("p.small.muted", {}, "«Επαλήθευση κατανομής»: για να ελέγξετε την κατανομή με το χέρι. Για κάθε όμιλο ο τελευταίος που μπήκε και ο πρώτος που έμεινε έξω· για κάθε μαθητή και ημέρα οι επιλογές του, τι έγινε με την καθεμία και οι γύροι· γύρο-γύρο ποιοι κάνουν αίτηση σε κάθε όμιλο, ποιοι μένουν και ποιοι βγαίνουν, με τον αριθμό κλήρωσης. Στο πρώτο φύλλο, αυτόματοι έλεγχοι και οδηγίες."),
       el("p.small.muted", {}, "«Κλήρωση»: μόνο ΑΜ και αριθμός κλήρωσης, ταξινομημένα κατά ΑΜ, χωρίς ονόματα — για γρήγορη σύγκριση δύο μαθητών ή για ανακοίνωση. Μικρότερος αριθμός = προηγείται στην ίδια προτεραιότητα. Πριν την κατανομή βγαίνει για το seed που έχετε γράψει.")),
     resultsBox);
