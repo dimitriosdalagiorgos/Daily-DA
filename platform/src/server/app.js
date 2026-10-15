@@ -228,7 +228,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       clubs,
       teachers: teachers.map(({ idHash, ...t }) => ({ ...t, hasPersonalId: Boolean(idHash) })),
       teacherLists: lists,
-      submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}) }])),
+      submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}), clubs: [...new Set(Object.values(s.preferences ?? {}).flat().map(String))] }])),
       uploads: uploads ?? {},
       readiness: students.length && clubs.length ? checkReadiness(students, clubs, settings, exclusionsOf(clubs, lists, students)) : [],
       results: results ? { seed: results.seed, at: results.at } : null,
@@ -372,6 +372,52 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!found) throw new HttpError(404, "Δεν υπάρχει τέτοιος όμιλος.");
     await logEvent("admin", "club_similar", { club: Number(code), similar: value });
     return json(200, { club: found });
+  });
+
+  // Removes a club for good, also after declarations opened (a teacher
+  // leaves, the club is not approved…), until the allocation. As last year's
+  // R script did, the club leaves every declaration and the clubs after it
+  // move up one place; the parent sees a note on the form.
+  route("DELETE", "/api/admin/clubs/:code", async (req, { code }) => {
+    session(req, "admin");
+    const settings = await getSettings();
+    if (phaseAtLeast(settings.phase, "allocated")) {
+      throw new HttpError(409, "Η κατανομή έχει γίνει: ο όμιλος δεν καταργείται. Πατήστε «Επιστροφή» μέχρι τη φάση «Κλειστές δηλώσεις», καταργήστε τον και ξανατρέξτε την κατανομή (με το ίδιο seed).");
+    }
+    const club = ((await store.get("clubs")) ?? []).find((c) => String(c.code) === String(code));
+    if (!club) throw new HttpError(404, "Δεν υπάρχει τέτοιος όμιλος.");
+    const key = String(club.code);
+    await store.update("clubs", (clubs = []) => clubs.filter((c) => String(c.code) !== key));
+    await store.update("teachers", (teachers = []) => teachers.map((t) => ({ ...t, clubs: (t.clubs ?? []).filter((c) => String(c) !== key) })));
+    await store.delete(`teacherList:${key}`);
+    // Declarations: the club leaves every day's ranking
+    const at = new Date(now()).toISOString();
+    const changed = [];
+    for (const [am, sub] of Object.entries(await getSubmissions())) {
+      if (!ranksClub(sub, key)) continue;
+      const preferences = Object.fromEntries(Object.entries(sub.preferences ?? {})
+        .map(([day, list]) => [day, (list ?? []).filter((c) => String(c) !== key)])
+        .filter(([, list]) => list.length));
+      changed.push({
+        key: `submission:${am}`,
+        value: {
+          ...sub,
+          preferences,
+          removedClubs: [...(sub.removedClubs ?? []), { code: key, name: club.name }],
+          history: [...(sub.history ?? []), { at, email: `(διαχείριση: κατάργηση ομίλου «${club.name}»)`, preferences }],
+        },
+      });
+    }
+    if (changed.length) await store.setMany(changed);
+    // An earlier allocation (before a step back) no longer applies
+    await Promise.all([store.delete("results"), store.delete("resultsLog"), store.deletePrefix("story:")]);
+    await logEvent("admin", "club_removed", { club: club.code, name: club.name, declarations: changed.length });
+    // Fewer seats: the mandatory grades may no longer fit (a warning only)
+    const [students, clubs] = await Promise.all([getStudents(), getClubs()]);
+    const warnings = phaseAtLeast(settings.phase, "parents")
+      ? checkReadiness(students, clubs, settings, await getExclusions(clubs, students)).filter((p) => p.level === "error").map((p) => p.message)
+      : [];
+    return json(200, { removed: { code: key, name: club.name }, declarations: changed.length, warnings });
   });
 
   route("PUT", "/api/admin/settings", async (req) => {
@@ -957,6 +1003,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
           receipt: receiptCode(am, submission.submittedAt, submission.preferences),
           // Every save, so a parent can spot a change they did not make.
           history: (submission.history ?? []).map((h) => ({ at: h.at, email: h.email })),
+          // Clubs the school removed after this declaration (left out of it)
+          removedClubs: submission.removedClubs ?? [],
         }
         : null,
       result: published

@@ -121,6 +121,14 @@ function mainView(me, { justSubmitted = false } = {}) {
   if (submission) {
     nodes.push(message("ok", `Υπάρχει δήλωση από ${formatDateTime(submission.submittedAt)}${canEdit ? ". Μπορείτε να την αλλάξετε μέχρι την προθεσμία." : "."}`));
     nodes.push(receiptView(me, justSubmitted), doneView(), historyView(me));
+    // The school removed a club after the declaration
+    const removed = submission.removedClubs ?? [];
+    if (removed.length) {
+      const names = removed.map((c) => `«${c.name}»`).join(", ");
+      nodes.push(message("warn", removed.length === 1
+        ? `Ο όμιλος ${names}, που είχατε δηλώσει, καταργήθηκε από το σχολείο και βγήκε από τη δήλωσή σας. Η σειρά των υπόλοιπων ομίλων έμεινε ίδια (όσοι ήταν μετά από αυτόν ανέβηκαν μία θέση).`
+        : `Οι όμιλοι ${names}, που είχατε δηλώσει, καταργήθηκαν από το σχολείο και βγήκαν από τη δήλωσή σας. Η σειρά των υπόλοιπων ομίλων έμεινε ίδια (όσοι ήταν μετά από αυτούς ανέβηκαν).`));
+    }
   }
   if (!canEdit && !result) {
     nodes.push(message("info", me.phase === "parents" ? "Η προθεσμία έληξε· η δήλωση δεν αλλάζει πια." : "Οι δηλώσεις δεν δέχονται αλλαγές αυτή τη στιγμή."));

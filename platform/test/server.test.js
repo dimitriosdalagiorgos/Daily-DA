@@ -888,3 +888,58 @@ test("teachers' exclusions: ⛔ and closed lists, hidden from parents, added or 
   assert.match(zip, /club_code,RegistryNr\n101,9003\n101,9004\n/);
   assert.match(new TextDecoder().decode((await call("GET", "/api/admin/export/results.csv", { token: admin })).data), /9003,ΔΗΜΟΥ,ΣΟΦΙΑ,Α,— αποκλεισμός/);
 });
+
+test("removing a club after declarations opened: out of every declaration, the parent told, until the allocation", async () => {
+  const { call, store } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs: CLUB_ROWS, teachers: TEACHER_ROWS } });
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z", mandatoryGrades: ["Β"] } });
+  for (const phase of ["teachers", "parents"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase } });
+  await call("PUT", "/api/admin/teacher-lists/101", { token: admin, body: { ams: ["9001"] } });
+  const parent = (await call("POST", "/api/parent/login", { body: { password: "omiloi2026", am: "9001", surname: "ΠΑΠΑΔΟΠΟΥΛΟΣ", name: "ΝΙΚΟΛΑΟΣ", father: "ΓΕΩΡΓΙΟΣ", mother: "ΜΑΡΙΑ" } })).data.token;
+  assert.equal((await call("PUT", "/api/parent/submission", { token: parent, body: { parent: { name: "Γ", email: "g@example.com" }, preferences: { mon: ["101", "100"], thu: ["102"] } } })).status, 200);
+  const receipt = (await call("GET", "/api/parent/me", { token: parent })).data.submission.receipt;
+
+  assert.equal((await call("DELETE", "/api/admin/clubs/101")).status, 401, "admin only");
+  assert.equal((await call("DELETE", "/api/admin/clubs/999", { token: admin })).status, 404);
+  let r = await call("DELETE", "/api/admin/clubs/101", { token: admin });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.removed, { code: "101", name: "Ρομποτική" });
+  assert.equal(r.data.declarations, 1);
+  // Gone: clubs, the teacher's clubs, the teacher's list
+  const state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.deepEqual(state.clubs.map((c) => c.code), [100, 102, 103]);
+  assert.deepEqual(state.teachers.find((t) => t.email === "amix@sch.gr").clubs, []);
+  assert.equal(state.teacherLists["101"], undefined);
+  assert.deepEqual(state.submissions["9001"].clubs, ["100", "102"]);
+  // The declaration: the next club moves up, the parent sees why
+  const sub = await store.get("submission:9001");
+  assert.deepEqual(sub.preferences, { mon: ["100"], thu: ["102"] });
+  const me = (await call("GET", "/api/parent/me", { token: parent })).data;
+  assert.deepEqual(me.submission.removedClubs, [{ code: "101", name: "Ρομποτική" }]);
+  assert.notEqual(me.submission.receipt, receipt, "the receipt code shows the change");
+  assert.match(me.submission.history.at(-1).email, /κατάργηση ομίλου «Ρομποτική»/);
+  assert.ok(!me.days.flatMap((d) => d.clubs).some((c) => c.code === "101"), "not on the form");
+  assert.ok((await store.readLog("events")).some((e) => e.what === "club_removed" && e.club === 101));
+  // A new save clears the note
+  assert.equal((await call("PUT", "/api/parent/submission", { token: parent, body: { parent: { name: "Γ", email: "g@example.com" }, preferences: { mon: ["100"], thu: ["102"] } } })).status, 200);
+  assert.deepEqual((await call("GET", "/api/parent/me", { token: parent })).data.submission.removedClubs, []);
+
+  // Fewer seats than the mandatory grade needs: removed, with a warning
+  r = await call("DELETE", "/api/admin/clubs/102", { token: admin });
+  assert.equal(r.status, 200);
+  assert.ok(r.data.warnings.length, "the mandatory grade Β no longer fits on Thursday");
+
+  // After the allocation: refused
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
+  assert.equal((await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "1" } })).status, 200);
+  r = await call("DELETE", "/api/admin/clubs/103", { token: admin });
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /Επιστροφή/);
+  // A step back: removed, and the old allocation is dropped
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
+  assert.equal((await call("DELETE", "/api/admin/clubs/103", { token: admin })).status, 200);
+  assert.equal(await store.get("results"), undefined);
+  assert.equal((await call("POST", "/api/admin/allocate", { token: admin, body: { seed: "1" } })).status, 200);
+});
