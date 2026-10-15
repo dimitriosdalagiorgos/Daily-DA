@@ -26,16 +26,23 @@ function initialOrder(codes, key) {
   return a;
 }
 
-api.onExpired = () => { api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
+api.onExpired = () => { unsavedText = () => ""; api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
 // The parents' password is kept in memory only, so a parent with more
 // children does not type it again. Logging out forgets it (next parent).
 let rememberedPassword = "";
+// The form on screen has edits not saved: logging out or leaving asks first
+let unsavedText = () => "";
+const leaveOk = () => { const text = unsavedText(); return !text || confirm(text); };
 function signOut() {
+  if (!leaveOk()) return;
+  unsavedText = () => "";
   api.setToken(null);
   rememberedPassword = "";
   loginView(message("ok", "Αποσυνδεθήκατε. Ο επόμενος γονέας μπορεί να συνδεθεί με τα δικά του στοιχεία."));
 }
 function nextChild() {
+  if (!leaveOk()) return;
+  unsavedText = () => "";
   api.setToken(null);
   loginView(message("info", "Συμπληρώστε τα στοιχεία του επόμενου παιδιού. Ο κωδικός γονέων έχει ήδη συμπληρωθεί."));
 }
@@ -99,6 +106,7 @@ async function loginView(notice) {
 
 function mainView(me, { justSubmitted = false } = {}) {
   logout.classList.remove("hidden");
+  unsavedText = () => "";
   const { student, days, submission, canEdit, result } = me;
   const out = el("div");
   const nodes = [
@@ -203,7 +211,19 @@ function mainView(me, { justSubmitted = false } = {}) {
       };
     });
   };
-  const refreshAll = () => { for (const r of Object.values(rankers)) r.refresh(); };
+  const refreshAll = () => { for (const r of Object.values(rankers)) r.refresh(); markDirty(); };
+  // What is on screen at first (the saved declaration, if any): «Ακύρωση αλλαγών» goes back to it
+  const startOrders = {};
+  const snapshot = () => JSON.stringify([parentName.value, parentEmail.value, days.map((d) => rankers[d.day]?.order() ?? [])]);
+  let startKey = null;
+  const dirty = () => startKey !== null && snapshot() !== startKey;
+  const unsavedNote = el("span.small.unsaved");
+  const cancel = submission && canEdit ? el("button", { type: "button", hidden: true }, "Ακύρωση αλλαγών") : null;
+  function markDirty() {
+    const d = dirty();
+    if (submission) unsavedNote.textContent = d ? "Μη αποθηκευμένες αλλαγές" : "";
+    if (cancel) cancel.hidden = !d;
+  }
 
   const panels = {};
   for (const d of days) {
@@ -227,6 +247,7 @@ function mainView(me, { justSubmitted = false } = {}) {
       const saved = submission?.preferences?.[d.day]?.filter((c) => codes.includes(c));
       const added = saved ? codes.filter((c) => !saved.includes(c)) : [];
       const order = saved ? [...saved, ...added] : initialOrder(codes, `${student.am}:${d.day}`);
+      startOrders[d.day] = order;
       if (added.length && canEdit) {
         panel.append(message("warn", `Μετά τη δήλωσή σας προστέθηκε ${added.length === 1 ? "ο όμιλος" : "οι όμιλοι"} ${added.map((c) => `«${d.clubs.find((x) => x.code === c).name}»`).join(", ")} στο τέλος της σειράς ${DAY_GEN[d.day]}. Μετακινήστε ${added.length === 1 ? "τον" : "τους"} αν θέλετε και πατήστε «Αποθήκευση αλλαγών»· αλλιώς δεν θα ληφθ${added.length === 1 ? "εί" : "ούν"} υπόψη.`));
       }
@@ -273,6 +294,21 @@ function mainView(me, { justSubmitted = false } = {}) {
     panels[d.day] = panel;
   }
 
+  startKey = snapshot();
+  for (const input of [parentName, parentEmail]) input.addEventListener("input", markDirty);
+  cancel?.addEventListener("click", () => {
+    parentName.value = submission.parent?.name ?? "";
+    parentEmail.value = submission.parent?.email ?? "";
+    for (const [day, order] of Object.entries(startOrders)) rankers[day].setOrder(order);
+    show(out, null);
+    markDirty();
+  });
+  if (canEdit) {
+    unsavedText = () => (!dirty() ? ""
+      : submission ? "Υπάρχουν αλλαγές στη δήλωση που δεν αποθηκεύσατε. Συνέχεια χωρίς αποθήκευση; (Θα ισχύει η δήλωση που είχατε αποθηκεύσει.)"
+        : "Η δήλωση δεν έχει υποβληθεί. Συνέχεια χωρίς υποβολή;");
+  }
+
   let current = days[0].day;
   const nav = el("nav.tabs.day-tabs", { role: "tablist", "aria-label": "Ημέρες" });
   const panelBox = el("div");
@@ -294,7 +330,7 @@ function mainView(me, { justSubmitted = false } = {}) {
       prev ? el("button", { type: "button", onclick: () => go(prev.day) }, `← ${prev.label}`) : null,
       el("span.spacer"),
       next ? el("button.primary", { type: "button", onclick: () => go(next.day) }, `${next.label} →`) : null,
-      submit].filter(Boolean));
+      unsavedNote, cancel, submit].filter(Boolean));
   }
   drawTabs();
   nodes.push(el("section.card", {},
@@ -392,4 +428,5 @@ function historyView(me) {
     el("p.small", {}, `Αν κάποια από αυτές τις αλλαγές δεν την κάνατε εσείς, επικοινωνήστε αμέσως με το σχολείο${pub.contact ? `: ${pub.contact}` : "."}`));
 }
 
+window.addEventListener("beforeunload", (e) => { if (unsavedText()) e.preventDefault(); });
 start();

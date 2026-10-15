@@ -11,7 +11,7 @@
 // makes the list open again.
 //
 // Layout: a bar that stays on screen (list type, the counters, which also
-// filter the rows, and «Αποθήκευση»), then search and filters, the
+// filter the rows, «Αποθήκευση» and «Ακύρωση αλλαγών»), then search and filters, the
 // shortcuts, a box for changing all the rows shown (only once something
 // narrows them), and the rows.
 
@@ -104,9 +104,16 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
   const typeLine = el("div.list-type");
   const counters = el("div.counters", { role: "group", "aria-label": "Προβολή" });
   const unsavedNote = el("span.small.unsaved");
-  const undo = el("button.small", { type: "button", onclick: () => { load(saved); show(out, null); update(); } }, "Αναίρεση αλλαγών");
+  // Back to what is saved: the states, and the admin's seats too
+  const undo = el("button.small", { type: "button", onclick: () => {
+    load(saved);
+    if (capacityInput) capacityInput.value = savedCapacity;
+    show(out, null);
+    update();
+  } }, "Ακύρωση αλλαγών");
   const save = el("button.primary", { type: "button", disabled: !canEdit }, "Αποθήκευση");
   let saved = { ...list };
+  let savedCapacity = capacityInput?.value;
   const bar = el("div.list-bar", {}, typeLine, counters, canEdit ? el("div.actions.bar-actions", {}, save, unsavedNote, undo) : null);
 
   const renderBar = () => {
@@ -142,7 +149,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
       tab(NONE, "○", c[NONE]),
       tab(OUT, "⛔", c[OUT]));
 
-    const dirty = key() !== savedKey;
+    const dirty = key() !== savedKey || (Boolean(capacityInput) && capacityInput.value !== savedCapacity);
     unsavedNote.textContent = dirty ? "Μη αποθηκευμένες αλλαγές" : "";
     undo.hidden = !dirty;
     onDirty(dirty);
@@ -243,6 +250,10 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
       saved = { ams: entry.ams ?? [], blocked: entry.blocked ?? [], closed: Boolean(entry.closed) };
       load(saved);
       savedKey = normal(saved);
+      if (capacityInput) {
+        if (entry.capacity !== undefined) capacityInput.value = entry.capacity;
+        savedCapacity = capacityInput.value;
+      }
       update();
       show(out, message("ok", "Αποθηκεύτηκε."),
         entry.excludedAfterSubmission ? message("info", `${entry.excludedAfterSubmission === 1 ? "1 από τους μαθητές που αποκλείσατε τώρα είχε" : `${entry.excludedAfterSubmission} από τους μαθητές που αποκλείσατε τώρα είχαν`} ήδη δηλώσει τον όμιλο. Στην κατανομή ο όμιλος θα παραλειφθεί από τη δήλωση (η υπόλοιπη σειρά μένει ίδια), και ο γονέας θα το δει αν ξαναμπεί.`) : null,

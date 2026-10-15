@@ -170,16 +170,48 @@ try {
   const chess = admin.locator("tr:has-text('Σκάκι')");
   await chess.locator("button:has-text('Διόρθωση')").click();
   const editor = admin.locator("tr.list-edit");
+  // «Ακύρωση αλλαγών» brings back the saved list and seats
+  const seats = await editor.locator("input[aria-label='Χωρητικότητα']").inputValue();
+  await editor.locator("input[aria-label='Χωρητικότητα']").fill("99");
+  await editor.locator(".tri-list .tri-row.none button.s-wish >> nth=0").click();
+  await editor.locator(".unsaved:has-text('Μη αποθηκευμένες αλλαγές')").waitFor();
+  await editor.locator("button:has-text('Ακύρωση αλλαγών')").click();
+  if (await editor.locator("input[aria-label='Χωρητικότητα']").inputValue() !== seats) throw new Error("«Ακύρωση αλλαγών» did not restore the seats");
+  if (await editor.locator(".tri-list .tri-row.wish").count() !== 2 || await editor.locator(".unsaved").textContent()) throw new Error("«Ακύρωση αλλαγών» did not restore the list");
   await editor.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
   await editor.locator("button:has-text('Αποθήκευση')").click();
   await editor.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   await shot(admin, "02c-admin-list-editor");
   await editor.locator("button:has-text('Κλείσιμο')").click();
   await admin.waitForSelector("tr:has-text('Σκάκι') td:has-text('⭐ 2 · ⛔ 1')");
-  step("admin: one ⛔ added with «Διόρθωση»");
+  step("admin: «Ακύρωση αλλαγών» in «Διόρθωση», then one ⛔ added");
+  // Two «Διορθώσεις» open: closing the clean one keeps the other's edits
+  const fixRows = admin.locator("tr:has(button:has-text('Διόρθωση'))");
+  await fixRows.nth(0).locator("button:has-text('Διόρθωση')").click();
+  await fixRows.nth(1).locator("button:has-text('Διόρθωση')").click();
+  const [firstEdit, secondEdit] = [admin.locator("tr.list-edit").nth(0), admin.locator("tr.list-edit").nth(1)];
+  await firstEdit.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
+  await secondEdit.locator("button:has-text('Κλείσιμο')").click();
+  if (await admin.locator("tr.list-edit").count() !== 1 || !(await firstEdit.locator(".unsaved").textContent())) throw new Error("closing one «Διόρθωση» lost the other's edits");
+  await firstEdit.locator("button:has-text('Ακύρωση αλλαγών')").click();
+  await firstEdit.locator("button:has-text('Κλείσιμο')").click();
+  if (await admin.locator("tr.list-edit").count()) throw new Error("«Διόρθωση» not closed");
+  step("admin: two «Διορθώσεις» open — closing one keeps the other");
 
   // ---------- Admin: settings, open declarations ----------
   await admin.click("role=tab[name='Πορεία & ρυθμίσεις']");
+  // Unsaved settings: another tab asks first (no → stay), «Ακύρωση αλλαγών» brings back what is saved
+  const school = await admin.inputValue("#school");
+  await admin.fill("#school", "Λάθος όνομα");
+  await admin.fill("#tpw", "xyzxyz");
+  let leaveAsked = "";
+  admin.removeAllListeners("dialog");
+  admin.once("dialog", (d) => { leaveAsked = d.message(); d.dismiss(); });
+  await admin.click("role=tab[name='Αρχεία']");
+  admin.on("dialog", (d) => d.accept());
+  if (!leaveAsked.includes("δεν αποθηκεύσατε") || await admin.inputValue("#school") !== "Λάθος όνομα") throw new Error(`changing tab with unsaved settings: ${leaveAsked}`);
+  await admin.click("button:has-text('Ακύρωση αλλαγών')");
+  if (await admin.inputValue("#school") !== school || await admin.inputValue("#tpw")) throw new Error("«Ακύρωση αλλαγών» did not restore the settings");
   await admin.fill("#ppw", "omiloi2026");
   const inTwoDays = new Date(Date.now() + 2 * 86400000);
   await admin.fill("#deadline", new Date(inTwoDays.getTime() - inTwoDays.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
@@ -187,7 +219,7 @@ try {
   await admin.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
   await admin.click("text=Επόμενη φάση: Δηλώσεις γονέων");
   await admin.waitForSelector("ol.steps li.current:has-text('Δηλώσεις γονέων')");
-  step("admin: parents' password + deadline, phase → parents");
+  step("admin: settings — «Ακύρωση αλλαγών»; parents' password + deadline, phase → parents");
 
   // ---------- Parent (phone size) ----------
   const parent = await newPage({ width: 390, height: 844 });
@@ -298,6 +330,17 @@ try {
   // «Επαναφορά της Δευτέρας» brings back the first-visit order; «Διαγραφή
   // δήλωσης» deletes the saved declaration. Then the same one is made again.
   if ((await names()).join() !== afterDrag.join()) throw new Error(`saved Monday order not shown: ${await names()}`);
+  // A change not saved: logging out asks (no → stay); «Ακύρωση αλλαγών» brings back the saved order
+  await mon.locator("li >> nth=0").locator("button[aria-label$='μία θέση κάτω']").click();
+  await parent.locator(".unsaved:has-text('Μη αποθηκευμένες αλλαγές')").waitFor();
+  let logoutAsked = "";
+  parent.once("dialog", (d) => { logoutAsked = d.message(); d.dismiss(); });
+  await parent.click("#logout");
+  if (!logoutAsked.includes("δεν αποθηκεύσατε") || !(await parent.locator("ol.ranker").count())) throw new Error(`logout with unsaved changes: ${logoutAsked}`);
+  await parent.click("button:has-text('Ακύρωση αλλαγών')");
+  if ((await names()).join() !== afterDrag.join()) throw new Error(`«Ακύρωση αλλαγών» did not restore Monday: ${await names()}`);
+  if (await parent.locator("button:has-text('Ακύρωση αλλαγών')").isVisible()) throw new Error("«Ακύρωση αλλαγών» still shown");
+  step("parent: unsaved change — logout asks, «Ακύρωση αλλαγών» restores the saved order");
   parent.once("dialog", (d) => d.accept());
   await parent.click("button:has-text('Επαναφορά της Δευτέρας')");
   if ((await names()).join() !== before.join()) throw new Error(`Monday reset failed: ${await names()}`);

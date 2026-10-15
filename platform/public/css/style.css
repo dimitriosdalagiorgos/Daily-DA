@@ -330,7 +330,7 @@ label.check-row input { width: 18px; height: 18px; }
 .tri button[aria-pressed="true"].s-wish { background: var(--primary); color: var(--primary-ink); }
 .tri button[aria-pressed="true"].s-none { background: var(--surface-2); }
 .tri button[aria-pressed="true"].s-out { background: var(--err); color: #fff; }
-.list-editor [hidden] { display: none !important; }
+[hidden] { display: none !important; }
 .list-editing.saving { opacity: 0.6; }
 @media (max-width: 560px) {
   .list-type { font-size: 0.9rem; padding: 4px 8px; }

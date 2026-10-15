@@ -38,9 +38,21 @@ let state = null;
 let tab = "overview";
 let resultsTab = "fill"; // sub-tab of the allocation results
 let devOutbox = false;
+let listsSaved = false; // a «Διόρθωση» saved: the clubs table is redrawn once no other one has unsaved edits
 
-api.onExpired = () => { api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
-logout.addEventListener("click", () => { api.setToken(null); loginView(); });
+// Forms with edits not saved yet (the settings, a «Διόρθωση») register a
+// check here; changing tab or phase, logging out or leaving asks first
+const unsaved = new Set();
+const hasUnsaved = () => [...unsaved].some((check) => check());
+const leaveOk = () => !hasUnsaved() || confirm("Υπάρχουν αλλαγές που δεν αποθηκεύσατε. Συνέχεια χωρίς αποθήκευση;");
+
+api.onExpired = () => { unsaved.clear(); api.setToken(null); loginView(message("warn", "Η σύνδεση έληξε. Συνδεθείτε ξανά.")); };
+logout.addEventListener("click", () => {
+  if (!leaveOk()) return;
+  unsaved.clear();
+  api.setToken(null);
+  loginView();
+});
 
 async function start() {
   if (api.hasToken()) {
@@ -70,15 +82,17 @@ function loginView(notice) {
 
 async function refresh() {
   state = await api("GET", "/api/admin/state");
+  listsSaved = false;
   devOutbox = await api("GET", "/api/admin/outbox").then(() => true, () => false);
   render();
 }
 
 function render() {
+  unsaved.clear(); // the views drawn below register their own
   logout.classList.remove("hidden");
   const tabs = [["overview", "Πορεία & ρυθμίσεις"], ["data", "Αρχεία"], ["students", "Μαθητές"], ["clubs", "Όμιλοι"], ["allocation", "Κατανομή"], ["history", "Ιστορικό"], ...(devOutbox ? [["outbox", "Εξερχόμενα email"]] : []), ["help", "Βοήθεια"]];
   const nav = el("nav.tabs", { role: "tablist" }, tabs.map(([id, label]) =>
-    el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), onclick: () => { tab = id; render(); } }, label)));
+    el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), onclick: () => { if (tab !== id && !leaveOk()) return; tab = id; render(); } }, label)));
   const views = { overview, data, students, clubs, allocation, history, outbox, help: () => helpTabs(["admin", "teacher", "parent"]) };
   show(app, el("h1", {}, "Διαχείριση"), phaseBar(), nav, el("div", { role: "tabpanel" }, views[tab]()));
 }
@@ -90,7 +104,7 @@ function phaseBar() {
   const idx = PHASES.findIndex(([p]) => p === phase);
   const out = el("div");
   const go = (target, confirmText) => async (e) => {
-    if (confirmText && !confirm(confirmText)) return;
+    if (!leaveOk() || (confirmText && !confirm(confirmText))) return;
     await busy(e.currentTarget, out, async () => {
       await api("POST", "/api/admin/phase", { phase: target });
       await refresh();
@@ -132,6 +146,29 @@ function overview() {
     parentPassword: el("input", { id: "ppw", type: "text", autocomplete: "off", placeholder: s.parentPasswordSet ? "Έχει οριστεί — γράψτε νέο για αλλαγή" : "Τουλάχιστον 6 χαρακτήρες" }),
     teacherPassword: el("input", { id: "tpw", type: "text", autocomplete: "off", placeholder: s.teacherPasswordSet ? "Έχει οριστεί — γράψτε νέο για αλλαγή" : "Τουλάχιστον 6 χαρακτήρες" }),
   };
+  // What is saved, to compare with and to go back to («Ακύρωση αλλαγών»)
+  const saved = { schoolName: f.schoolName.value, contact: f.contact.value, deadline: f.deadline.value, mandatory: f.mandatory.map((c) => c.checked) };
+  const dirty = () => f.schoolName.value !== saved.schoolName || f.contact.value !== saved.contact || f.deadline.value !== saved.deadline
+    || f.mandatory.some((c, i) => c.checked !== saved.mandatory[i]) || Boolean(f.parentPassword.value || f.teacherPassword.value);
+  const unsavedNote = el("span.small.unsaved");
+  const cancel = el("button.small", { type: "button", hidden: true }, "Ακύρωση αλλαγών");
+  const markDirty = () => {
+    unsavedNote.textContent = dirty() ? "Μη αποθηκευμένες αλλαγές" : "";
+    cancel.hidden = !dirty();
+  };
+  for (const input of [f.schoolName, f.contact, f.deadline, f.parentPassword, f.teacherPassword, ...f.mandatory]) input.addEventListener("input", markDirty);
+  for (const c of f.mandatory) c.addEventListener("change", markDirty);
+  cancel.addEventListener("click", () => {
+    f.schoolName.value = saved.schoolName;
+    f.contact.value = saved.contact;
+    f.deadline.value = saved.deadline;
+    f.mandatory.forEach((c, i) => { c.checked = saved.mandatory[i]; });
+    f.parentPassword.value = "";
+    f.teacherPassword.value = "";
+    show(out, null);
+    markDirty();
+  });
+  unsaved.add(dirty);
   const save = el("button.primary", { type: "button" }, "Αποθήκευση ρυθμίσεων");
   save.addEventListener("click", () => busy(save, out, async () => {
     const body = {
@@ -173,7 +210,7 @@ function overview() {
         el("p.small.muted", { style: "margin:2px 0 6px" }, "Για αυτές τις τάξεις κάθε μαθητής πρέπει να πάρει όμιλο κάθε ημέρα: οι δηλώσεις δεν ανοίγουν αν οι θέσεις δεν φτάνουν, και μετά την κατανομή εμφανίζεται όποιος έμεινε εκτός."),
         el("div.actions", { style: "margin-top:0" }, f.mandatory.map((c) => el("label", { style: "font-weight:400;margin:0" }, c, ` ${c.value} τάξη`)))),
       out,
-      el("div.actions", {}, save)),
+      el("div.actions", {}, save, unsavedNote, cancel)),
     dangerZone());
 }
 
@@ -510,7 +547,7 @@ function teacherListFiles() {
             !r.problems.length && !r.warnings.length ? el("span", { style: "color:var(--ok)" }, "✓") : null)))))),
       ok ? message("info", "Ελέγξτε τον πίνακα και πατήστε «Αποθήκευση». Οι λίστες αντικαθιστούν όσες υπάρχουν για αυτούς τους ομίλους.")
         : message("err", "Κάποια αρχεία έχουν σφάλματα (✗). Διορθώστε τα και επιλέξτε ξανά όλα τα αρχεία· δεν αποθηκεύτηκε τίποτα."),
-      el("div.actions", {}, save));
+      el("div.actions", {}, save, el("button", { type: "button", onclick: () => { files = []; show(preview, null); } }, "Ακύρωση")));
   };
   input.addEventListener("change", () => busy(input, preview, async () => {
     const XLSX = [...input.files].some((f) => !/\.csv$/i.test(f.name)) ? await loadXlsx() : null;
@@ -669,7 +706,7 @@ function similarCell(club, editable) {
       await api("PUT", `/api/admin/clubs/${club.code}/similar`, { similar: input.value });
       await refresh();
     }));
-    cell.replaceChildren(input, el("p.small.muted", {}, "Ίδια λέξη = παρεμφερείς· κενό = κανένας."), out, el("div.actions", {}, save, el("button.small", { type: "button", onclick: view }, "Άκυρο")));
+    cell.replaceChildren(input, el("p.small.muted", {}, "Ίδια λέξη = παρεμφερείς· κενό = κανένας."), out, el("div.actions", {}, save, el("button.small", { type: "button", onclick: view }, "Ακύρωση")));
     input.focus();
   }
   view();
@@ -678,6 +715,11 @@ function similarCell(club, editable) {
 
 // The admin's «Διόρθωση»: the seats, and the list with the teachers' editor
 function editList(club, list, cell) {
+  // In a row of its own below the club's, across the whole table; one already open is closed first
+  const row = cell.closest("tr");
+  const open = row.nextElementSibling;
+  if (open?.classList.contains("list-edit") && !open.discard()) return;
+  let dirty = false; // edits not saved: «Κλείσιμο», another tab etc. ask first
   const cap = el("input", { type: "number", min: 1, value: list?.capacity ?? club.capacity, "aria-label": "Χωρητικότητα", style: "width:7em" });
   const editor = listEditor({
     club,
@@ -686,22 +728,30 @@ function editList(club, list, cell) {
     canEdit: true,
     parentsPhase: state.settings.phase === "parents",
     capacityInput: cap,
+    onDirty: (d) => { dirty = d; },
     onSave: async (payload) => {
       const { list: entry } = await api("PUT", `/api/admin/teacher-lists/${club.code}`, { capacity: Number(cap.value), ...payload });
-      changed = true;
+      listsSaved = true; // the table is redrawn on «Κλείσιμο», so the editor's messages stay visible until then
       return entry;
     },
   });
-  // The page is redrawn on «Κλείσιμο», so the editor's messages stay visible until then
-  let changed = false;
-  // In a row of its own below the club's, across the whole table
-  const row = cell.closest("tr");
-  row.nextElementSibling?.classList.contains("list-edit") && row.nextElementSibling.remove();
-  row.after(el("tr.list-edit", {}, el("td", { colspan: row.children.length },
+  const check = () => dirty;
+  unsaved.add(check);
+  // Only this row closes: other open «Διορθώσεις» keep their edits
+  const discard = () => {
+    if (dirty && !confirm("Υπάρχουν αλλαγές στη λίστα ή στη χωρητικότητα που δεν αποθηκεύσατε. Κλείσιμο χωρίς αποθήκευση;")) return false;
+    unsaved.delete(check);
+    editRow.remove();
+    return true;
+  };
+  const close = () => { if (discard() && listsSaved && !hasUnsaved()) refresh(); };
+  const editRow = el("tr.list-edit", {}, el("td", { colspan: row.children.length },
     el("h3", { style: "margin-top:0" }, `Λίστα εκπαιδευτικού: ${club.name}`),
     el("label", {}, "Χωρητικότητα", cap),
     editor,
-    el("div.actions", {}, el("button.small", { type: "button", onclick: () => (changed ? refresh() : render()) }, "Κλείσιμο")))));
+    el("div.actions", {}, el("button.small", { type: "button", onclick: close }, "Κλείσιμο"))));
+  editRow.discard = discard;
+  row.after(editRow);
   cap.focus();
 }
 
@@ -1194,6 +1244,8 @@ function outbox() {
       el("div.actions", {}, send)),
     box);
 }
+
+window.addEventListener("beforeunload", (e) => { if (hasUnsaved()) e.preventDefault(); });
 
 function linkify(text) {
   return text.split(/(https?:\/\/\S+)/).map((part) => (/^https?:\/\//.test(part) ? el("a", { href: part }, part) : part));
