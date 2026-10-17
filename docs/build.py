@@ -10,6 +10,11 @@ as an appendix. The parents' and teachers' manuals are also copied to
 platform/public/docs/, so the platform's help page can link to them, and
 so are the interactive pages (docs/*.html: the worked example and its
 animation), which need no building.
+
+The parents' information note (enimerosi-goneon.md) is also written as a
+stand-alone web page for the school's site (enimerosi-goneon.html). It
+has blanks [in brackets] for the school's details, so it is not copied
+to the platform.
 """
 
 import os
@@ -31,7 +36,69 @@ MANUALS = [
     ("manual-parents.md", "Egxeiridio_Goneis", None, True),
     ("manual-teachers.md", "Egxeiridio_Ekpaideutikoi", "algorithm-theory.md", True),
     ("manual-R.md", "Egxeiridio_R", None, True),
+    ("enimerosi-goneon.md", "Enimerosi_Goneon", None, False),
 ]
+
+NOTE = "enimerosi-goneon"  # also a web page for the school's site; not for the platform
+
+# Scoped under .omiloi-info, so the part between the two comments can also be
+# pasted into a site editor's HTML mode without touching the site's own styles.
+PAGE_CSS = """
+.omiloi-info { --ink:#1a1a1a; --muted:#555; --accent:#1f4e79; --line:#d0d7de; --fill:#fff3b0;
+  max-width:46rem; margin:0 auto; padding:1.5rem 1rem 3rem; background:#fff; color:var(--ink);
+  font-family:Arial, "Helvetica Neue", sans-serif; font-size:1.05rem; line-height:1.55; }
+.omiloi-info h1 { font-size:1.7rem; line-height:1.25; color:var(--accent); margin:0 0 1rem; }
+.omiloi-info h2 { font-size:1.3rem; color:var(--accent); margin:2rem 0 .6rem; padding-bottom:.25rem; border-bottom:2px solid var(--line); }
+.omiloi-info p, .omiloi-info li { margin:.45rem 0; }
+.omiloi-info ol, .omiloi-info ul { padding-left:1.4rem; }
+.omiloi-info a { color:var(--accent); }
+.omiloi-info nav { background:#f4f7fa; border:1px solid var(--line); border-radius:8px; padding:.6rem 1rem; margin:1rem 0 1.5rem; }
+.omiloi-info nav ul { list-style:none; padding:0; margin:0; display:flex; flex-wrap:wrap; gap:.3rem 1.2rem; }
+.omiloi-info .fill { background:var(--fill); padding:0 .2em; border-radius:3px; }
+.omiloi-info .faq p strong:first-child { display:block; margin-top:1rem; }
+"""
+
+
+def slug(text):
+    return re.sub(r"[^\w]+", "-", text.lower()).strip("-")
+
+
+def build_page():
+    """enimerosi-goneon.md → a stand-alone page: contents, blanks marked in yellow."""
+    text = (DOCS / f"{NOTE}.md").read_text(encoding="utf-8")
+    title = re.match(r"# (.*)", text).group(1)
+    body = markdown.markdown(re.sub(r"\A# .*\n", "", text), extensions=["sane_lists", "nl2br"])
+    heads = re.findall(r"<h2>(.*?)</h2>", body)
+    for h in heads:
+        body = body.replace(f"<h2>{h}</h2>", f'<h2 id="{slug(h)}">{h}</h2>', 1)
+    body = re.sub(r"\[([^\]<]+)\]", r'<span class="fill">[\1]</span>', body)
+    body = body.replace('<h2 id="συχνές-ερωτήσεις">Συχνές ερωτήσεις</h2>', '<h2 id="συχνές-ερωτήσεις">Συχνές ερωτήσεις</h2>\n<div class="faq">', 1)
+    body = body.replace(f'<h2 id="{slug("Επικοινωνία")}">', f'</div>\n<h2 id="{slug("Επικοινωνία")}">', 1)
+    nav = "".join(f'<li><a href="#{slug(h)}">{h}</a></li>' for h in heads)
+    page = f"""<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<!-- Φτιάχνεται από το docs/{NOTE}.md με το docs/build.py: αλλαγές εκεί, όχι εδώ.
+     Πριν το ανεβάσετε στο site του σχολείου, αντικαταστήστε ό,τι είναι [σε αγκύλες] (κίτρινο φόντο).
+     Σε editor ιστοσελίδας (λειτουργία HTML) αρκεί το κομμάτι ανάμεσα στα δύο σχόλια «ΑΡΧΗ» και «ΤΕΛΟΣ». -->
+</head>
+<body style="margin:0;background:#fff">
+<!-- ΑΡΧΗ: ενημέρωση γονέων -->
+<style>{PAGE_CSS}</style>
+<div class="omiloi-info">
+<h1>{title}</h1>
+<nav aria-label="Περιεχόμενα"><ul>{nav}</ul></nav>
+{body}
+</div>
+<!-- ΤΕΛΟΣ: ενημέρωση γονέων -->
+</body>
+</html>
+"""
+    (DOCS / f"{NOTE}.html").write_text(page, encoding="utf-8")
+    print(f"✓ {NOTE}.html")
 
 CSS = """
 @page { size: A4; margin: 2cm; }
@@ -109,5 +176,7 @@ if __name__ == "__main__":
         if public:
             for ext in ("docx", "pdf"):
                 shutil.copy(DOCS / f"{out_name}.{ext}", PUBLIC / f"{out_name}.{ext}")
+    build_page()
     for page in DOCS.glob("*.html"):
-        shutil.copy(page, PUBLIC / page.name)
+        if page.stem != NOTE:
+            shutil.copy(page, PUBLIC / page.name)
