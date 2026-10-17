@@ -45,7 +45,9 @@ case "$m" in
      else warn "Μνήμη πλατφόρμας: $(mb "$m") MB από 128 (κοντά στο όριο)"; fi ;;
 esac
 
-# Answers: directly, and through Apache with the HTTPS certificate
+# Answers: directly, and through the web server (Apache, or nginx: README §6.5)
+# with the HTTPS certificate
+W=apache2; systemctl is-active --quiet nginx && W=nginx
 j=$(curl -fs -m 10 "http://127.0.0.1:$P/api/public")
 if [ -n "$j" ]; then
   ph=$(echo "$j" | sed -n 's/.*"phase":"\([a-z]*\)".*/\1/p')
@@ -59,9 +61,9 @@ else
 fi
 if [ -n "$H" ]; then
   if curl -fs -m 10 -o /dev/null --resolve "$H:443:127.0.0.1" "https://$H/api/public"; then
-    ok "Ο Apache και το HTTPS απαντούν"
+    ok "Ο $W και το HTTPS απαντούν"
   else
-    fail "Ο Apache ή το HTTPS δεν απαντά: sudo systemctl restart apache2"
+    fail "Ο $W ή το HTTPS δεν απαντά: sudo systemctl restart $W"
   fi
   if command -v openssl >/dev/null; then
     c=$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$H" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | sed 's/^notAfter=//')
@@ -102,10 +104,12 @@ else warn "Ελεύθερη μνήμη VM: μόνο $a MB"; fi
 b=$(ls -t "$B"/omiloi-[1-7].json 2>/dev/null | head -1)
 if [ -z "$b" ]; then
   fail "Δεν υπάρχει νυχτερινό αντίγραφο στο $B"
-elif [ -n "$(find "$b" -mmin -1560)" ]; then
-  ok "Νυχτερινό αντίγραφο: $(date -r "$b" '+%d/%m %H:%M'), $(du -k "$b" | cut -f1) KB"
-else
+elif [ -z "$(find "$b" -mmin -1560)" ]; then
   fail "Το τελευταίο νυχτερινό αντίγραφο είναι παλιό: $(date -r "$b" '+%d/%m %H:%M')"
+elif ! node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$b" 2>/dev/null; then
+  fail "Το τελευταίο νυχτερινό αντίγραφο είναι κενό ή κομμένο (γεμάτος δίσκος;): $(date -r "$b" '+%d/%m %H:%M')"
+else
+  ok "Νυχτερινό αντίγραφο: $(date -r "$b" '+%d/%m %H:%M'), $(du -k "$b" | cut -f1) KB"
 fi
 
 # Errors today
