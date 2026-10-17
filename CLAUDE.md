@@ -48,7 +48,7 @@ python3 docs/build.py                      # από τη ρίζα: ξαναφτ�
     - Το project **demo** δημοσιεύει **μόνο** από τον κλάδο `demo` (`WORKFLOW.md` §9). Ο `demo` είναι αντίγραφο του `main`, χωρίς δικές του αλλαγές. «Ενημέρωσε το demo» σημαίνει: `git fetch origin main demo`, merge του `origin/main` στον `demo` με `--no-ff` και μήνυμα που περιέχει `[deploy]`, push στον `demo`. Ποτέ merge από τον `demo` προς τον `main`, ποτέ αλλαγές μόνο στον `demo`.
 - **Ροή εργασίας:** αλλαγές σε κλάδο εργασίας → pull request προς τον `main` → merge **από τον χρήστη** (εκτός αν πει «κάνε το merge»). Πριν από push: `npm test`, και για αλλαγές UI ή ροής το e2e.
 - **Παρακολούθηση pull request:** κάθε pull request που ανοίγει το Claude μπαίνει **αμέσως** σε παρακολούθηση (σχόλια, έλεγχοι CI), χωρίς ερώτηση· ο χρήστης το έχει ζητήσει μόνιμα. Το Claude απαντά στα σχόλια και διορθώνει αποτυχίες μέχρι να γίνει merge.
-- Αλλαγή συμπεριφοράς → ενημέρωση και των κειμένων: `public/js/help.js` (Βοήθεια), `docs/*.md` (και `python3 docs/build.py`), `README.md`, `platform/SPEC.md`.
+- Αλλαγή συμπεριφοράς → ενημέρωση και των κειμένων: `public/js/help.js` (Βοήθεια), `docs/*.md` (και `python3 docs/build.py`· για τους γονείς και το `docs/enimerosi-goneon.md`, από το οποίο φτιάχνεται και η σελίδα για το site του σχολείου), `README.md`, `platform/SPEC.md`.
 
 ## Βασικές αποφάσεις (λεπτομέρειες στο SPEC.md)
 
