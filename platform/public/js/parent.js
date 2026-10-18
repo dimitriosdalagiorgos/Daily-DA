@@ -224,6 +224,7 @@ function mainView(me, { justSubmitted = false, draft = null } = {}) {
   const refreshAll = () => { for (const r of Object.values(rankers)) r.refresh(); markDirty(); };
   // What is on screen at first (the saved declaration, if any): «Ακύρωση αλλαγών» goes back to it
   const startOrders = {};
+  const savedOrders = {};
   const snapshot = () => JSON.stringify([parentName.value, parentEmail.value, days.map((d) => rankers[d.day]?.order() ?? [])]);
   let startKey = null;
   const dirty = () => startKey !== null && snapshot() !== startKey;
@@ -259,11 +260,15 @@ function mainView(me, { justSubmitted = false, draft = null } = {}) {
       const added = saved ? codes.filter((c) => !saved.includes(c)) : [];
       const savedOrder = saved ? [...saved, ...added] : initialOrder(codes, `${student.am}:${d.day}`);
       startOrders[d.day] = savedOrder;
+      // A redrawn draft compares with what the server has, so a club that
+      // came in meanwhile counts as unsaved until the parent saves
+      savedOrders[d.day] = draft && saved ? saved : savedOrder;
       let order = savedOrder;
       if (added.length && canEdit && !draft) {
         panel.append(message("warn", `Μετά τη δήλωσή σας προστέθηκε ${added.length === 1 ? "ο όμιλος" : "οι όμιλοι"} ${added.map(nameOf).join(", ")} στο τέλος της σειράς ${DAY_GEN[d.day]}. Μετακινήστε ${added.length === 1 ? "τον" : "τους"} αν θέλετε και πατήστε «Αποθήκευση αλλαγών»· αλλιώς δεν θα ληφθ${added.length === 1 ? "εί" : "ούν"} υπόψη.`));
       }
-      const onScreen = draft?.preferences?.[d.day];
+      // A day with nothing to rank before the refused submission: all its clubs are new
+      const onScreen = draft ? (draft.preferences?.[d.day] ?? []) : null;
       if (onScreen) {
         // The order on screen before the refused submission: clubs that came
         // in meanwhile go last, clubs that left are dropped
@@ -323,7 +328,7 @@ function mainView(me, { justSubmitted = false, draft = null } = {}) {
   }
 
   // The saved declaration (or the first-visit order): a redrawn draft still counts as unsaved
-  startKey = JSON.stringify([submission?.parent?.name ?? "", submission?.parent?.email ?? "", days.map((d) => startOrders[d.day] ?? [])]);
+  startKey = JSON.stringify([submission?.parent?.name ?? "", submission?.parent?.email ?? "", days.map((d) => savedOrders[d.day] ?? [])]);
   if (draft?.parent) {
     parentName.value = draft.parent.name;
     parentEmail.value = draft.parent.email;
