@@ -104,7 +104,14 @@ async function loginView(notice) {
 
 // ---------- Main ----------
 
-function mainView(me, { justSubmitted = false } = {}) {
+// The form's clubs, to tell whether they changed while the page was open
+const clubsKey = (days) => JSON.stringify(days.map((d) => [d.day, d.clubs.map((c) => c.code), d.locked.map((c) => c.code)]));
+
+// `draft`: what the parent had on screen when a submission was refused
+// because the clubs changed meanwhile (a teacher lifted or added an
+// exclusion, the school removed a club). The form is redrawn with the
+// current clubs and keeps that order; new clubs go last.
+function mainView(me, { justSubmitted = false, draft = null } = {}) {
   logout.classList.remove("hidden");
   unsavedText = () => "";
   const { student, days, submission, canEdit, result } = me;
@@ -142,6 +149,9 @@ function mainView(me, { justSubmitted = false } = {}) {
     nodes.push(message("info", me.phase === "parents" ? "Η προθεσμία έληξε· η δήλωση δεν αλλάζει πια." : "Οι δηλώσεις δεν δέχονται αλλαγές αυτή τη στιγμή."));
   }
   if (canEdit && me.deadline) nodes.push(el("p", {}, "Προθεσμία: ", el("strong", {}, formatDateTime(me.deadline))));
+  if (draft && canEdit) {
+    nodes.push(message("warn", `Η ${submission ? "αποθήκευση" : "υποβολή"} δεν έγινε: οι όμιλοι άλλαξαν όσο ήταν ανοιχτή η σελίδα. Η φόρμα ενημερώθηκε και κράτησε τη σειρά που είχατε βάλει. Δείτε τις ημέρες με κίτρινο μήνυμα και πατήστε ξανά «${submission ? "Αποθήκευση αλλαγών" : "Υποβολή δήλωσης"}».`));
+  }
 
   if (!canEdit && !submission) {
     show(app, nodes);
@@ -181,7 +191,7 @@ function mainView(me, { justSubmitted = false } = {}) {
   const kind = (c) => (c.days.length === 3 ? "Τριπλός όμιλος" : "Διπλός όμιλος");
   const daysText = (c) => c.days.map((x) => DAY_NAMES[x]).join(" + ");
   const rankers = {};
-  const visited = new Set(submission ? days.map((d) => d.day) : []);
+  const visited = new Set([...(submission ? days.map((d) => d.day) : []), ...(draft?.visited ?? [])]);
 
   // Multi-day clubs of the student's grade, for clashes between them
   const multi = [...new Map(days.flatMap((d) => [...d.clubs, ...d.locked]).filter((c) => c.days.length > 1).map((c) => [c.code, c])).values()];
@@ -244,12 +254,30 @@ function mainView(me, { justSubmitted = false } = {}) {
     if (d.clubs.length) {
       // A club a teacher stopped excluding after this submission: kept order, new ones last
       const codes = d.clubs.map((c) => c.code);
+      const nameOf = (code) => `«${d.clubs.find((x) => x.code === code).name}»`;
       const saved = submission?.preferences?.[d.day]?.filter((c) => codes.includes(c));
       const added = saved ? codes.filter((c) => !saved.includes(c)) : [];
-      const order = saved ? [...saved, ...added] : initialOrder(codes, `${student.am}:${d.day}`);
-      startOrders[d.day] = order;
-      if (added.length && canEdit) {
-        panel.append(message("warn", `Μετά τη δήλωσή σας προστέθηκε ${added.length === 1 ? "ο όμιλος" : "οι όμιλοι"} ${added.map((c) => `«${d.clubs.find((x) => x.code === c).name}»`).join(", ")} στο τέλος της σειράς ${DAY_GEN[d.day]}. Μετακινήστε ${added.length === 1 ? "τον" : "τους"} αν θέλετε και πατήστε «Αποθήκευση αλλαγών»· αλλιώς δεν θα ληφθ${added.length === 1 ? "εί" : "ούν"} υπόψη.`));
+      const savedOrder = saved ? [...saved, ...added] : initialOrder(codes, `${student.am}:${d.day}`);
+      startOrders[d.day] = savedOrder;
+      let order = savedOrder;
+      if (added.length && canEdit && !draft) {
+        panel.append(message("warn", `Μετά τη δήλωσή σας προστέθηκε ${added.length === 1 ? "ο όμιλος" : "οι όμιλοι"} ${added.map(nameOf).join(", ")} στο τέλος της σειράς ${DAY_GEN[d.day]}. Μετακινήστε ${added.length === 1 ? "τον" : "τους"} αν θέλετε και πατήστε «Αποθήκευση αλλαγών»· αλλιώς δεν θα ληφθ${added.length === 1 ? "εί" : "ούν"} υπόψη.`));
+      }
+      const onScreen = draft?.preferences?.[d.day];
+      if (onScreen) {
+        // The order on screen before the refused submission: clubs that came
+        // in meanwhile go last, clubs that left are dropped
+        const kept = onScreen.filter((c) => codes.includes(c));
+        const came = codes.filter((c) => !kept.includes(c));
+        // (a club excluded since the saved declaration has its own message above)
+        const left = onScreen.filter((c) => !codes.includes(c) && !d.withdrawn?.some((w) => w.code === c));
+        order = [...kept, ...came];
+        if (came.length) {
+          panel.append(message("warn", `Όσο ήταν ανοιχτή η σελίδα προστέθηκε ${came.length === 1 ? "ο όμιλος" : "οι όμιλοι"} ${came.map(nameOf).join(", ")}. Μπήκ${came.length === 1 ? "ε" : "αν"} στο τέλος της σειράς ${DAY_GEN[d.day]}: μετακινήστε ${came.length === 1 ? "τον" : "τους"} στη θέση που θέλετε.`));
+        }
+        if (left.length) {
+          panel.append(message("warn", `Όσο ήταν ανοιχτή η σελίδα, ${left.length === 1 ? "ο όμιλος" : "οι όμιλοι"} ${left.map((c) => `«${draft.names?.[c] ?? c}»`).join(", ")} δεν είναι πια διαθέσιμ${left.length === 1 ? "ος" : "οι"} για το παιδί και βγήκ${left.length === 1 ? "ε" : "αν"} από τη σειρά ${DAY_GEN[d.day]}. Οι υπόλοιποι έμειναν στη σειρά που είχατε βάλει.`));
+        }
       }
       const items = d.clubs.map((c) => {
         const notes = [];
@@ -294,7 +322,13 @@ function mainView(me, { justSubmitted = false } = {}) {
     panels[d.day] = panel;
   }
 
-  startKey = snapshot();
+  // The saved declaration (or the first-visit order): a redrawn draft still counts as unsaved
+  startKey = JSON.stringify([submission?.parent?.name ?? "", submission?.parent?.email ?? "", days.map((d) => startOrders[d.day] ?? [])]);
+  if (draft?.parent) {
+    parentName.value = draft.parent.name;
+    parentEmail.value = draft.parent.email;
+  }
+  markDirty();
   for (const input of [parentName, parentEmail]) input.addEventListener("input", markDirty);
   cancel?.addEventListener("click", () => {
     parentName.value = submission.parent?.name ?? "";
@@ -358,7 +392,20 @@ function mainView(me, { justSubmitted = false } = {}) {
       const unseen = days.filter((d) => !visited.has(d.day) && d.clubs.length).map((d) => d.label);
       if (unseen.length && !confirm(`Δεν έχετε δει τη σειρά για: ${unseen.join(", ")}. Εκεί θα μείνει η τυχαία σειρά. Υποβολή παρ' όλα αυτά;`)) return;
       const preferences = Object.fromEntries(days.filter((d) => d.clubs.length).map((d) => [d.day, rankers[d.day].order()]));
-      await api("PUT", "/api/parent/submission", { parent: { name: parentName.value, email: parentEmail.value }, preferences });
+      const parent = { name: parentName.value, email: parentEmail.value };
+      try {
+        await api("PUT", "/api/parent/submission", { parent, preferences });
+      } catch (err) {
+        // Refused because the clubs changed while the page was open: redraw
+        // the form with the current clubs, keeping the parent's order
+        if (err.status !== 422 || !err.data?.problems) throw err;
+        const fresh = await api("GET", "/api/parent/me");
+        if (!fresh.canEdit || clubsKey(fresh.days) === clubsKey(days)) throw err;
+        const names = Object.fromEntries(days.flatMap((d) => d.clubs.map((c) => [c.code, c.name])));
+        mainView(fresh, { draft: { parent, preferences, visited: [...visited], names } });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
       const me2 = await api("GET", "/api/parent/me");
       mainView(me2, { justSubmitted: true });
       $("#app").prepend(message("ok", pub.mailEnabled

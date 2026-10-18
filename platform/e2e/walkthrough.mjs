@@ -377,6 +377,30 @@ try {
   await parent.waitForSelector(".msg.ok:has-text('καταχωρίστηκε')");
   step("parent: the same declaration submitted again");
 
+  // A teacher lifts a ⛔ while the form is open (the club was hidden when it
+  // loaded): the save is refused, the form is redrawn with the club last and
+  // the parent's order kept, and the next save goes through.
+  const { token: adminToken } = await api("/api/admin/login", { method: "POST", body: { password: "admin" } });
+  const parentToken = await parent.evaluate(() => sessionStorage.getItem("omiloi.parent.token"));
+  // The last club of the saved Monday: it comes back last, so the declaration ends up the same
+  const meNow = await api("/api/parent/me", { token: parentToken });
+  const monClub = meNow.days.find((d) => d.day === "mon").clubs.find((c) => c.code === meNow.submission.preferences.mon.at(-1));
+  const monList = (await api("/api/admin/state", { token: adminToken })).teacherLists[monClub.code] ?? {};
+  const putList = (blocked) => api(`/api/admin/teacher-lists/${monClub.code}`, { token: adminToken, method: "PUT", body: { ams: monList.ams ?? [], blocked, closed: false } });
+  await putList([...(monList.blocked ?? []), "9022"]);
+  await parent.reload();
+  await mon.waitFor();
+  if ((await names()).includes(monClub.name)) throw new Error("the ⛔ club is still on the form");
+  const monShown = await names();
+  await putList(monList.blocked ?? []);
+  await parent.click("button:has-text('Αποθήκευση αλλαγών')");
+  await parent.waitForSelector(".msg.warn:has-text('οι όμιλοι άλλαξαν όσο ήταν ανοιχτή η σελίδα')");
+  await parent.locator(`.msg.warn:has-text('προστέθηκε ο όμιλος «${monClub.name}»')`).waitFor();
+  if ((await names()).join() !== [...monShown, monClub.name].join()) throw new Error(`redrawn Monday: ${await names()}`);
+  await parent.click("button:has-text('Αποθήκευση αλλαγών')");
+  await parent.waitForSelector(".msg.ok:has-text('καταχωρίστηκε')");
+  step("parent: a club unhidden while the form was open — save refused, form redrawn with it last, saved again");
+
   // Two more parents via the API, so the allocation has competition
   for (const [am, surname, name, father, mother] of [["9021", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "ΕΛΕΝΗ ΜΑΡΙΑ"], ["9041", "ΠΑΠΑΔΟΠΟΥΛΟΣ", "ΝΙΚΟΛΑΟΣ", "ΓΕΩΡΓΙΟΣ", "ΕΛΕΝΗ"]]) {
     const { token } = await api("/api/parent/login", { method: "POST", body: { password: "omiloi2026", am, surname, name, father, mother } });
