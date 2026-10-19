@@ -472,7 +472,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
 
   route("POST", "/api/admin/phase", async (req) => {
     session(req, "admin");
-    const { phase } = await body(req);
+    const { phase, force } = await body(req);
     if (!PHASES.includes(phase)) throw new HttpError(422, "Άγνωστη φάση.");
     const [settings, students, clubs, results] = await Promise.all([getSettings(), getStudents(), getClubs(), store.get("results")]);
     // The checks apply moving forward, and whenever declarations (re)open:
@@ -490,15 +490,18 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       if (phaseAtLeast(phase, "allocated") && !results) missing.push("εκτέλεση κατανομής");
     }
     if (missing.length) throw new HttpError(409, `Για αυτή τη φάση χρειάζονται: ${missing.join(", ")}.`);
+    let forced = null;
     if (check && phase === "parents") {
-      // Enough seats for the mandatory grades, or declarations do not open.
+      // Enough seats for the mandatory grades, or declarations open only on
+      // the admin's explicit confirmation (`force`, logged).
       const errors = checkReadiness(students, clubs, settings, await getExclusions(clubs, students)).filter((p) => p.level === "error");
-      if (errors.length) {
+      if (errors.length && force === true) forced = errors.map((p) => p.message);
+      else if (errors.length) {
         throw new HttpError(409, "Οι δηλώσεις δεν μπορούν να ανοίξουν: δεν υπάρχουν αρκετές θέσεις για τις τάξεις με υποχρεωτική ένταξη. Αυξήστε χωρητικότητες ή προσθέστε ομίλους.", { problems: errors.map((p) => p.message) });
       }
     }
     await store.update("settings", (s = {}) => ({ ...s, phase }));
-    await logEvent("admin", "phase", { from: settings.phase, to: phase });
+    await logEvent("admin", "phase", { from: settings.phase, to: phase, ...(forced ? { forced } : {}) });
     return json(200, { phase });
   });
 
@@ -867,6 +870,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const teacher = await teacherSession(req);
     const { email } = teacher;
     const [settings, teachers, clubs, students, lists, sections] = await Promise.all([getSettings(), getTeachers(), getClubs(), getStudents(), getTeacherLists(), store.get("sections")]);
+    const published = settings.phase === "published";
+    const [results, log] = published ? await Promise.all([store.get("results"), store.get("resultsLog")]) : [null, null];
     const mine = clubs.filter((c) => teacher.clubs.includes(c.code)).map((c) => ({
       ...c,
       list: lists[c.code]?.ams ?? [],
@@ -877,12 +882,40 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       reset: lists[c.code]?.reset ? resetText(c, lists[c.code].reset) : null,
       coTeachers: teachers.filter((t) => t.email !== email && t.clubs.includes(c.code)).map((t) => `${t.name} ${t.surname}`),
       eligible: students.filter((s) => c.grades.includes(s.grade)).map(({ am, surname, name, grade }) => ({ am, surname, name, grade, section: sectionOf(sections, am, grade) })),
+      ...(results && log ? { allocation: clubAllocation(c, results, log, lists[c.code]?.ams ?? [], settings.mandatoryGrades ?? [], students, sections) } : {}),
     }));
     return json(200, {
       teacher: { name: teacher.name, surname: teacher.surname, email },
       phase: settings.phase, canEdit: ["teachers", "parents"].includes(settings.phase) && listsOpen(settings), deadline: settings.deadline ?? null, clubs: mine,
     });
   });
+
+  /**
+   * How a club filled, for its teachers after the announcement: who got in
+   * and why (⭐, mandatory grade, lottery number, or a seat for everyone),
+   * and only counts for the others. The parents' rankings stay private
+   * (decided 19/10/2026, «(β)»). Decided on the club's first day.
+   */
+  function clubAllocation(club, results, log, wished, mandatoryGrades, students, sections) {
+    const code = String(club.code);
+    const day = club.days[0];
+    const events = (log[day] ?? []).filter((e) => e.club === code);
+    const applicants = new Set(events.filter((e) => e.event === "PROPOSAL").map((e) => e.am));
+    const full = events.some((e) => e.event === "REJECTED" || e.event === "DISPLACED");
+    const lottery = new Map(results.lottery);
+    const byAm = new Map(students.map((s) => [s.am, s]));
+    const star = new Set(wished.map(String));
+    // The mandatory grade counts as a reason only if it put the student ahead of someone
+    const mixed = [...applicants].some((am) => !mandatoryGrades.includes(byAm.get(am)?.grade));
+    const members = results.days[day].assignments.filter((a) => a.club === code).map(({ am }) => {
+      const s = byAm.get(am) ?? { am, surname: am, name: "", grade: "" };
+      const why = star.has(am) ? "wish" : !full ? "seat" : mixed && mandatoryGrades.includes(s.grade) ? "mandatory" : "lottery";
+      return { am, surname: s.surname, name: s.name, grade: s.grade, section: sectionOf(sections, am, s.grade), why, ...(why === "mandatory" || why === "lottery" ? { lottery: lottery.get(am) ?? null } : {}) };
+    });
+    const order = { wish: 0, mandatory: 1, lottery: 2, seat: 3 };
+    members.sort((a, b) => order[a.why] - order[b.why] || (a.lottery ?? 0) - (b.lottery ?? 0) || a.surname.localeCompare(b.surname, "el"));
+    return { applicants: applicants.size, notPlaced: [...applicants].filter((am) => !members.some((m) => m.am === am)).length, full, members };
+  }
 
   route("PUT", "/api/teacher/clubs/:code", async (req, { code }) => {
     const teacher = await teacherSession(req);

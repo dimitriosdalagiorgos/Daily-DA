@@ -23,6 +23,28 @@ export function message(kind, text, list = []) {
   return el(`div.msg.${kind}`, { role: kind === "err" ? "alert" : "status" }, text, list.length ? el("ul", {}, list.map((i) => el("li", {}, i))) : null);
 }
 
+/**
+ * A modal question (instead of confirm()), so the text can have a title,
+ * lists and emphasis. Resolves true for the main button, false otherwise
+ * (including Esc). `tone: "warn"` colours the frame for a decision with
+ * consequences.
+ */
+export function ask({ title, body = [], ok = "OK", cancel = "Ακύρωση", tone = "" }) {
+  return new Promise((resolve) => {
+    const okButton = el(`button${tone === "warn" ? ".warn-action" : ".primary"}`, { type: "button", value: "ok" }, ok);
+    const dialog = el(`dialog.ask${tone ? `.${tone}` : ""}`, { "aria-labelledby": "ask-title" },
+      el("form", { method: "dialog" },
+        el("h2#ask-title", {}, title),
+        el("div.ask-body", {}, body),
+        el("div.actions", {}, el("button", { type: "submit", value: "cancel" }, cancel), el("span.spacer"), okButton)));
+    okButton.type = "submit";
+    dialog.addEventListener("close", () => { dialog.remove(); resolve(dialog.returnValue === "ok"); });
+    document.body.append(dialog);
+    dialog.showModal();
+    dialog.querySelector("button[value=cancel]").focus();
+  });
+}
+
 export function show(container, ...nodes) {
   container.replaceChildren(...nodes.flat().filter(Boolean));
 }
