@@ -245,9 +245,17 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   r = await call("GET", "/api/parent/me", { token: fresh });
   assert.equal(r.status, 200);
   assert.equal(r.data.result, null, "not before publication");
+  assert.equal((await call("GET", "/api/teacher/me", { token: teacherAgain })).data.clubs[0].allocation, undefined, "teachers see the result only once announced");
   await call("POST", "/api/admin/phase", { token: admin, body: { phase: "published" } });
   r = await call("GET", "/api/parent/me", { token: fresh });
   assert.equal(r.data.result.mon.name, "Ρομποτική");
+  // The teacher sees who got in and why, and only counts for the others
+  const antigone = (await call("GET", "/api/teacher/me", { token: teacherAgain })).data.clubs.find((c) => c.code === 100).allocation;
+  assert.deepEqual(antigone.members.map((m) => [m.am, m.why]), [["9001", "wish"]]);
+  assert.equal(antigone.full, true);
+  assert.ok(antigone.applicants >= 2 && antigone.notPlaced === antigone.applicants - 1);
+  assert.ok(!JSON.stringify(antigone).includes("9002"), "the others are not named");
+  assert.ok(!JSON.stringify(antigone).includes("rank"), "the parents' rankings stay private");
   assert.equal(r.data.result.thu.name, "Άλγεβρα");
 });
 
@@ -471,6 +479,15 @@ test("mandatory grades: declarations do not open without enough seats; gaps list
   assert.equal(r.status, 409);
   assert.match(r.data.error, /υποχρεωτική ένταξη/);
   assert.equal(r.data.problems.length, 1);
+  // The admin may open them anyway, explicitly; the history says so
+  assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents", force: true } })).status, 200);
+  const opened = (await call("GET", "/api/admin/events", { token: admin })).data.events.find((e) => e.what === "phase" && e.to === "parents");
+  assert.deepEqual(opened.forced, ["Δευτέρα: οι όμιλοι για την Β τάξη έχουν 1 θέση για 3 μαθητές (υποχρεωτική ένταξη) — λείπουν 2 θέσεις."]);
+  // Reopening after «Κλειστές» needs the same confirmation
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "closed" } });
+  assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents" } })).status, 409);
+  assert.equal((await call("POST", "/api/admin/phase", { token: admin, body: { phase: "parents", force: true } })).status, 200);
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "teachers" } });
 
   // Only Α mandatory (as last year): opens, and the Β shortfall is a warning
   assert.equal((await call("PUT", "/api/admin/settings", { token: admin, body: { mandatoryGrades: ["Δ"] } })).status, 422);
