@@ -176,10 +176,13 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
 
   // ---------- shortcuts ----------
   const shortcuts = el("div.actions.shortcuts");
-  // Whole-list shortcuts only while nothing narrows the rows: with a filter
-  // on, the box offers changes for the rows shown only, never both at once
+  // Whole-list shortcuts only while nothing narrows the rows; with a filter
+  // on, the box offers changes for the rows shown. One exception: the ⭐
+  // chip alone keeps «Κλειστή λίστα», the natural step from the ⭐ list
+  // (decided 19/10/2026); a search or another filter hides it.
+  const starsOnly = () => shown === WISH && !search.value.trim() && !gradeFilter?.value && !sectionFilter?.value;
   const renderShortcuts = () => {
-    if (!canEdit || narrowed()) { shortcuts.replaceChildren(); return renderChanges(); }
+    if (!canEdit || (narrowed() && !starsOnly())) { shortcuts.replaceChildren(); return renderChanges(); }
     const c = counts();
     const items = [];
     if (c[WISH] && c[NONE]) {
@@ -203,13 +206,13 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
         },
       }, `🔒 Κλειστή λίστα: μόνο οι ⭐ (${c[NONE] === 1 ? "ο άλλος" : `οι άλλοι ${c[NONE]}`} → ⛔)`));
     }
-    if (c[OUT] && c[NONE] && c[NONE] <= capacity() - c[WISH]) {
+    if (!narrowed() && c[OUT] && c[NONE] && c[NONE] <= capacity() - c[WISH]) {
       items.push(el("button.small", {
         type: "button",
         onclick: () => { for (const am of ofState(NONE)) set(am, WISH); show(out, null); update(); },
       }, `⭐ σε όλους τους μη αποκλεισμένους (${c[NONE]})`));
     }
-    if (c[WISH] || c[OUT]) {
+    if (!narrowed() && (c[WISH] || c[OUT])) {
       items.push(el("button.small", {
         type: "button",
         onclick: () => {
@@ -219,6 +222,8 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
         },
       }, "○ Καθαρισμός: όλοι ουδέτεροι"));
     }
+    // Under the change for the ⭐ shown: said to be for the whole list
+    if (items.length && narrowed()) items.unshift(el("span.small", {}, "Για όλη τη λίστα:"));
     shortcuts.replaceChildren(...items);
     renderChanges();
   };
@@ -257,7 +262,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     if (!changes.childElementCount) {
       changes.append(
         el("div", {}, changesTitle, " ", el("span.changes-hint", {}, "— αλλάζουν τη λίστα· ισχύουν με «Αποθήκευση»")),
-        shortcuts, bulkBox);
+        bulkBox, shortcuts);
     }
   };
 
