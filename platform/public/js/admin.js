@@ -1,4 +1,4 @@
-import { $, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
+import { $, ask, busy, createApi, el, formatDateTime, message, show } from "./ui.js";
 import { readWorkbook } from "/lib/import/workbook.js";
 import { headerKey } from "/lib/import/table.js";
 import { decodeCsv, parseCsv } from "/lib/import/csv.js";
@@ -104,9 +104,15 @@ function phaseBar() {
   const idx = PHASES.findIndex(([p]) => p === phase);
   const out = el("div");
   const go = (target, confirmText) => async (e) => {
-    if (!leaveOk() || (confirmText && !confirm(confirmText))) return;
-    await busy(e.currentTarget, out, async () => {
-      await api("POST", "/api/admin/phase", { phase: target });
+    const button = e.currentTarget;
+    if (!leaveOk()) return;
+    // Opening (or reopening) the declarations: what the parents will not see, and missing seats
+    const check = target === "parents" ? openingCheck() : null;
+    if (check) {
+      if (!await check.ask()) return;
+    } else if (confirmText && !confirm(confirmText)) return;
+    await busy(button, out, async () => {
+      await api("POST", "/api/admin/phase", { phase: target, ...(check?.force ? { force: true } : {}) });
       await refresh();
     });
   };
@@ -130,6 +136,50 @@ function phaseBar() {
       el("span.spacer"),
       next && next[0] !== "allocated" ? el("button.primary", { type: "button", onclick: go(next[0], confirmNext[next[0]]) }, `Επόμενη φάση: ${next[1]} →`) : null,
       next && next[0] === "allocated" ? el("span.muted.small", {}, "Επόμενο βήμα: καρτέλα «Κατανομή».") : null));
+}
+
+// Before the declarations open: clubs some students will not see (closed
+// lists, ⛔) and missing seats. Changing either once parents have declared
+// means asking them to declare again, so the admin confirms with the full
+// picture; missing seats no longer block, they need this confirmation
+// (decided 19/10/2026). Null when there is nothing to show.
+function openingCheck() {
+  const errors = (state.readiness ?? []).filter((p) => p.level === "error");
+  const warnings = (state.readiness ?? []).filter((p) => p.level === "warning");
+  const eligible = (club) => state.students.filter((s) => club.grades.includes(s.grade));
+  const closed = [];
+  const blocked = [];
+  for (const club of state.clubs) {
+    const list = state.teacherLists?.[club.code];
+    if (!list) continue;
+    if (list.closed) {
+      const wished = new Set((list.ams ?? []).map(String));
+      closed.push(`«${club.name}»: μόνο ${wished.size === 1 ? "ο 1 ⭐" : `οι ${wished.size} ⭐`} — δεν τον βλέπουν ${eligible(club).filter((s) => !wished.has(String(s.am))).length} μαθητές`);
+    } else if (list.blocked?.length) {
+      blocked.push(`«${club.name}»: ${list.blocked.length} ${list.blocked.length === 1 ? "αποκλεισμένος" : "αποκλεισμένοι"}`);
+    }
+  }
+  if (!errors.length && !closed.length && !blocked.length) return null;
+  const reopen = state.settings.phase === "closed";
+  const section = (kind, title, items, note) => el(`div.ask-section${kind ? `.${kind}` : ""}`, {},
+    el("h3", {}, title), el("ul", {}, items.map((t) => el("li", {}, t))), note ? el("p.small", {}, note) : null);
+  return {
+    force: errors.length > 0,
+    ask: () => ask({
+      title: reopen ? "Ξανάνοιγμα των δηλώσεων;" : "Άνοιγμα των δηλώσεων;",
+      tone: "warn",
+      body: [
+        el("p", {}, "Ελέγξτε τα παρακάτω πριν συνεχίσετε."),
+        errors.length ? section("err", "⚠ Δεν φτάνουν οι θέσεις", errors.map((p) => p.message), "Στην κατανομή, όσοι δεν χωρέσουν θα μείνουν χωρίς όμιλο εκείνη την ημέρα.") : null,
+        closed.length ? section("warn", "🔒 Κλειστές λίστες", closed, "Οι υπόλοιποι μαθητές δεν βλέπουν τον όμιλο στη φόρμα των γονέων.") : null,
+        blocked.length ? section("warn", "⛔ Αποκλεισμοί", blocked, "Οι αποκλεισμένοι δεν βλέπουν τον όμιλο στη φόρμα των γονέων.") : null,
+        warnings.filter((p) => !p.day).length ? section("", "Προσοχή", warnings.filter((p) => !p.day).map((p) => p.message)) : null,
+        el("p", {}, el("strong", {}, "Βεβαιωθείτε ότι οι λίστες είναι σωστές."), " Αν αλλάξουν αφού οι γονείς δηλώσουν, όσοι έχουν ήδη δηλώσει πρέπει να ξαναμπούν."),
+        reopen ? null : el("p.small.muted", {}, "Με το άνοιγμα οι όμιλοι κλειδώνουν (οι θέσεις μπορούν μόνο να αυξηθούν). Οι λίστες των εκπαιδευτικών μένουν ανοιχτές μέχρι την προθεσμία των γονέων."),
+      ],
+      ok: errors.length ? `${reopen ? "Ξανάνοιγμα" : "Άνοιγμα"} παρ' όλα αυτά` : `${reopen ? "Ξανάνοιγμα" : "Άνοιγμα"} δηλώσεων`,
+    }),
+  };
 }
 
 // ---------- Overview & settings ----------
@@ -225,7 +275,9 @@ function checksCard() {
     el("p.small.muted", {}, mandatory.length
       ? `Υποχρεωτική ένταξη: ${mandatory.map((g) => `${g}`).join(", ")} τάξη. Για κάθε ημέρα ελέγχεται κάθε τάξη μόνη της και κάθε συνδυασμός τους, ώστε οι όμιλοι που είναι κοινοί σε περισσότερες τάξεις να μη μετρώνται δύο φορές.`
       : "Καμία τάξη με υποχρεωτική ένταξη."),
-    errors.length ? message("err", `Δεν φτάνουν οι θέσεις — οι δηλώσεις δεν μπορούν να ανοίξουν:`, errors.map((p) => p.message)) : message("ok", "Οι θέσεις φτάνουν για όλους τους μαθητές των τάξεων με υποχρεωτική ένταξη."),
+    errors.length ? message("err", ["setup", "teachers"].includes(state.settings.phase)
+      ? "Δεν φτάνουν οι θέσεις — οι δηλώσεις θα ανοίξουν μόνο με επιβεβαίωση:"
+      : "Δεν φτάνουν οι θέσεις — στην κατανομή, όσοι δεν χωρέσουν θα μείνουν χωρίς όμιλο εκείνη την ημέρα:", errors.map((p) => p.message)) : message("ok", "Οι θέσεις φτάνουν για όλους τους μαθητές των τάξεων με υποχρεωτική ένταξη."),
     warnings.length ? message("warn", "Προσοχή:", warnings.map((p) => p.message)) : null);
 }
 
@@ -1202,7 +1254,7 @@ function history() {
   let events = [];
   const detail = (e) => {
     const { at, who, what, ...rest } = e;
-    if (what === "phase") return `${PHASE_NAMES[rest.from] ?? rest.from} → ${PHASE_NAMES[rest.to] ?? rest.to}`;
+    if (what === "phase") return `${PHASE_NAMES[rest.from] ?? rest.from} → ${PHASE_NAMES[rest.to] ?? rest.to}${rest.forced ? ` · με επιβεβαίωση, παρότι: ${rest.forced.join(" ")}` : ""}`;
     if (what.endsWith("_login_failed")) {
       return (FAILED_LOGIN[rest.reason] ?? rest.reason) + (rest.greek ? " · ο κωδικός γράφτηκε με ελληνικά γράμματα (πληκτρολόγιο στα ελληνικά;)" : "");
     }

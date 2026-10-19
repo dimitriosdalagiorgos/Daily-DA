@@ -314,9 +314,38 @@ label.check-row input { width: 18px; height: 18px; }
 .counter[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
 .bar-actions { margin-top: 8px; }
 .unsaved { color: var(--warn); font-weight: 600; }
-.shortcuts { margin: 6px 0; }
-.bulk { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 8px 10px; margin: 6px 0; border: 1px dashed var(--primary); border-radius: 8px; background: var(--primary-soft); }
+/* Two kinds of controls, told apart at a glance: view filters (grey band,
+   funnel, round chips: change only what is shown) and changes to the list
+   (amber box, pencil, square buttons: change the ⭐/○/⛔, saved with
+   «Αποθήκευση»). */
+.view-label, .changes-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 0.9rem; }
+.view-label { color: var(--muted); }
+.view-label svg { width: 15px; height: 15px; fill: currentColor; }
+.view-hint, .changes-hint { font-weight: 400; font-size: 0.85rem; color: var(--muted); }
+.counter { background: var(--surface-2); border-color: transparent; }
+.counter[aria-pressed="true"]::before { content: "✓"; }
+.filters.view { padding: 8px 10px; border-radius: 8px; background: var(--surface-2); margin: 8px 0; }
+.filters.view input[type="search"], .filters.view select { background: var(--surface); }
+.changes { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--warn); border-left-width: 5px; border-radius: 4px; background: var(--warn-soft); }
+.changes:empty { display: none; }
+.changes .actions { margin-top: 6px; gap: 8px; }
+.changes button { border-radius: 3px; border-color: var(--warn); background: var(--surface); font-weight: 600; }
+.changes button:not(:disabled):hover { background: var(--warn-soft); }
+.bulk { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 6px; }
 .bulk:empty { display: none; }
+/* Questions (ui.js ask()) */
+dialog.ask { max-width: min(560px, calc(100vw - 32px)); width: 100%; padding: 20px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: 0 10px 30px rgb(16 24 40 / 0.25); }
+dialog.ask.warn { border-top: 6px solid var(--warn); }
+dialog.ask::backdrop { background: rgb(16 24 40 / 0.45); }
+dialog.ask h2 { margin: 0 0 10px; font-size: 1.2rem; }
+dialog.ask .ask-body p { margin: 8px 0; }
+dialog.ask .ask-body ul { margin: 6px 0; padding-left: 22px; }
+dialog.ask .actions .spacer { flex: 1; }
+dialog.ask .ask-section { margin: 10px 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+dialog.ask .ask-section.err { background: var(--err-soft); }
+dialog.ask .ask-section.warn { background: var(--warn-soft); }
+dialog.ask .ask-section h3 { margin: 0 0 4px; font-size: 1rem; }
+button.warn-action { background: var(--warn); border-color: var(--warn); color: var(--surface); }
 .tri-list { border: 1px solid var(--border); border-radius: 8px; padding: 4px 0; }
 .tri-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--surface-2); }
 .tri-row:last-child { border-bottom: 0; }
@@ -384,3 +413,9 @@ button.link { border: 0; background: transparent; padding: 0 6px; min-height: 0;
 .code-box .reveal { flex: none; margin: 0; }
 label .hint.code-warn { color: var(--warn); font-weight: 600; margin-top: 4px; }
 label .hint.code-warn:empty { display: none; }
+/* Teacher's page after the announcement (teacher.js allocationView) */
+.allocation { margin: 12px 0; }
+.allocation h3 { margin: 0 0 6px; }
+details.locked-list { margin-top: 12px; }
+details.locked-list > summary { cursor: pointer; font-weight: 600; }
+.counters .view-label { align-self: center; margin-right: 2px; }

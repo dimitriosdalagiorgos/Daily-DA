@@ -121,6 +121,9 @@ try {
   const outBadge = (card) => card.locator(".counter.c-out").textContent().then((t) => t.trim());
   if (await puzzles.locator(".bulk button").count()) throw new Error("bulk change shown without a filter");
   await puzzles.locator("input[type=search]").fill("γεωργ");
+  // With a search, the amber box offers changes for the rows shown only
+  await puzzles.locator(".changes-title:has-text('μόνο για')").waitFor();
+  if (await puzzles.locator(".changes button:has-text('Κλειστή λίστα')").count()) throw new Error("«Κλειστή λίστα» offered while a search narrows the rows");
   await puzzles.locator(".bulk button:has-text('⭐')").click();
   const picked = Number((await wishBadge(puzzles)).match(/⭐ (\d+)/)[1]);
   if (picked < 1) throw new Error("bulk ⭐ picked nobody");
@@ -137,8 +140,19 @@ try {
   if (!(await colleague.locator("role=tab[name=/Άλγεβρα/]").evaluate((b) => b === document.activeElement))) throw new Error("the chosen tab lost the focus");
   if (await puzzles.isVisible()) throw new Error("the other club's list is still shown");
   await algebra.locator(".tri-list .tri button.s-wish >> nth=0").click();
-  await algebra.locator("button:has-text('Μόνο οι ⭐')").click();
+  // From the ⭐ filter alone (not with a search), and only after a question
+  await algebra.locator("button.counter.c-wish").click();
+  await algebra.locator("input[type=search]").fill("α");
+  if (await algebra.locator(".changes button:has-text('Κλειστή λίστα')").count()) throw new Error("«Κλειστή λίστα» offered with ⭐ + search");
+  await algebra.locator("input[type=search]").fill("");
+  await algebra.locator(".changes button:has-text('Κλειστή λίστα')").click();
+  await colleague.locator("dialog.ask:has-text('Κλειστή λίστα;')").waitFor();
+  await colleague.click("dialog.ask button[value=cancel]");
+  if (await algebra.locator(".list-type:has-text('Κλειστή λίστα')").count()) throw new Error("«Ακύρωση» still closed the list");
+  await algebra.locator(".changes button:has-text('Κλειστή λίστα')").click();
+  await colleague.click("dialog.ask button[value=ok]");
   await algebra.locator(".list-type:has-text('Κλειστή λίστα'):has-text('μόνο τον 1 ⭐')").waitFor();
+  await algebra.locator("button.counter.c-wish").click();
   // One ○ makes it open again, no switch; «Καθαρισμός» clears everything
   await algebra.locator(".tri-list .tri-row.out button.s-none >> nth=0").click();
   await algebra.locator(".list-type:has-text('Ανοιχτή λίστα με αποκλεισμούς')").waitFor();
@@ -148,6 +162,9 @@ try {
   // One ⛔: the student will not see the club
   await algebra.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
   await algebra.locator("button:has-text('Αποθήκευση')").click();
+  // A new ⛔ asks before saving
+  await colleague.locator("dialog.ask:has-text('Νέοι αποκλεισμοί: 1')").waitFor();
+  await colleague.click("dialog.ask button[value=ok]");
   await algebra.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   // After a reload both lists are still there
   await colleague.reload();
@@ -189,6 +206,7 @@ try {
   if (await editor.locator(".tri-list .tri-row.wish").count() !== 2 || await editor.locator(".unsaved").textContent()) throw new Error("«Ακύρωση αλλαγών» did not restore the list");
   await editor.locator(".tri-list .tri-row.none button.s-out >> nth=0").click();
   await editor.locator("button:has-text('Αποθήκευση')").click();
+  await admin.click("dialog.ask button[value=ok]");
   await editor.locator(".msg.ok:has-text('Αποθηκεύτηκε')").waitFor();
   await shot(admin, "02c-admin-list-editor");
   await editor.locator("button:has-text('Κλείσιμο')").click();
@@ -227,6 +245,12 @@ try {
   await admin.click("text=Αποθήκευση ρυθμίσεων");
   await admin.waitForSelector(".msg.ok:has-text('Αποθηκεύτηκε')");
   await admin.click("text=Επόμενη φάση: Δηλώσεις γονέων");
+  // The check before opening: clubs some students will not see
+  const opening = admin.locator("dialog.ask");
+  await opening.locator("h3:has-text('Αποκλεισμοί')").waitFor();
+  if (!(await opening.textContent()).includes("«Σκάκι»")) throw new Error(`opening check: ${await opening.textContent()}`);
+  await shot(admin, "04a-admin-opening-check");
+  await admin.click("dialog.ask button[value=ok]");
   await admin.waitForSelector("ol.steps li.current:has-text('Δηλώσεις γονέων')");
   step("admin: settings — «Ακύρωση αλλαγών»; parents' password + deadline, phase → parents");
 
@@ -462,6 +486,14 @@ try {
   await admin.click("text=Επόμενη φάση: Ανακοίνωση");
   await admin.waitForSelector("ol.steps li.current:has-text('Ανακοίνωση')");
   step("admin: published");
+  // The teacher sees who got into each club and why
+  await colleague.fill("#tcode", "kodikos-ek");
+  await colleague.fill("#tid", "700107");
+  await colleague.click("button[type=submit]");
+  await colleague.locator(".allocation:visible h3:has-text('Η κατανομή του ομίλου')").waitFor();
+  if (!(await colleague.locator(".allocation:visible").textContent()).includes("Τον ζήτησαν")) throw new Error("teacher: no allocation summary");
+  await shot(colleague, "08b-teacher-allocation");
+  step("teacher: after the announcement, who got in and why");
 
   await parent.reload();
   await parent.waitForSelector("h2:has-text('Αποτελέσματα κατανομής')");

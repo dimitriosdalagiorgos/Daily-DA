@@ -111,7 +111,9 @@ function mainView(me) {
     me.canEdit
       ? message("info", "Αν θέλετε, ορίστε για κάθε μαθητή: ⭐ προτίμηση (έως τις θέσεις του ομίλου: έχει προτεραιότητα αν δηλώσει τον όμιλο, δεν τοποθετείται υποχρεωτικά), ○ ουδέτερος (κρίνεται με την κλήρωση) ή ⛔ αποκλεισμός (δεν μπαίνει στον όμιλο και δεν τον βλέπει στη φόρμα των γονέων). Αν δεν μείνει κανένας ○, η λίστα γίνεται «κλειστή»: ο όμιλος δέχεται μόνο τους ⭐. Τις θέσεις τις ορίζει η διαχείριση."
         + (me.phase === "parents" && me.deadline ? ` Οι λίστες μένουν ανοιχτές μέχρι το κλείσιμο των δηλώσεων των γονέων: ${formatDateTime(me.deadline)}.` : ""))
-      : message("warn", me.phase === "setup" ? "Η φάση των εκπαιδευτικών δεν έχει ανοίξει ακόμα." : "Οι λίστες κλείδωσαν με το κλείσιμο των δηλώσεων. Για διορθώσεις επικοινωνήστε με τη διαχείριση."),
+      : me.phase === "published"
+        ? message("info", "Η κατανομή ανακοινώθηκε. Για κάθε όμιλό σας βλέπετε ποιοι μαθητές μπήκαν και πώς.")
+        : message("warn", me.phase === "setup" ? "Η φάση των εκπαιδευτικών δεν έχει ανοίξει ακόμα." : "Οι λίστες κλείδωσαν με το κλείσιμο των δηλώσεων. Για διορθώσεις επικοινωνήστε με τη διαχείριση."),
   ];
   let drawTabs = null;
   const cards = me.clubs.map((club) => clubCard(club, me, () => drawTabs?.()));
@@ -175,14 +177,54 @@ function clubCard(club, me, onTabChange) {
       return list;
     },
   });
+  // After the announcement the result comes first; the locked list folds away
+  const listPart = club.allocation
+    ? el("details.locked-list", {}, el("summary", {}, "Η λίστα σας (κλειδωμένη)"), lastChange, editor)
+    : null;
   return el("section.card", {},
     el("h2", { style: "margin-top:0" }, club.name),
     el("p.muted.small", {}, `${club.days.map((d) => DAY_LABELS[d]).join(" + ")} · Τάξεις ${club.grades.join(", ")} · `, el("strong", {}, `${club.capacity} θέσεις`),
       club.coTeachers.length ? ` · Μαζί με: ${club.coTeachers.join(", ")}` : ""),
     club.coTeachers.length ? message("info", "Ο όμιλος έχει κοινή λίστα για όλους τους εκπαιδευτικούς του. Συνεννοηθείτε ώστε να τη συμπληρώσει ένας.") : null,
+    club.allocation ? allocationView(club) : null,
     resetNotice,
-    lastChange,
-    editor);
+    listPart ?? lastChange,
+    listPart ? null : editor);
+}
+
+// ---------- After the announcement: who got in and why ----------
+
+const WHY = {
+  wish: "⭐ από τη λίστα σας",
+  mandatory: "Τάξη με υποχρεωτική ένταξη",
+  lottery: "Κλήρωση",
+  seat: "Υπήρχε θέση",
+};
+
+function allocationView(club) {
+  const { applicants, notPlaced, contested, members } = club.allocation;
+  const days = club.days.map((d) => DAY_LABELS[d]).join(" + ");
+  const summary = [
+    `Τον ζήτησαν ${applicants} ${applicants === 1 ? "μαθητής" : "μαθητές"} για ${club.capacity} θέσεις.`,
+    `Μπήκαν ${members.length}.`,
+    notPlaced ? ` ${notPlaced === 1 ? "1 δεν χώρεσε και τοποθετήθηκε" : `${notPlaced} δεν χώρεσαν και τοποθετήθηκαν`} σε επόμενη επιλογή του ή έμειν${notPlaced === 1 ? "ε" : "αν"} χωρίς όμιλο.` : "",
+  ].join(" ");
+  return el("div.allocation", {},
+    el("h3", {}, `Η κατανομή του ομίλου${club.days.length > 1 ? ` (${days})` : ""}`),
+    el("p", {}, summary),
+    el("p.small.muted", {}, contested
+      ? "Οι αιτήσεις ήταν περισσότερες από τις θέσεις. Σειρά προτεραιότητας: (1) οι ⭐ της λίστας σας, (2) οι τάξεις με υποχρεωτική ένταξη, (3) η κλήρωση: μικρότερος αριθμός προηγείται."
+      : "Χώρεσαν όλοι όσοι τον ζήτησαν.",
+      " Οι δηλώσεις των γονέων (η σειρά των ομίλων τους) δεν εμφανίζονται."),
+    members.length
+      ? el("div.table-wrap", {}, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "#"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"), el("th", {}, "Πώς μπήκε"))),
+        el("tbody", {}, members.map((m, i) => el("tr", {},
+          el("td", {}, String(i + 1)),
+          el("td", {}, `${m.surname} ${m.name}`, el("span.muted.small", {}, ` · ΑΜ ${m.am}`)),
+          el("td", {}, `${m.grade}${m.section ? ` · ${m.section}` : ""}`),
+          el("td", {}, m.lottery ? `${WHY[m.why]} · αρ. κλήρωσης ${m.lottery}` : WHY[m.why]))))))
+      : message("info", "Δεν μπήκε κανένας μαθητής."));
 }
 
 window.addEventListener("beforeunload", (e) => { if (hasUnsaved()) e.preventDefault(); });
