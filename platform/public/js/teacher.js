@@ -202,7 +202,7 @@ const WHY = {
 };
 
 function allocationView(club) {
-  const { applicants, notPlaced, full, members } = club.allocation;
+  const { applicants, notPlaced, contested, members } = club.allocation;
   const days = club.days.map((d) => DAY_LABELS[d]).join(" + ");
   const summary = [
     `Τον ζήτησαν ${applicants} ${applicants === 1 ? "μαθητής" : "μαθητές"} για ${club.capacity} θέσεις.`,
@@ -212,9 +212,9 @@ function allocationView(club) {
   return el("div.allocation", {},
     el("h3", {}, `Η κατανομή του ομίλου${club.days.length > 1 ? ` (${days})` : ""}`),
     el("p", {}, summary),
-    el("p.small.muted", {}, full
-      ? "Ο όμιλος γέμισε. Σειρά προτεραιότητας: (1) οι ⭐ της λίστας σας, (2) οι τάξεις με υποχρεωτική ένταξη, (3) η κλήρωση: μικρότερος αριθμός προηγείται."
-      : "Ο όμιλος δεν γέμισε: μπήκαν όλοι όσοι τον ζήτησαν.",
+    el("p.small.muted", {}, contested
+      ? "Οι αιτήσεις ήταν περισσότερες από τις θέσεις. Σειρά προτεραιότητας: (1) οι ⭐ της λίστας σας, (2) οι τάξεις με υποχρεωτική ένταξη, (3) η κλήρωση: μικρότερος αριθμός προηγείται."
+      : "Χώρεσαν όλοι όσοι τον ζήτησαν.",
       " Οι δηλώσεις των γονέων (η σειρά των ομίλων τους) δεν εμφανίζονται."),
     members.length
       ? el("div.table-wrap", {}, el("table", {},

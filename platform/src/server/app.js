@@ -901,7 +901,9 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const day = club.days[0];
     const events = (log[day] ?? []).filter((e) => e.club === code);
     const applicants = new Set(events.filter((e) => e.event === "PROPOSAL").map((e) => e.am));
-    const full = events.some((e) => e.event === "REJECTED" || e.event === "DISPLACED");
+    // More applicants than seats (someone turned away): priority decided. A
+    // club filled exactly by its applicants was not contested.
+    const contested = events.some((e) => e.event === "REJECTED" || e.event === "DISPLACED");
     const lottery = new Map(results.lottery);
     const byAm = new Map(students.map((s) => [s.am, s]));
     const star = new Set(wished.map(String));
@@ -909,12 +911,12 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     const mixed = [...applicants].some((am) => !mandatoryGrades.includes(byAm.get(am)?.grade));
     const members = results.days[day].assignments.filter((a) => a.club === code).map(({ am }) => {
       const s = byAm.get(am) ?? { am, surname: am, name: "", grade: "" };
-      const why = star.has(am) ? "wish" : !full ? "seat" : mixed && mandatoryGrades.includes(s.grade) ? "mandatory" : "lottery";
+      const why = star.has(am) ? "wish" : !contested ? "seat" : mixed && mandatoryGrades.includes(s.grade) ? "mandatory" : "lottery";
       return { am, surname: s.surname, name: s.name, grade: s.grade, section: sectionOf(sections, am, s.grade), why, ...(why === "mandatory" || why === "lottery" ? { lottery: lottery.get(am) ?? null } : {}) };
     });
     const order = { wish: 0, mandatory: 1, lottery: 2, seat: 3 };
     members.sort((a, b) => order[a.why] - order[b.why] || (a.lottery ?? 0) - (b.lottery ?? 0) || a.surname.localeCompare(b.surname, "el"));
-    return { applicants: applicants.size, notPlaced: [...applicants].filter((am) => !members.some((m) => m.am === am)).length, full, members };
+    return { applicants: applicants.size, notPlaced: [...applicants].filter((am) => !members.some((m) => m.am === am)).length, contested, members };
   }
 
   route("PUT", "/api/teacher/clubs/:code", async (req, { code }) => {

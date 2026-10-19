@@ -252,7 +252,7 @@ for (const [storeName, makeStore] of Object.entries(STORES)) test(`the whole yea
   // The teacher sees who got in and why, and only counts for the others
   const antigone = (await call("GET", "/api/teacher/me", { token: teacherAgain })).data.clubs.find((c) => c.code === 100).allocation;
   assert.deepEqual(antigone.members.map((m) => [m.am, m.why]), [["9001", "wish"]]);
-  assert.equal(antigone.full, true);
+  assert.equal(antigone.contested, true);
   assert.ok(antigone.applicants >= 2 && antigone.notPlaced === antigone.applicants - 1);
   assert.ok(!JSON.stringify(antigone).includes("9002"), "the others are not named");
   assert.ok(!JSON.stringify(antigone).includes("rank"), "the parents' rankings stay private");
