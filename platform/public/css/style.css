@@ -331,7 +331,7 @@ label.check-row input { width: 18px; height: 18px; }
 .changes .actions { margin-top: 6px; gap: 8px; }
 .changes button { border-radius: 3px; border-color: var(--warn); background: var(--surface); font-weight: 600; }
 .changes button:not(:disabled):hover { background: var(--warn-soft); }
-.bulk { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--warn); }
+.bulk { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 6px; }
 .bulk:empty { display: none; }
 /* Questions (ui.js ask()) */
 dialog.ask { max-width: min(560px, calc(100vw - 32px)); width: 100%; padding: 20px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: 0 10px 30px rgb(16 24 40 / 0.25); }

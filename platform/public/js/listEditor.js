@@ -176,8 +176,10 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
 
   // ---------- shortcuts ----------
   const shortcuts = el("div.actions.shortcuts");
+  // Whole-list shortcuts only while nothing narrows the rows: with a filter
+  // on, the box offers changes for the rows shown only, never both at once
   const renderShortcuts = () => {
-    if (!canEdit) return shortcuts.replaceChildren();
+    if (!canEdit || narrowed()) { shortcuts.replaceChildren(); return renderChanges(); }
     const c = counts();
     const items = [];
     if (c[WISH] && c[NONE]) {
@@ -239,18 +241,22 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     const n = visible().length;
     if (!canEdit || !narrowed() || !n) { bulkBox.replaceChildren(); return renderChanges(); }
     show(bulkBox,
-      el("span.small", {}, n === 1 ? "Ο μαθητής που βλέπετε τώρα γίνεται:" : `Οι ${n} μαθητές που βλέπετε τώρα γίνονται:`),
       [[WISH, "⭐ Προτίμηση"], [NONE, "○ Ουδέτερ" + (n === 1 ? "ος" : "οι")], [OUT, "⛔ Αποκλεισμός"]].map(([v, text]) => el("button.small", { type: "button", onclick: () => bulk(v) }, text)));
   };
 
-  // The amber box around the shortcuts and the bulk change (hidden when both are empty)
+  // The amber box: the whole-list shortcuts, or (with a filter on) the
+  // change for the rows shown; hidden when there is nothing to offer
   const changes = el("div.changes");
+  const changesTitle = el("span.changes-title");
   const renderChanges = () => {
     if (!canEdit || (!shortcuts.childElementCount && !bulkBox.childElementCount)) return changes.replaceChildren();
+    const n = visible().length;
+    changesTitle.textContent = bulkBox.childElementCount
+      ? `✎ Αλλαγή μόνο για ${n === 1 ? "τον μαθητή" : `τους ${n} μαθητές`} που βλέπετε τώρα`
+      : "✎ Αλλαγή σε όλη τη λίστα";
     if (!changes.childElementCount) {
       changes.append(
-        el("div", {}, el("span.changes-title", {}, "✎ Αλλαγή επιλογών σε πολλούς μαθητές μαζί"), " ",
-          el("span.changes-hint", {}, "— αλλάζουν τη λίστα· ισχύουν με «Αποθήκευση»")),
+        el("div", {}, changesTitle, " ", el("span.changes-hint", {}, "— αλλάζουν τη λίστα· ισχύουν με «Αποθήκευση»")),
         shortcuts, bulkBox);
     }
   };
@@ -283,7 +289,7 @@ export function listEditor({ club, eligible, list, canEdit, parentsPhase, capaci
     renderChanges();
     renderList();
   }
-  for (const input of [search, gradeFilter, sectionFilter].filter(Boolean)) input.addEventListener("input", () => { renderBulk(); renderChanges(); renderList(); });
+  for (const input of [search, gradeFilter, sectionFilter].filter(Boolean)) input.addEventListener("input", () => { renderShortcuts(); renderBulk(); renderChanges(); renderList(); });
   capacityInput?.addEventListener("input", update);
 
   // No edits while saving: the reply replaces the states with what was saved
