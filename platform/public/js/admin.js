@@ -512,8 +512,36 @@ function students() {
       } catch (err) { alert(err.message); }
     },
   }, "Διαγραφή");
+  // Clicking a header sorts by that column; clicking it again reverses.
+  // Students without a declaration stay last in either direction. Starts by name.
+  const byName = (a, b) => a.surname.localeCompare(b.surname, "el") || a.name.localeCompare(b.name, "el");
+  const bySection = (a, b) => (a.section ?? "").localeCompare(b.section ?? "", "el", { numeric: true });
+  const sorts = {
+    am: (a, b) => Number(a.am) - Number(b.am),
+    name: byName,
+    grade: (a, b) => a.grade.localeCompare(b.grade, "el") || bySection(a, b) || byName(a, b),
+    section: (a, b) => bySection(a, b) || byName(a, b),
+    submission: (a, b) => (state.submissions[a.am]?.submittedAt ?? "").localeCompare(state.submissions[b.am]?.submittedAt ?? ""),
+    login: (a, b) => Number(b.loginException ?? false) - Number(a.loginException ?? false) || byName(a, b),
+  };
+  const sort = { key: "name", dir: 1 };
+  const header = (key, label, cls = "") => {
+    const th = el(`th${cls}`, {}, el("button.sort", { type: "button", onclick: () => {
+      sort.dir = sort.key === key ? -sort.dir : 1;
+      sort.key = key;
+      draw();
+    } }, label, el("span.arrow", { "aria-hidden": "true" })));
+    th.dataset.key = key;
+    return th;
+  };
+  const headRow = el("tr", {}, header("am", "ΑΜ", ".num"), header("name", "Μαθητής"), header("grade", "Τάξη"), withSection ? header("section", "Τμήμα") : null, header("submission", "Δήλωση"), header("login", "Σύνδεση"));
   const draw = () => {
     const q = search.value.trim().toUpperCase();
+    for (const th of headRow.children) {
+      const on = th.dataset.key === sort.key;
+      th.setAttribute("aria-sort", on ? (sort.dir > 0 ? "ascending" : "descending") : "none");
+      th.querySelector(".arrow").textContent = on ? (sort.dir > 0 ? " ▲" : " ▼") : "";
+    }
     const rows = state.students.filter((s) => {
       const sub = state.submissions[s.am];
       if (filter.value === "missing" && sub) return false;
@@ -521,6 +549,8 @@ function students() {
       if (filter.value === "exception" && !s.loginException) return false;
       return !q || `${s.surname} ${s.name} ${s.am} ${s.section}`.toUpperCase().includes(q);
     });
+    const missing = (s) => (state.submissions[s.am] ? 0 : 1);
+    rows.sort((a, b) => (sort.key === "submission" && missing(a) - missing(b)) || sort.dir * sorts[sort.key](a, b));
     body.replaceChildren(...rows.map((s) => {
       const sub = state.submissions[s.am];
       const cb = el("input", { type: "checkbox", checked: s.loginException, "aria-label": `Εξαίρεση σύνδεσης για ΑΜ ${s.am}` });
@@ -540,9 +570,9 @@ function students() {
   filter.addEventListener("change", draw);
   draw();
   return el("section.card", {},
-    el("p.small.muted", {}, "Η «εξαίρεση σύνδεσης» επιτρέπει στον γονέα να συνδεθεί μόνο με ΑΜ και επώνυμο (π.χ. όταν τα ονόματα των γονέων δεν είναι γραμμένα όπως τα ξέρει)."),
+    el("p.small.muted", {}, "Η «εξαίρεση σύνδεσης» επιτρέπει στον γονέα να συνδεθεί μόνο με ΑΜ και επώνυμο (π.χ. όταν τα ονόματα των γονέων δεν είναι γραμμένα όπως τα ξέρει). Πατήστε μια επικεφαλίδα για ταξινόμηση· ξανά για αντίστροφη σειρά."),
     el("div.grid-2", {}, search, filter),
-    el("div.table-wrap", {}, el("table", {}, el("thead", {}, el("tr", {}, el("th.num", {}, "ΑΜ"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"), withSection ? el("th", {}, "Τμήμα") : null, el("th", {}, "Δήλωση"), el("th", {}, "Σύνδεση"))), body)));
+    el("div.table-wrap", {}, el("table", {}, el("thead", {}, headRow), body)));
 }
 
 // ---------- Clubs ----------
