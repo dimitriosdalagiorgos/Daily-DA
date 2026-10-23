@@ -527,6 +527,24 @@ try {
   await admin.waitForSelector("tbody td:text-is('Β1')");
   step("admin: students' sections from the two myschool reports, shown in the week table");
 
+  // Students tab: a header sorts by its column, a second click reverses
+  await admin.click("role=tab[name='Μαθητές']");
+  const amColumn = () => admin.locator("tbody tr td:first-child").allInnerTexts().then((t) => t.map(Number));
+  const isSorted = (v, dir) => v.every((x, i) => i === 0 || dir * (x - v[i - 1]) >= 0);
+  await admin.click("th button:has-text('ΑΜ')");
+  await admin.locator("th[aria-sort=ascending]:has-text('ΑΜ')").waitFor();
+  if (!isSorted(await amColumn(), 1)) throw new Error("students not sorted by AM (ascending)");
+  await admin.click("th button:has-text('ΑΜ')");
+  await admin.locator("th[aria-sort=descending]:has-text('ΑΜ')").waitFor();
+  if (!isSorted(await amColumn(), -1)) throw new Error("students not sorted by AM (descending)");
+  for (const dir of ["ascending", "descending"]) {
+    await admin.click("th button:has-text('Δήλωση')");
+    await admin.locator(`th[aria-sort=${dir}]:has-text('Δήλωση')`).waitFor();
+    const done = await admin.locator("tbody tr").evaluateAll((rows) => rows.map((r) => !!r.querySelector(".badge.ok")));
+    if (done.indexOf(false) !== -1 && done.lastIndexOf(true) > done.indexOf(false)) throw new Error(`students without a declaration must stay last (${dir})`);
+  }
+  step("admin: students table sorted by clicking the headers");
+
   await admin.click("role=tab[name='Βοήθεια']");
   await admin.waitForSelector("h2:has-text('1. Προετοιμασία')");
   await admin.click("role=tab[name='Εκπαιδευτικοί']");
