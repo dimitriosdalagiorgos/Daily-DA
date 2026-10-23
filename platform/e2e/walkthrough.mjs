@@ -529,6 +529,7 @@ try {
 
   // Students tab: a header sorts by its column, a second click reverses
   await admin.click("role=tab[name='Μαθητές']");
+  await admin.locator("th[aria-sort=ascending]:has-text('Μαθητής')").waitFor(); // alphabetical by default
   const amColumn = () => admin.locator("tbody tr td:first-child").allInnerTexts().then((t) => t.map(Number));
   const isSorted = (v, dir) => v.every((x, i) => i === 0 || dir * (x - v[i - 1]) >= 0);
   await admin.click("th button:has-text('ΑΜ')");

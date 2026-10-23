@@ -513,7 +513,7 @@ function students() {
     },
   }, "Διαγραφή");
   // Clicking a header sorts by that column; clicking it again reverses.
-  // Students without a declaration stay last in either direction.
+  // Students without a declaration stay last in either direction. Starts by name.
   const byName = (a, b) => a.surname.localeCompare(b.surname, "el") || a.name.localeCompare(b.name, "el");
   const bySection = (a, b) => (a.section ?? "").localeCompare(b.section ?? "", "el", { numeric: true });
   const sorts = {
@@ -524,7 +524,7 @@ function students() {
     submission: (a, b) => (state.submissions[a.am]?.submittedAt ?? "").localeCompare(state.submissions[b.am]?.submittedAt ?? ""),
     login: (a, b) => Number(b.loginException ?? false) - Number(a.loginException ?? false) || byName(a, b),
   };
-  const sort = { key: null, dir: 1 };
+  const sort = { key: "name", dir: 1 };
   const header = (key, label, cls = "") => {
     const th = el(`th${cls}`, {}, el("button.sort", { type: "button", onclick: () => {
       sort.dir = sort.key === key ? -sort.dir : 1;
@@ -549,10 +549,8 @@ function students() {
       if (filter.value === "exception" && !s.loginException) return false;
       return !q || `${s.surname} ${s.name} ${s.am} ${s.section}`.toUpperCase().includes(q);
     });
-    if (sort.key) {
-      const missing = (s) => (state.submissions[s.am] ? 0 : 1);
-      rows.sort((a, b) => (sort.key === "submission" && missing(a) - missing(b)) || sort.dir * sorts[sort.key](a, b));
-    }
+    const missing = (s) => (state.submissions[s.am] ? 0 : 1);
+    rows.sort((a, b) => (sort.key === "submission" && missing(a) - missing(b)) || sort.dir * sorts[sort.key](a, b));
     body.replaceChildren(...rows.map((s) => {
       const sub = state.submissions[s.am];
       const cb = el("input", { type: "checkbox", checked: s.loginException, "aria-label": `Εξαίρεση σύνδεσης για ΑΜ ${s.am}` });
