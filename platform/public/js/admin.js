@@ -870,6 +870,8 @@ function allocation() {
   audit.addEventListener("click", () => busy(audit, out, () => api.download("/api/admin/export/audit_log.csv", "audit_log_katanomis.csv")));
   const verify = el("button", { type: "button", disabled: !state.results }, "Επαλήθευση κατανομής (.xlsx)");
   verify.addEventListener("click", () => busy(verify, out, async () => saveWorkbook("epalitheusi_katanomis.xlsx", (await api("GET", "/api/admin/export/verification")).sheets)));
+  const prefs = el("button", { type: "button", disabled: !Object.keys(state.submissions).length }, "Προτιμήσεις μαθητών (.xlsx)");
+  prefs.addEventListener("click", () => busy(prefs, out, async () => saveWorkbook("protimiseis_mathiton.xlsx", (await api("GET", "/api/admin/export/preferences")).sheets)));
   const lotteryCsv = el("button", { type: "button" }, "Κλήρωση: ΑΜ και αριθμός (.csv)");
   lotteryCsv.addEventListener("click", () => busy(lotteryCsv, out, () => api.download(`/api/admin/export/lottery.csv${state.results ? "" : `?seed=${encodeURIComponent(seed.value)}`}`, "klirosi.csv")));
   // The round-by-round page (docs/gyroi-katanomis.html) in a new tab: it gets
@@ -908,9 +910,10 @@ function allocation() {
       out,
       el("div.actions", {}, run, randomSeed),
       el("h3", {}, "Εξαγωγές"),
-      el("div.actions", {}, rounds, xlsx, csv, audit, verify, summary, lotteryCsv, rZip),
+      el("div.actions", {}, rounds, xlsx, csv, audit, verify, summary, prefs, lotteryCsv, rZip),
       el("p.small.muted", {}, "«Γύροι κατανομής»: ανοίγει σε νέα καρτέλα την κατανομή γύρο-γύρο, όπως στο παράδειγμα «Οι όμιλοι των χρωμάτων»: για κάθε ημέρα και γύρο, οι υποψήφιοι κάθε ομίλου σε σειρά προτεραιότητας, η βάση του ομίλου και γιατί ο καθένας μένει ή περισσεύει."),
       el("p.small.muted", {}, "«Επαλήθευση κατανομής»: για να ελέγξετε την κατανομή με το χέρι. Για κάθε όμιλο ο τελευταίος που μπήκε και ο πρώτος που έμεινε έξω· για κάθε μαθητή και ημέρα οι επιλογές του, τι έγινε με την καθεμία και οι γύροι· γύρο-γύρο ποιοι κάνουν αίτηση σε κάθε όμιλο, ποιοι μένουν και ποιοι βγαίνουν, με τον αριθμό κλήρωσης. Στο πρώτο φύλλο, αυτόματοι έλεγχοι και οδηγίες."),
+      el("p.small.muted", {}, "«Προτιμήσεις μαθητών»: οι δηλώσεις των γονέων, ένα φύλλο ανά ημέρα. Μία γραμμή ανά μαθητή και μία στήλη ανά όμιλο της ημέρας, με τον αριθμό προτίμησης (1 = πρώτη επιλογή). Κενό: ο όμιλος δεν είναι για την τάξη του μαθητή, ή ο μαθητής δεν έχει δήλωση. Οι όμιλοι πολλών ημερών είναι στο φύλλο της 1ης ημέρας τους, όπου δηλώνονται. Με φίλτρα: π.χ. στη στήλη ενός ομίλου επιλέξτε 1 για όσους τον έβαλαν πρώτο. Βγαίνει από τη στιγμή που υπάρχουν δηλώσεις, και πριν από την κατανομή."),
       el("p.small.muted", {}, "«Κλήρωση»: μόνο ΑΜ και αριθμός κλήρωσης, ταξινομημένα κατά ΑΜ, χωρίς ονόματα — για γρήγορη σύγκριση δύο μαθητών ή για ανακοίνωση. Μικρότερος αριθμός = προηγείται στην ίδια προτεραιότητα. Πριν την κατανομή βγαίνει για το seed που έχετε γράψει.")),
     resultsBox);
 }
@@ -1174,11 +1177,13 @@ function weekView(results) {
     el("div.table-wrap", {}, el("table", {}, el("thead", {}, el("tr", {}, header.map((h, i) => el(i === 0 ? "th.num" : "th", {}, h)))), body)));
 }
 
-const rosterCols = () => [6, 8, 22, 18, 16, 6, ...(hasSections(state.students) ? [7] : [])];
+const rosterCols = (withRank) => [6, 8, 22, 18, 16, 6, ...(hasSections(state.students) ? [7] : []), ...(withRank ? [10] : [])];
 
-function rosterFor(club, results) {
+/** With `withRank`, the «Προτίμηση» column: where each member ranked the club, on its first day. */
+function rosterFor(club, results, withRank) {
   const teachers = state.teachers.filter((t) => t.clubs.includes(club.code)).map((t) => `${t.name} ${t.surname}`);
-  return rosterRows(club, clubMembers(club, state.students, results), teachers, hasSections(state.students));
+  const rankOf = withRank ? (am) => results.ranks?.[am]?.[club.days[0]] ?? null : null;
+  return rosterRows(club, clubMembers(club, state.students, results), teachers, hasSections(state.students), rankOf);
 }
 
 function rostersView(results) {
@@ -1187,11 +1192,12 @@ function rostersView(results) {
   const picker = el("select", { "aria-label": "Όμιλος" }, clubs.map((c) => el("option", { value: String(c.code) },
     `${c.code} · ${c.name} (${c.days.map((d) => DAY_LABELS[d]).join(" + ")}) — ${clubMembers(c, state.students, results).length} μαθητές`)));
   const holder = el("div");
+  const withRank = el("input", { type: "checkbox", checked: true });
   const current = () => clubs.find((c) => String(c.code) === picker.value);
   const draw = () => {
     const club = current();
     if (!club) return holder.replaceChildren(el("p.muted", {}, "Δεν υπάρχουν όμιλοι."));
-    const rows = rosterFor(club, results);
+    const rows = rosterFor(club, results, withRank.checked);
     const head = rows.findIndex((r) => r[0] === "Α/Α");
     holder.replaceChildren(
       el("p", {}, rows.slice(0, head - 1).map(([k, v]) => el("span", { style: "margin-right:16px" }, el("strong", {}, `${k}: `), v))),
@@ -1202,12 +1208,13 @@ function rostersView(results) {
         : el("p.muted", {}, "Κανένας μαθητής σε αυτόν τον όμιλο."));
   };
   picker.addEventListener("change", draw);
+  withRank.addEventListener("change", draw);
   draw();
   const one = el("button", { type: "button", disabled: !clubs.length }, "Λήψη (.xlsx)");
   one.addEventListener("click", () => busy(one, out, async () => {
     const club = current();
     // A Latin name for a direct download (some browsers drop Greek ones); the .zip keeps the club names
-    await saveSheet(`parousiologio_${club.code}.xlsx`, ROSTER_SHEET, rosterFor(club, results), rosterCols());
+    await saveSheet(`parousiologio_${club.code}.xlsx`, ROSTER_SHEET, rosterFor(club, results, withRank.checked), rosterCols(withRank.checked));
   }));
   const all = el("button", { type: "button", disabled: !clubs.length }, "Όλα τα παρουσιολόγια (.zip)");
   all.addEventListener("click", () => busy(all, out, async () => {
@@ -1215,8 +1222,8 @@ function rostersView(results) {
     const files = {};
     for (const c of clubs) {
       const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(rosterFor(c, results));
-      ws["!cols"] = rosterCols().map((wch) => ({ wch }));
+      const ws = XLSX.utils.aoa_to_sheet(rosterFor(c, results, withRank.checked));
+      ws["!cols"] = rosterCols(withRank.checked).map((wch) => ({ wch }));
       XLSX.utils.book_append_sheet(wb, ws, ROSTER_SHEET);
       files[rosterFileName(c)] = new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" }));
     }
@@ -1227,6 +1234,7 @@ function rostersView(results) {
   return el("div", {},
     el("p.small.muted", {}, "Τα μέλη κάθε ομίλου, αλφαβητικά, για να τα δώσετε στον εκπαιδευτικό. Όμιλος πολλών ημερών: ένα παρουσιολόγιο, αφού τα μέλη του είναι ίδια όλες τις ημέρες."),
     el("label", {}, "Όμιλος", picker),
+    el("label", { style: "font-weight:400" }, withRank, " Στήλη «Προτίμηση»: σε ποια θέση της δήλωσης είχε ο μαθητής τον όμιλο (1η = πρώτη επιλογή). Ισχύει και για τις λήψεις· βγάλτε την πριν δώσετε τα παρουσιολόγια στους εκπαιδευτικούς, γιατί οι δηλώσεις είναι ιδιωτικές."),
     el("div.actions", {}, one, all), out,
     holder);
 }

@@ -24,6 +24,8 @@ import { importLegacyResponses } from "../import/legacy.js";
 import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
 import { GAP_REASONS, describeEvent, gapReasons, storiesByStudent } from "../export/story.js";
+import { preferenceSheets } from "../export/preferences.js";
+import { placedRanks } from "../export/rosters.js";
 import { allocationStats } from "../export/stats.js";
 import { buildVerification, cutoffNotes, priorities } from "../export/verification.js";
 import { createHash } from "node:crypto";
@@ -714,6 +716,17 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     return json(200, buildVerification({ ...input, lottery: new Map(results.lottery) }, results, log));
   });
 
+  // The parents' declarations as preference numbers: one sheet per day, one
+  // column per club (src/export/preferences.js); the browser writes the .xlsx.
+  route("GET", "/api/admin/export/preferences", async (req) => {
+    session(req, "admin");
+    const [students, clubs, submissions, sections] = await Promise.all([getStudents(), getClubs(), getSubmissions(), store.get("sections")]);
+    if (Object.keys(submissions).length === 0) throw new HttpError(404, "Δεν υπάρχουν δηλώσεις.");
+    const withSections = students.map((s) => ({ ...s, section: sectionOf(sections, s.am, s.grade) }));
+    const preferences = Object.fromEntries(Object.entries(submissions).map(([am, sub]) => [am, sub.preferences ?? {}]));
+    return json(200, { sheets: preferenceSheets(withSections, clubs, preferences) });
+  });
+
   // The lottery alone: ΑΜ and number, by ΑΜ — no names, so it can be
   // announced, and two students are compared at a glance. From the
   // allocation, or for a given seed (preview).
@@ -1269,6 +1282,8 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       seed: results.seed,
       at: results.at,
       byStudent: results.byStudent,
+      // Where each student ranked the club they got (the admin's rosters)
+      ranks: placedRanks(results.days),
       gaps,
       gapCounts,
       unassigned: Object.fromEntries(DAYS.map((d) => [d, results.days[d].unassigned])),

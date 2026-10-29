@@ -433,6 +433,21 @@ test("reports: reasons, audit log, club summary, student story, uploads, events"
   assert.match(lostRow.at(-1), /Γ1: αίτηση στον όμιλο «Αντιγόνη» \(1η επιλογή\) → δεν χώρεσε/);
   assert.equal((await call("GET", "/api/admin/export/verification")).status, 401);
 
+  // Where each student ranked the club they got (the admin's rosters)
+  const winner = loser === "9001" ? "9002" : "9001";
+  assert.equal(res.ranks[winner].mon, 1);
+  if (loser === "9001") assert.equal(res.ranks["9001"].mon, 2, "Ρομποτική was 9001's second choice");
+
+  // The declarations as preference numbers: one sheet per day, one column per club
+  const prefs = (await call("GET", "/api/admin/export/preferences", { token: admin })).data;
+  const mon = prefs.sheets.find((sh) => sh.name === "Δευτέρα");
+  const head = mon.rows[0];
+  const col = (name) => head.findIndex((h) => String(h).startsWith(name));
+  const row9001 = mon.rows.find((r) => r[0] === 9001);
+  assert.deepEqual([row9001[col("Αντιγόνη")], row9001[col("Ρομποτική")], row9001[head.indexOf("Δήλωση")]], [1, 2, "✓"]);
+  assert.equal(mon.rows.find((r) => r[0] === 9003)[head.indexOf("Δήλωση")], "—");
+  assert.equal((await call("GET", "/api/admin/export/preferences")).status, 401);
+
   // The student's report says what the last student admitted had
   const lostReport = (await call("GET", `/api/admin/report/${loser}`, { token: admin })).data;
   assert.match(lostReport.days.mon.steps.join(" "), /Δεν χώρεσε στον όμιλο «Αντιγόνη».*Ο τελευταίος μαθητής που μπήκε είχε αριθμό κλήρωσης \d+· ο μαθητής έχει \d+/);
