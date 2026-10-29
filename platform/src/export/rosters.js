@@ -58,18 +58,36 @@ const ROSTER_HEADER = ["Α/Α", "ΑΜ", "Επώνυμο", "Όνομα", "Πατ�
  * @param {object[]} members from clubMembers()
  * @param {string[]} [teacherNames]
  * @param {boolean} [withSection] add «Τμήμα» (pass hasSections(allStudents), so every roster has the same columns)
+ * @param {((am: string) => number|null) | null} [rankOf] add «Προτίμηση»: where the student ranked the club (for the admin only;
+ *   the declarations stay private, so a roster for the teacher is made without it)
  * @returns {unknown[][]} rows for a worksheet
  */
-export function rosterRows(club, members, teacherNames = [], withSection = hasSections(members)) {
+export function rosterRows(club, members, teacherNames = [], withSection = hasSections(members), rankOf = null) {
   return [
     ["Όμιλος", `${club.name} (${club.code})`],
     ["Ημέρες", club.days.map((d) => DAY_LABELS[d]).join(" + ")],
     ...(teacherNames.length ? [["Εκπαιδευτικοί", teacherNames.join(", ")]] : []),
     ["Μαθητές", `${members.length} (θέσεις ${club.capacity})`],
     [],
-    [...ROSTER_HEADER, ...(withSection ? ["Τμήμα"] : [])],
-    ...members.map((s, i) => [i + 1, Number(s.am) || s.am, s.surname, s.name, s.father ?? "", s.grade, ...(withSection ? [s.section ?? ""] : [])]),
+    [...ROSTER_HEADER, ...(withSection ? ["Τμήμα"] : []), ...(rankOf ? ["Προτίμηση"] : [])],
+    ...members.map((s, i) => [i + 1, Number(s.am) || s.am, s.surname, s.name, s.father ?? "", s.grade, ...(withSection ? [s.section ?? ""] : []),
+      ...(rankOf ? [rankOf(s.am) ? `${rankOf(s.am)}η` : ""] : [])]),
   ];
+}
+
+/**
+ * Where each student ranked the club they were placed in on that day (1 = first
+ * choice), from the allocation's assignments; seats carried to a multi-day
+ * club's later days have none (see the club's first day).
+ * @param {Record<string, {assignments: {am: string, club: string, originalRank: number|null}[]}>} days
+ * @returns {Record<string, Record<string, number>>} ΑΜ → day → rank
+ */
+export function placedRanks(days) {
+  const out = {};
+  for (const [day, { assignments = [] } = {}] of Object.entries(days ?? {})) {
+    for (const a of assignments) if (a.originalRank) (out[a.am] ??= {})[day] = a.originalRank;
+  }
+  return out;
 }
 
 /** «parousiologio_102_Θεατρική_παράσταση.xlsx» */

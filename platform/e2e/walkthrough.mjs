@@ -465,10 +465,16 @@ try {
   if ((await admin.locator("div[role=tabpanel] tbody tr").count()) < 60) throw new Error("the week table should list every student");
   await admin.click("role=tab[name='Παρουσιολόγια']");
   await admin.waitForSelector("th:has-text('Α/Α')");
+  // The «Προτίμηση» column (on by default) for the admin; off before giving rosters to teachers
+  await admin.waitForSelector("th:has-text('Προτίμηση')");
+  if (!/^\d+η$/.test((await admin.locator("table:has(th:has-text('Προτίμηση')) tbody tr >> nth=0 >> td >> nth=-1").textContent()).trim())) throw new Error("rosters: no preference number");
+  await admin.uncheck("label:has-text('Στήλη «Προτίμηση»') input");
+  if (await admin.isVisible("th:has-text('Προτίμηση')")) throw new Error("rosters: the «Προτίμηση» column should go");
+  await admin.check("label:has-text('Στήλη «Προτίμηση»') input");
   await shot(admin, "07e-admin-rosters");
   step("admin: the week per student and the clubs' rosters on screen");
   await shot(admin, "07-admin-results");
-  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Επαλήθευση κατανομής (.xlsx)", "verification"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"]]) {
+  for (const [label, file] of [["Audit log κατανομής (.csv)", "audit"], ["Επαλήθευση κατανομής (.xlsx)", "verification"], ["Σύνοψη ανά όμιλο (.csv)", "summary"], ["Κλήρωση: ΑΜ και αριθμός (.csv)", "lottery"], ["Προτιμήσεις μαθητών (.xlsx)", "preferences"]]) {
     const [d] = await Promise.all([admin.waitForEvent("download"), admin.click(`button:has-text('${label}')`)]);
     step(`admin: ${file} downloaded (${d.suggestedFilename()})`);
   }
