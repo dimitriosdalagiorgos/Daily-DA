@@ -38,11 +38,17 @@ fi
 n=$(systemctl show omiloi -p NRestarts --value); n=${n:-0}
 if [ "$n" -eq 0 ]; then ok "Καμία αυτόματη επανεκκίνηση"
 else warn "Αυτόματες επανεκκινήσεις μετά από πρόβλημα: $n (στείλτε το στο Claude)"; fi
+# Memory against the service's own limit (MemoryMax, README §6.2): a warning
+# above 80% of it
 m=$(systemctl show omiloi -p MemoryCurrent --value)
+x=$(systemctl show omiloi -p MemoryMax --value)
 case "$m" in
   ''|*[!0-9]*) ;;
-  *) if [ "$(mb "$m")" -lt 100 ]; then ok "Μνήμη πλατφόρμας: $(mb "$m") MB από 128"
-     else warn "Μνήμη πλατφόρμας: $(mb "$m") MB από 128 (κοντά στο όριο)"; fi ;;
+  *) case "$x" in
+       ''|*[!0-9]*) ok "Μνήμη πλατφόρμας: $(mb "$m") MB (χωρίς όριο)" ;;
+       *) if [ $(( m * 5 )) -lt $(( x * 4 )) ]; then ok "Μνήμη πλατφόρμας: $(mb "$m") MB από $(mb "$x")"
+          else warn "Μνήμη πλατφόρμας: $(mb "$m") MB από $(mb "$x") (κοντά στο όριο)"; fi ;;
+     esac ;;
 esac
 
 # Answers: directly, and through the web server (Apache, or nginx: README §6.5)

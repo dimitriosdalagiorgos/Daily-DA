@@ -18,13 +18,20 @@ test("guaranteed seats: shared seats count only beyond what other grades could f
     ...Array.from({ length: 6 }, (_, i) => ({ am: `b${i}`, grade: "Β" })),
   ];
   const clubs = [club(1, ["Α", "Β"], 12), club(2, ["Α"], 4)];
-  const rows = guaranteedSeats(students, clubs);
+  const rows = guaranteedSeats(students, clubs, ["Α", "Β"]);
   const a = rows.find((r) => r.grade === "Α");
   const b = rows.find((r) => r.grade === "Β");
   // Hall passes (16 seats, 16 students), yet Β is sure of only 12 − 10 = 2
   assert.deepEqual([a.own, a.shared, a.others, a.guaranteed, a.atRisk], [4, 12, 6, 10, 0]);
   assert.deepEqual([b.own, b.shared, b.others, b.guaranteed, b.atRisk], [0, 12, 10, 2, 4]);
   assert.equal(rows.length, 2, "only days with clubs for the grade");
+  assert.ok(rows.every((r) => r.mandatory));
+
+  // Β mandatory, Α not: Β comes first in the shared club, so Α does not count
+  // against it; Α still competes with Β.
+  const [a2, b2] = ["Α", "Β"].map((g) => guaranteedSeats(students, clubs, ["Β"]).find((r) => r.grade === g));
+  assert.deepEqual([b2.mandatory, b2.others, b2.guaranteed, b2.atRisk], [true, 0, 12, 0]);
+  assert.deepEqual([a2.mandatory, a2.others, a2.guaranteed, a2.atRisk], [false, 6, 10, 0]);
 });
 
 // Shared club 1 (Α+Β, 1 seat), club 2 only for Α (1 seat). The Α student

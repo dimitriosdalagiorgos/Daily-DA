@@ -1080,7 +1080,7 @@ test("«Προτεινόμενη κατανομή»: a seat in the shared club p
   assert.equal((await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs, teachers: [TEACHER_ROWS[0]] } })).status, 200);
   let state = (await call("GET", "/api/admin/state", { token: admin })).data;
   // Β (3 students) has no club of its own and the Α student may take the shared seat
-  assert.deepEqual(state.seatGuarantees.find((r) => r.grade === "Β"), { day: "mon", grade: "Β", students: 3, own: 0, shared: 1, others: 1, guaranteed: 0, atRisk: 3 });
+  assert.deepEqual(state.seatGuarantees.find((r) => r.grade === "Β"), { day: "mon", grade: "Β", mandatory: true, students: 3, own: 0, shared: 1, others: 1, guaranteed: 0, atRisk: 3 });
 
   // The Α student (9003) prefers the shared club; 9001 (Β) can only go there
   await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "mon", rows: [["RegistryNr", "Κοινός", "Μόνο Α"], [9003, 1, 2], [9001, 1, ""]] } });

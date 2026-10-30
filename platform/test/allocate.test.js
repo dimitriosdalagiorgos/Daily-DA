@@ -464,3 +464,17 @@ test("without teacher lists and mandatory grades, DA = choosing in lottery order
     }
   }
 });
+
+test("audit: false gives the same allocation, without the step-by-step log", () => {
+  for (let seed = 1; seed <= 30; seed++) {
+    const input = randomInstance(seededRandom(`audit-${seed}`));
+    const full = allocateWeek(input);
+    const quiet = allocateWeek({ ...input, audit: false });
+    assert.deepEqual(quiet.byStudent, full.byStudent, `seed ${seed}`);
+    for (const day of Object.keys(full.days)) {
+      assert.deepEqual(quiet.days[day].assignments, full.days[day].assignments);
+      assert.deepEqual(quiet.days[day].unassigned, full.days[day].unassigned);
+      assert.deepEqual(quiet.days[day].log, []);
+    }
+  }
+});

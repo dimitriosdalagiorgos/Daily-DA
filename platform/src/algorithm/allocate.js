@@ -38,6 +38,8 @@
 //   exclusions:   { [clubCode]: [am, ...] }              students the club does not accept
 //   lottery:      Map<am, number>                        from drawLottery()
 //   mandatoryGrades: ["Α", ...]                          grades placed first
+//   audit:        false → no step-by-step log (`log` stays empty); same result.
+//                 For the capacity suggestion, which reruns the week many times.
 
 import { DAYS, dayIndex } from "./days.js";
 
@@ -157,7 +159,7 @@ function deferredAcceptance(dayClubs, lists, priorityOf, log) {
  *   byStudent: Record<string, Record<string, string|null>>,
  * }}
  */
-export function allocateWeek({ students, clubs, preferences, teacherLists = {}, exclusions = {}, lottery, mandatoryGrades = [] }) {
+export function allocateWeek({ students, clubs, preferences, teacherLists = {}, exclusions = {}, lottery, mandatoryGrades = [], audit = true }) {
   const clubsByCode = indexClubs(clubs);
   const studentsByAm = new Map();
   for (const s of students) {
@@ -188,7 +190,7 @@ export function allocateWeek({ students, clubs, preferences, teacherLists = {}, 
 
   for (const day of DAYS) {
     const dayLog = [];
-    const log = (entry) => dayLog.push({ day, ...entry });
+    const log = audit ? (entry) => dayLog.push({ day, ...entry }) : () => {};
     const assignments = [];
     const unassigned = [];
 
