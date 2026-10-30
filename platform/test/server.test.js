@@ -1071,3 +1071,51 @@ test("a clubs file with fewer seats than a teacher's ⭐ empties the ⭐, opens 
   me = (await call("GET", "/api/teacher/me", { token: teacher })).data.clubs.find((c) => c.code === 101);
   assert.equal(me.reset, null);
 });
+
+test("«Προτεινόμενη κατανομή»: a seat in the shared club places the Β student; applied with a new allocation", async () => {
+  const { call, store } = setup();
+  const admin = await adminLogin(call);
+  await call("PUT", "/api/admin/students", { token: admin, body: { rows: STUDENT_ROWS } });
+  const clubs = [CLUB_ROWS[0], [200, "Κοινός", "Δευτέρα", "", "", "Α-Β", 1, "", ""], [201, "Μόνο Α", "Δευτέρα", "", "", "Α", 1, "", ""]];
+  assert.equal((await call("PUT", "/api/admin/clubs", { token: admin, body: { clubs, teachers: [TEACHER_ROWS[0]] } })).status, 200);
+  let state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  // Β (3 students) has no club of its own and the Α student may take the shared seat
+  assert.deepEqual(state.seatGuarantees.find((r) => r.grade === "Β"), { day: "mon", grade: "Β", students: 3, own: 0, shared: 1, others: 1, guaranteed: 0, atRisk: 3 });
+
+  // The Α student (9003) prefers the shared club; 9001 (Β) can only go there
+  await call("POST", "/api/admin/import-legacy", { token: admin, body: { day: "mon", rows: [["RegistryNr", "Κοινός", "Μόνο Α"], [9003, 1, 2], [9001, 1, ""]] } });
+  await call("PUT", "/api/admin/settings", { token: admin, body: { parentPassword: "omiloi2026", deadline: "2026-10-10T21:00:00Z" } });
+  for (const phase of ["teachers", "parents", "closed"]) await call("POST", "/api/admin/phase", { token: admin, body: { phase, force: true } });
+  assert.equal((await call("GET", "/api/admin/capacity-suggestion", { token: admin })).status, 409, "only after the allocation");
+  // A seed where 9003 has the better number
+  let seed = 0;
+  while (drawLottery(["9001", "9002", "9003", "9004"], `s${seed}`).get("9003") > drawLottery(["9001", "9002", "9003", "9004"], `s${seed}`).get("9001")) seed++;
+  let r = await call("POST", "/api/admin/allocate", { token: admin, body: { seed: `s${seed}` } });
+  assert.deepEqual([r.data.results.byStudent["9003"].mon, r.data.results.byStudent["9001"].mon], ["200", null]);
+  assert.equal(r.data.results.enrolled.mon["201"], undefined, "the club only for Α stays empty");
+
+  r = await call("GET", "/api/admin/capacity-suggestion", { token: admin });
+  assert.equal(r.status, 200);
+  const { suggestion } = r.data;
+  assert.deepEqual([suggestion.before, suggestion.after, suggestion.increases, suggestion.complete],
+    [[{ am: "9001", day: "mon" }], [], [{ code: "200", from: 1, to: 2, ceiling: 22 }], true]);
+
+  r = await call("POST", "/api/admin/capacity-suggestion/apply", { token: admin, body: { increases: [{ code: "201", to: 2 }] } });
+  assert.equal(r.status, 409, "not what the admin saw");
+  r = await call("POST", "/api/admin/capacity-suggestion/apply", { token: admin, body: { increases: suggestion.increases } });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.results.byStudent["9003"].mon, r.data.results.byStudent["9001"].mon, r.data.results.seed], ["200", "200", `s${seed}`]);
+  state = (await call("GET", "/api/admin/state", { token: admin })).data;
+  assert.equal(state.clubs.find((c) => c.code === 200).capacity, 2);
+  assert.equal(state.phase ?? state.settings.phase, "allocated");
+  const event = (await store.readLog("events")).at(-1);
+  assert.deepEqual([event.what, event.increases, event.before, event.after], ["capacity_suggestion", ["200: 1 → 2"], 1, 0]);
+
+  // Nothing left to suggest
+  r = await call("GET", "/api/admin/capacity-suggestion", { token: admin });
+  assert.deepEqual([r.data.suggestion.before, r.data.suggestion.increases], [[], []]);
+  assert.equal((await call("POST", "/api/admin/capacity-suggestion/apply", { token: admin, body: { increases: [] } })).status, 409);
+  // Not after the announcement
+  await call("POST", "/api/admin/phase", { token: admin, body: { phase: "published" } });
+  assert.equal((await call("GET", "/api/admin/capacity-suggestion", { token: admin })).status, 409);
+});
