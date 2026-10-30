@@ -20,6 +20,7 @@ import { importSections } from "../import/sections.js";
 import { importClubs, normalizePersonalId, normalizeSimilar } from "../import/clubs.js";
 import { importTeacherLists } from "../import/teacherLists.js";
 import { checkReadiness } from "../import/readiness.js";
+import { guaranteedSeats, suggestCapacityIncreases } from "../planning/capacity.js";
 import { importLegacyResponses } from "../import/legacy.js";
 import { givenNameMatches, sameName } from "../import/names.js";
 import { buildRPackage, toCsv } from "../export/rPackage.js";
@@ -234,6 +235,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}), clubs: [...new Set(Object.values(s.preferences ?? {}).flat().map(String))] }])),
       uploads: uploads ?? {},
       readiness: students.length && clubs.length ? checkReadiness(students, clubs, settings, exclusionsOf(clubs, lists, students)) : [],
+      seatGuarantees: guaranteedSeats(students, clubs),
       results: results ? { seed: results.seed, at: results.at } : null,
     });
   });
@@ -609,6 +611,13 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     if (!["closed", "allocated"].includes(settings.phase)) throw new HttpError(409, "Η κατανομή γίνεται αφού κλείσουν οι δηλώσεις.");
     const { seed } = await body(req);
     if (typeof seed !== "string" || seed.trim() === "") throw new HttpError(422, "Δώστε το seed της κλήρωσης.");
+    const results = await runAllocation(seed);
+    await logEvent("admin", "allocated", { seed });
+    return json(200, { results });
+  });
+
+  /** Run and store the allocation for `seed`; the admin's summary of it. */
+  async function runAllocation(seed) {
     const input = await allocationInput(seed);
     const stale = staleSubmissions(await getSubmissions(), input.clubs, input.students);
     if (stale.length) {
@@ -636,8 +645,47 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
     for (const { key } of await store.list("story:")) if (!stories[key.slice(6)]) await store.delete(key);
     await store.setMany(Object.entries(stories).map(([am, story]) => ({ key: `story:${am}`, value: story })));
     await store.update("settings", (s = {}) => ({ ...s, phase: "allocated" }));
-    await logEvent("admin", "allocated", { seed });
-    return json(200, { results: summarizeResults(results, input, logByDay) });
+    return summarizeResults(results, input, logByDay);
+  }
+
+  // «Προτεινόμενη κατανομή» (decided 30/10/2026): when students of mandatory
+  // grades did not fit, the seats to add (up to 22, or 30 for a club the
+  // clubs file gave more than 22) and what the allocation then gives. The
+  // admin applies them in one step: the seats change and the allocation
+  // runs again with the same seed. Pure Gale–Shapley throughout.
+  const SUGGESTION_TIME_LIMIT_MS = 45_000;
+  async function capacitySuggestion() {
+    const settings = await getSettings();
+    if (settings.phase !== "allocated") throw new HttpError(409, "Η πρόταση γίνεται μετά την κατανομή και πριν από την ανακοίνωση.");
+    const results = await store.get("results");
+    if (!results) throw new HttpError(409, "Δεν έχει γίνει κατανομή.");
+    const input = await allocationInput(results.seed);
+    const fileCapacity = Object.fromEntries(((await store.get("clubs")) ?? []).map((c) => [c.code, c.capacity]));
+    return { seed: results.seed, ...suggestCapacityIncreases(input, fileCapacity, { timeLimitMs: SUGGESTION_TIME_LIMIT_MS }) };
+  }
+
+  route("GET", "/api/admin/capacity-suggestion", async (req) => {
+    session(req, "admin");
+    return json(200, { suggestion: await capacitySuggestion() });
+  });
+
+  // Applies the suggestion the admin saw (`increases`), if it still stands.
+  route("POST", "/api/admin/capacity-suggestion/apply", async (req) => {
+    session(req, "admin");
+    const { increases } = await body(req);
+    const suggestion = await capacitySuggestion();
+    const key = (list) => JSON.stringify((Array.isArray(list) ? list : []).map((i) => [String(i?.code), i?.to]));
+    if (!suggestion.increases.length) throw new HttpError(409, "Δεν υπάρχει αύξηση θέσεων να εφαρμοστεί.");
+    if (key(increases) !== key(suggestion.increases)) throw new HttpError(409, "Η πρόταση άλλαξε στο μεταξύ. Ανανεώστε τη σελίδα και δείτε τη νέα πρόταση.");
+    const at = new Date(now()).toISOString();
+    for (const { code, to } of suggestion.increases) {
+      await store.update(`teacherList:${code}`, (prev = { ams: [] }) => ({ ...prev, capacity: to, updatedBy: "admin", updatedAt: at }));
+    }
+    const results = await runAllocation(suggestion.seed);
+    await logEvent("admin", "capacity_suggestion", {
+      seed: suggestion.seed, increases: suggestion.increases.map((i) => `${i.code}: ${i.from} → ${i.to}`), before: suggestion.before.length, after: suggestion.after.length,
+    });
+    return json(200, { results });
   });
 
   route("GET", "/api/admin/results", async (req) => {

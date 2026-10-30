@@ -278,7 +278,26 @@ function checksCard() {
     errors.length ? message("err", ["setup", "teachers"].includes(state.settings.phase)
       ? "Δεν φτάνουν οι θέσεις — οι δηλώσεις θα ανοίξουν μόνο με επιβεβαίωση:"
       : "Δεν φτάνουν οι θέσεις — στην κατανομή, όσοι δεν χωρέσουν θα μείνουν χωρίς όμιλο εκείνη την ημέρα:", errors.map((p) => p.message)) : message("ok", "Οι θέσεις φτάνουν για όλους τους μαθητές των τάξεων με υποχρεωτική ένταξη."),
-    warnings.length ? message("warn", "Προσοχή:", warnings.map((p) => p.message)) : null);
+    warnings.length ? message("warn", "Προσοχή:", warnings.map((p) => p.message)) : null,
+    seatGuaranteesView());
+}
+
+// Seats each grade is sure of whatever students rank and the lottery draws:
+// shared clubs may fill up with other grades (decided 30/10/2026)
+function seatGuaranteesView() {
+  const rows = state.seatGuarantees ?? [];
+  if (!rows.length) return null;
+  const atRisk = rows.filter((r) => r.atRisk > 0);
+  return el("details", {},
+    el("summary", {}, `Εγγυημένες θέσεις ανά τάξη${atRisk.length ? ` — ${atRisk.length === 1 ? "1 περίπτωση" : `${atRisk.length} περιπτώσεις`} με κίνδυνο` : ""}`),
+    el("p.small", {}, "Οι θέσεις που έχει σίγουρα κάθε τάξη, όποιες κι αν είναι οι προτιμήσεις και η κλήρωση: οι θέσεις των ομίλων μόνο για την τάξη, συν όσες θέσεις των κοινών ομίλων περισσεύουν ακόμα κι αν πάνε εκεί όλοι οι μαθητές των άλλων τάξεων. Ο έλεγχος παραπάνω δείχνει αν οι θέσεις φτάνουν όταν μοιραστούν σωστά· με την κλήρωση όμως, μαθητές μιας τάξης μπορεί να γεμίσουν έναν κοινό όμιλο και να μείνουν εκτός μαθητές άλλης τάξης, ενώ περισσεύουν θέσεις σε ομίλους που δεν τους αφορούν. Οι αποκλεισμοί των εκπαιδευτικών δεν λαμβάνονται υπόψη."),
+    el("p.small", {}, "Αν μια τάξη κινδυνεύει, βοηθούν περισσότερες θέσεις σε ομίλους μόνο για αυτή την τάξη· η αύξηση των κοινών ομίλων συχνά καταλήγει σε μαθητές της άλλης τάξης."),
+    el("div.table-wrap", {}, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Ημέρα"), el("th", {}, "Τάξη"), el("th.num", {}, "Μαθητές"), el("th.num", {}, "Θέσεις μόνο για την τάξη"),
+        el("th.num", {}, "Θέσεις σε κοινούς ομίλους"), el("th.num", {}, "Μαθητές άλλων τάξεων που μπορούν να μπουν σε αυτούς"), el("th.num", {}, "Εγγυημένες θέσεις"), el("th.num", {}, "Μπορεί να μείνουν εκτός, έως"))),
+      el("tbody", {}, rows.map((r) => el("tr", {},
+        el("td", {}, DAY_LABELS[r.day]), el("td", {}, r.grade), el("td.num", {}, r.students), el("td.num", {}, r.own), el("td.num", {}, r.shared), el("td.num", {}, r.others),
+        el("td.num", {}, r.guaranteed), el("td.num", {}, r.atRisk ? el("strong", {}, r.atRisk) : "0")))))));
 }
 
 function dangerZone() {
@@ -1003,12 +1022,78 @@ function mandatoryGapsView(results, byAm, who) {
   const excludedOnly = rows.filter((r) => !r.fixable && r.excluded).length;
   return el("div.msg.err", { role: "alert" },
     el("strong", {}, `Υποχρεωτική ένταξη (${results.mandatoryGrades.join(", ")} τάξη): ${rows.length} μαθητές χωρίς όμιλο κάποια ημέρα`),
-    el("p.small", { style: "margin:4px 0" }, `${fixable} δήλωσαν αλλά δεν χώρεσαν (αυξήστε τη χωρητικότητα κάποιου ομίλου της λίστας τους και ξανατρέξτε την κατανομή)· ${rows.length - fixable - excludedOnly} δεν έχουν προτιμήσεις (χρειάζεται δήλωση)${excludedOnly ? `· ${excludedOnly} αποκλείστηκαν από όλους τους ομίλους κάποιας ημέρας (από τους εκπαιδευτικούς)` : ""}.`),
+    el("p.small", { style: "margin:4px 0" }, `${fixable} δήλωσαν αλλά δεν χώρεσαν (δείτε παρακάτω την «Προτεινόμενη κατανομή»)· ${rows.length - fixable - excludedOnly} δεν έχουν προτιμήσεις (χρειάζεται δήλωση)${excludedOnly ? `· ${excludedOnly} αποκλείστηκαν από όλους τους ομίλους κάποιας ημέρας (από τους εκπαιδευτικούς)` : ""}.`),
     el("details", { open: rows.length <= 20 }, el("summary", {}, "Λίστα μαθητών"),
       el("div.table-wrap", {}, el("table", {},
         el("thead", {}, el("tr", {}, el("th.num", {}, "ΑΜ"), el("th", {}, "Μαθητής"), el("th", {}, "Τάξη"), el("th", {}, "Αιτία"))),
         el("tbody", {}, rows.map((r) => el("tr", {},
-          el("td.num", {}, r.am), el("td", {}, who(r.s)), el("td", {}, r.s?.grade ?? ""), el("td", {}, r.reason))))))));
+          el("td.num", {}, r.am), el("td", {}, who(r.s)), el("td", {}, r.s?.grade ?? ""), el("td", {}, r.reason))))))),
+    fixable && state.settings.phase === "allocated" ? capacitySuggestionBox(byAm, who) : null);
+}
+
+// «Προτεινόμενη κατανομή»: the seats to add so that those who did not fit
+// get a club, found by rerunning the allocation; applied in one step.
+function capacitySuggestionBox(byAm, who) {
+  const out = el("div");
+  const go = el("button", { type: "button" }, "Προτεινόμενη κατανομή");
+  go.addEventListener("click", () => busy(go, out, async () => {
+    out.replaceChildren(el("p.small", {}, "Υπολογισμός… Η κατανομή ξανατρέχει με διάφορες χωρητικότητες· μπορεί να πάρει έως ένα λεπτό."));
+    const { suggestion } = await api("GET", "/api/admin/capacity-suggestion");
+    out.replaceChildren(suggestionView(suggestion, byAm, who));
+  }));
+  return el("div", { style: "margin-top:8px" },
+    el("p.small", { style: "margin:4px 0" }, "Η «Προτεινόμενη κατανομή» βρίσκει σε ποιους ομίλους να προστεθούν θέσεις ώστε να χωρέσουν όσοι έμειναν εκτός: δοκιμάζει αυξήσεις και ξανατρέχει την κατανομή, προτιμώντας τις λιγότερες θέσεις και ομίλους μόνο για την τάξη τους. Όριο: 22 μαθητές ανά όμιλο, ή 30 αν ο όμιλος είχε από το αρχείο ομίλων περισσότερες από 22 θέσεις (σύνολο)."),
+    el("div.actions", {}, go), out);
+}
+
+function suggestionView(suggestion, byAm, who) {
+  const clubOf = new Map(state.clubs.map((c) => [String(c.code), c]));
+  const key = (u) => `${u.am}:${u.day}`;
+  const left = new Set(suggestion.after.map(key));
+  const placed = suggestion.before.filter((u) => !left.has(key(u)));
+  const studentList = (list) => el("ul.small", {}, list.map((u) => el("li", {}, `${DAY_LABELS[u.day]}: ${who(byAm.get(u.am))} · ${byAm.get(u.am)?.grade ?? ""} · ΑΜ ${u.am}`)));
+  if (!suggestion.increases.length) {
+    return message("warn", suggestion.complete
+      ? "Δεν βρέθηκε αύξηση θέσεων, εντός των ορίων, που να τοποθετεί κάποιον από όσους δεν χώρεσαν. Χρειάζεται νέος όμιλος ή απόφαση του σχολείου."
+      : "Η αναζήτηση σταμάτησε λόγω χρόνου χωρίς πρόταση. Δοκιμάστε ξανά.");
+  }
+  const out = el("div");
+  const apply = el("button.primary", { type: "button" }, "Εφαρμογή");
+  apply.addEventListener("click", async () => {
+    const ok = await ask({
+      title: "Εφαρμογή της πρότασης;",
+      tone: "warn",
+      body: [
+        el("p", {}, `Οι θέσεις ${suggestion.increases.length === 1 ? "του ομίλου αλλάζουν" : `${suggestion.increases.length} ομίλων αλλάζουν`} όπως στον πίνακα, και η κατανομή ξανατρέχει με το ίδιο seed «${suggestion.seed}». Η αλλαγή γράφεται στο «Ιστορικό».`),
+        el("p", {}, "Μπορεί να αλλάξουν όμιλο και άλλοι μαθητές, προς όμιλο που είχαν βάλει πιο ψηλά στη σειρά τους (π.χ. όταν η νέα θέση ελευθερώνει θέση αλλού)."),
+      ],
+      ok: "Εφαρμογή και νέα κατανομή",
+    });
+    if (!ok) return;
+    busy(apply, out, async () => {
+      const { results } = await api("POST", "/api/admin/capacity-suggestion/apply", { increases: suggestion.increases });
+      await refresh();
+      tab = "allocation";
+      render();
+      $("#results-box")?.replaceChildren(resultsView(results));
+    });
+  });
+  return el("div", {},
+    el("div.table-wrap", {}, el("table", {},
+      el("thead", {}, el("tr", {}, el("th.num", {}, "Κωδ."), el("th", {}, "Όμιλος"), el("th", {}, "Ημέρες"), el("th", {}, "Τάξεις"), el("th.num", {}, "Θέσεις τώρα"), el("th.num", {}, "Προτεινόμενες"), el("th.num", {}, "Όριο"))),
+      el("tbody", {}, suggestion.increases.map((i) => {
+        const c = clubOf.get(String(i.code));
+        return el("tr", {}, el("td.num", {}, i.code), el("td", {}, c?.name ?? ""), el("td", {}, (c?.days ?? []).map((d) => DAY_LABELS[d]).join(" + ")),
+          el("td", {}, (c?.grades ?? []).join(", ")), el("td.num", {}, i.from), el("td.num", {}, el("strong", {}, i.to)), el("td.num", {}, i.ceiling));
+      })))),
+    el("p", {}, `Δεν χώρεσαν (μαθητής × ημέρα): ${suggestion.before.length} τώρα, `, el("strong", {}, String(suggestion.after.length)), " με τις νέες θέσεις."),
+    placed.length ? el("details", {}, el("summary", {}, `Τοποθετούνται (${placed.length})`), studentList(placed)) : null,
+    suggestion.after.length ? el("details", {}, el("summary", {}, `Μένουν χωρίς όμιλο (${suggestion.after.length})`), studentList(suggestion.after),
+      el("p.small.muted", {}, suggestion.complete
+        ? "Για αυτούς δεν βρέθηκε αύξηση εντός των ορίων: χρειάζεται νέος όμιλος ή απόφαση του σχολείου."
+        : "Η αναζήτηση σταμάτησε λόγω χρόνου: μετά την εφαρμογή, ζητήστε ξανά πρόταση για τους υπόλοιπους.")) : null,
+    out,
+    el("div.actions", {}, apply));
 }
 
 // Students with a submission but nothing to rank on a given day
@@ -1276,7 +1361,7 @@ const EVENT_LABELS = {
   import_legacy: "Εισαγωγή περσινών δηλώσεων", settings: "Αλλαγή ρυθμίσεων", phase: "Αλλαγή φάσης", login_exception: "Εξαίρεση σύνδεσης",
   teacher_link: "Σύνδεσμος εκπαιδευτικού", teacher_login: "Σύνδεση εκπαιδευτικού", teacher_list: "Λίστα εκπαιδευτικού", teacher_list_reset: "Μηδενισμός ⭐ λίστας εκπαιδευτικού (λιγότερες θέσεις)",
   teacher_login_failed: "Αποτυχημένη σύνδεση εκπαιδευτικού",
-  parent_login: "Σύνδεση γονέα", parent_login_failed: "Αποτυχημένη σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
+  parent_login: "Σύνδεση γονέα", parent_login_failed: "Αποτυχημένη σύνδεση γονέα", submission: "Δήλωση γονέα", allocated: "Κατανομή", capacity_suggestion: "Προτεινόμενη κατανομή: αυξήσεις θέσεων και νέα κατανομή", reset: "Επαναφορά πλατφόρμας", mail_failed: "Αποτυχία email",
 };
 const PHASE_NAMES = Object.fromEntries(PHASES);
 const FAILED_LOGIN = {
