@@ -12,7 +12,7 @@
 // change that. Hall's condition (readiness.js) says a placement for everyone
 // exists, not that a stable one does.
 
-import { allocateWeek, EVENTS, UNASSIGNED_REASONS } from "../algorithm/allocate.js";
+import { allocateWeek, UNASSIGNED_REASONS } from "../algorithm/allocate.js";
 import { DAYS } from "../algorithm/days.js";
 import { GRADES } from "../algorithm/validate.js";
 
@@ -27,13 +27,17 @@ export const capacityCeiling = (fileCapacity) => (fileCapacity > CLUB_MAX ? ENSE
 /**
  * Seats each grade gets whatever students rank and the lottery draws, per
  * day: its own clubs, plus the seats of shared clubs that students of other
- * grades could not fill even if they all went there. Assumes everyone ranks
- * every club open to them (as the parents' form requires) and ignores
- * teachers' exclusions. At most `students - guaranteed` of the grade can be
- * left out: an unplaced student means every club open to them is full.
- * @returns {{day: string, grade: string, students: number, own: number, shared: number, others: number, guaranteed: number, atRisk: number}[]}
+ * grades could not fill even if they all went there. Students of grades
+ * with mandatory placement come first in every club, so for those grades
+ * only the other mandatory grades compete for the shared seats (decided
+ * 30/10/2026); for the other grades, every other grade does. Assumes
+ * everyone ranks every club open to them (as the parents' form requires)
+ * and ignores teachers' lists (⭐, ⛔). At most `students - guaranteed` of
+ * the grade can be left out: an unplaced student means every club open to
+ * them is full.
+ * @returns {{day: string, grade: string, mandatory: boolean, students: number, own: number, shared: number, others: number, guaranteed: number, atRisk: number}[]}
  */
-export function guaranteedSeats(students, clubs) {
+export function guaranteedSeats(students, clubs, mandatoryGrades = []) {
   const perGrade = Object.fromEntries(GRADES.map((g) => [g, students.filter((s) => s.grade === g).length]));
   const rows = [];
   for (const day of DAYS) {
@@ -41,13 +45,14 @@ export function guaranteedSeats(students, clubs) {
     for (const grade of GRADES) {
       const theirs = running.filter((c) => c.grades.includes(grade));
       if (!perGrade[grade] || !theirs.length) continue;
+      const mandatory = mandatoryGrades.includes(grade);
       const own = theirs.filter((c) => c.grades.every((g) => g === grade)).reduce((n, c) => n + c.capacity, 0);
       const sharedClubs = theirs.filter((c) => c.grades.some((g) => g !== grade));
       const shared = sharedClubs.reduce((n, c) => n + c.capacity, 0);
-      const otherGrades = new Set(sharedClubs.flatMap((c) => c.grades).filter((g) => g !== grade));
-      const others = [...otherGrades].reduce((n, g) => n + perGrade[g], 0);
+      const rivals = new Set(sharedClubs.flatMap((c) => c.grades).filter((g) => g !== grade && (!mandatory || mandatoryGrades.includes(g))));
+      const others = [...rivals].reduce((n, g) => n + perGrade[g], 0);
       const guaranteed = own + Math.max(0, shared - others);
-      rows.push({ day, grade, students: perGrade[grade], own, shared, others, guaranteed, atRisk: Math.max(0, perGrade[grade] - guaranteed) });
+      rows.push({ day, grade, mandatory, students: perGrade[grade], own, shared, others, guaranteed, atRisk: Math.max(0, perGrade[grade] - guaranteed) });
     }
   }
   return rows;
@@ -92,7 +97,8 @@ export function suggestCapacityIncreases(input, fileCapacity, { timeLimitMs = In
   const mandatory = input.mandatoryGrades ?? [];
   const capacity = new Map(input.clubs.map((c) => [String(c.code), c.capacity]));
   const ceiling = new Map(input.clubs.map((c) => [String(c.code), capacityCeiling(fileCapacity[c.code] ?? c.capacity)]));
-  const allocate = () => allocateWeek({ ...input, clubs: input.clubs.map((c) => ({ ...c, capacity: capacity.get(String(c.code)) })) });
+  // Without the step-by-step log: same result, far less memory and time.
+  const allocate = () => allocateWeek({ ...input, clubs: input.clubs.map((c) => ({ ...c, capacity: capacity.get(String(c.code)) })), audit: false });
   const run = () => unplaced(allocate(), gradeOf, mandatory);
   const tryWith = (code, value) => {
     const old = capacity.get(code);
@@ -101,17 +107,22 @@ export function suggestCapacityIncreases(input, fileCapacity, { timeLimitMs = In
     capacity.set(code, old);
     return left;
   };
-  // A seat more changes something only in a club that turned someone away
-  // (it is then full); the others are not worth an allocation run.
-  const turnedAway = (result) => new Set(DAYS.flatMap((day) => result.days[day].log
-    .filter((e) => e.event === EVENTS.REJECTED || e.event === EVENTS.DISPLACED).map((e) => String(e.club))));
+  // A seat more can change something only in a full club; the others are
+  // not worth an allocation run.
+  const fullClubs = (result) => {
+    const placed = new Map();
+    for (const day of DAYS) {
+      for (const a of result.days[day].assignments) if (a.via === "da") placed.set(String(a.club), (placed.get(String(a.club)) ?? 0) + 1);
+    }
+    return new Set([...placed].filter(([code, n]) => n >= capacity.get(code)).map(([code]) => code));
+  };
 
   let result = allocate();
   const before = unplaced(result, gradeOf, mandatory);
   let left = before;
   while (left.length && complete) {
     const days = new Set(left.map((u) => u.day));
-    const full = turnedAway(result);
+    const full = fullClubs(result);
     const candidates = input.clubs.filter((c) => full.has(String(c.code)) && c.days.some((d) => days.has(d)));
     let best = null;
     // Fewest seats first: one more seat in every candidate, then two, …

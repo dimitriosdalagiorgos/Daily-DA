@@ -235,7 +235,7 @@ export function createApp({ store, env, now = () => Date.now(), sendMail }) {
       submissions: Object.fromEntries(Object.entries(submissions).map(([am, s]) => [am, { submittedAt: s.submittedAt, parentEmail: s.parent?.email, parentName: s.parent?.name, changes: s.history?.length ?? 1, imported: Boolean(s.imported), days: Object.keys(s.preferences ?? {}), clubs: [...new Set(Object.values(s.preferences ?? {}).flat().map(String))] }])),
       uploads: uploads ?? {},
       readiness: students.length && clubs.length ? checkReadiness(students, clubs, settings, exclusionsOf(clubs, lists, students)) : [],
-      seatGuarantees: guaranteedSeats(students, clubs),
+      seatGuarantees: guaranteedSeats(students, clubs, settings.mandatoryGrades),
       results: results ? { seed: results.seed, at: results.at } : null,
     });
   });

@@ -254,7 +254,7 @@ EnvironmentFile=/etc/omiloi.env
 ExecStart=/usr/bin/node --max-old-space-size=80 server/start.mjs
 Restart=on-failure
 RestartSec=5
-MemoryMax=128M
+MemoryMax=256M
 OOMScoreAdjust=500
 Nice=5
 UMask=0077
@@ -269,7 +269,7 @@ ReadWritePaths=/var/lib/omiloi
 WantedBy=multi-user.target
 ```
 
-- `MemoryMax=128M`, `--max-old-space-size=80`: η πλατφόρμα δεν παίρνει ποτέ πάνω από 128 MB· αν τα ξεπεράσει, το systemd την ξαναξεκινά.
+- `MemoryMax=256M`, `--max-old-space-size=80`: η πλατφόρμα δεν παίρνει ποτέ πάνω από 256 MB· αν τα ξεπεράσει, το systemd την ξαναξεκινά. Το 80 είναι η μνήμη για τα δεδομένα της JavaScript· η Node.js χρειάζεται επιπλέον περίπου 40–50 MB για τον εαυτό της, και σε βαρύ υπολογισμό (π.χ. «Προτεινόμενη κατανομή») φτάνει τα 120–130 MB. Μέχρι τις 30/10/2026 το όριο ήταν 128M, πολύ κοντά σε αυτό.
 - `OOMScoreAdjust=500`: αν τελειώσει η μνήμη του μηχανήματος, θυσιάζεται **πρώτη** η πλατφόρμα και όχι η βάση δεδομένων ή άλλες υπηρεσίες.
 - `Nice=5`: οι υπόλοιπες υπηρεσίες έχουν προτεραιότητα στον επεξεργαστή.
 - Οι γραμμές `Protect…`, `Private…`, `ReadWritePaths`: η πλατφόρμα μπορεί να γράψει μόνο στο `/var/lib/omiloi`.

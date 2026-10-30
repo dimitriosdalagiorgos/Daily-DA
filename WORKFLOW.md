@@ -214,6 +214,26 @@ sudo omiloi-status
 sudo ln -sf /opt/omiloi/app/platform/server/omiloi-status.sh /usr/local/sbin/omiloi-status
 ```
 
+**Μία φορά: όριο μνήμης 256 MB** (από 30/10/2026). Μέχρι τότε η πλατφόρμα είχε όριο 128 MB, που σε βαρύ υπολογισμό (π.χ. «Προτεινόμενη κατανομή») ήταν πολύ κοντά. Το VM έχει αρκετή ελεύθερη μνήμη, και το Koha δεν επηρεάζεται. Η επανεκκίνηση κρατά λίγα δευτερόλεπτα· κάντε την όταν δεν δουλεύει κανείς στην πλατφόρμα:
+
+```sh
+sudo sed -i 's/^MemoryMax=128M$/MemoryMax=256M/' /etc/systemd/system/omiloi.service
+```
+
+```sh
+sudo systemctl daemon-reload
+```
+
+```sh
+sudo systemctl restart omiloi
+```
+
+```sh
+systemctl show omiloi -p MemoryMax
+```
+
+Η τελευταία εντολή πρέπει να γράψει `MemoryMax=268435456` (256 MB). Μετά από `sudo omiloi-update`, το `sudo omiloi-status` γράφει «… MB από 256».
+
 Μέχρι τότε, οι ίδιοι έλεγχοι με το χέρι: `systemctl is-active omiloi` (πρέπει `active`), `systemctl show omiloi -p NRestarts` (πρέπει `0`), `df -h / /srv/data` (στήλη **Use%** κάτω από 85%), `free -h`, `ls -l /var/backups/omiloi-*.json` (το χθεσινό αντίγραφο με τη χθεσινή ημερομηνία).
 
 ### 7.5. Όταν κάτι δεν πάει καλά στο VM
