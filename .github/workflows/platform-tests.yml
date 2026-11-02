@@ -40,12 +40,13 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends r-base-core \
-            r-cran-dplyr r-cran-readr r-cran-tidyr r-cran-purrr r-cran-stringr r-cran-writexl
+            r-cran-dplyr r-cran-readr r-cran-tidyr r-cran-purrr r-cran-stringr r-cran-writexl \
+            r-cran-ggplot2
       - run: node reference/compare.mjs --random 8
       # What-if tools: the suggested seats (scripts/propose.mjs) on the
       # sample package, both runs in R, and R/compare_runs.R must list the
       # students who move.
-      - name: propose.mjs and compare_runs.R
+      - name: propose.mjs, compare_runs.R and histograms.R
         env:
           LANG: C.UTF-8
           LC_ALL: C.UTF-8
@@ -65,6 +66,11 @@ jobs:
           Rscript ../R/compare_runs.R "$d/prin" "$d/meta" "$d/allages.xlsx" | tee "$d/out.txt"
           grep -qE "^[1-9][0-9]* αλλαγές" "$d/out.txt"
           test -s "$d/allages.xlsx"
+          # Histograms of the places in the declarations (R/histograms.R)
+          Rscript ../R/histograms.R "$d/prin"
+          test -s "$d/prin/results/istogrammata/istogrammata.pdf"
+          test -s "$d/prin/results/istogrammata/istogrammata.xlsx"
+          test -s "$d/prin/results/istogrammata/ebdomada.png"
 
   # The whole year in a real browser on the demo school.
   # Pinned: Playwright 1.56 cannot install Chromium on ubuntu-latest (26.04).
