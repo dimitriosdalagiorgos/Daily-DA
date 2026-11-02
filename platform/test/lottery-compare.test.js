@@ -36,3 +36,16 @@ test("lottery-compare script: one number gives all-or-nothing weeks, aggregates 
   assert.ok(daily.filter((r) => r.noFirstAtAll === 1).length < 10);
   assert.ok(!/ΑΜ \d/.test(text));
 });
+
+test("lottery-compare script: alternating rule and the JSON report hold aggregates only", () => {
+  const files = buildRPackage({ students, clubs, preferences, lottery: new Map([["1", 1], ["2", 2]]), seed: "t" });
+  const { alternating, report } = compareLotteries(files, { runs: 10 });
+  // Two students, order reversed on Tue and Thu: each gets the popular club on some days
+  assert.ok(alternating.every((r) => r.firstEveryDay === 0 && r.noFirstAtAll === 0));
+  assert.deepEqual(Object.keys(report.rules), ["weekly", "daily", "alternating"]);
+  assert.equal(report.rules.weekly.missHistogram.length, 6);
+  assert.equal(report.demand.find((d) => d.code === "10").firstChoice, 2);
+  assert.equal(report.demand.find((d) => d.code === "10").rejected, 1);
+  const json = JSON.stringify(report);
+  assert.ok(!json.includes('"am"') && !/"1"\s*:\s*\{/.test(JSON.stringify(report.rules.weekly.exAnte)));
+});
