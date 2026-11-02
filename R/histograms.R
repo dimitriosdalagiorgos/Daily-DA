@@ -68,6 +68,9 @@ clubs <- read_input(file.path(data_dir, "clubs.csv")) %>%
   mutate(capacity = as.integer(capacity), first_day = sub(";.*$", "", days))
 prefs <- read_input(file.path(data_dir, "preferences.csv")) %>% mutate(rank = as.integer(rank))
 week <- read_input(assignments_file) %>% filter(RegistryNr %in% students$RegistryNr)
+if (nrow(prefs) == 0) {
+  stop("Δεν υπάρχουν δηλώσεις γονέων (το preferences.csv είναι άδειο): δεν υπάρχει τίποτα για ιστογράμματα.")
+}
 
 # ---------- Place of each assignment in the declaration ----------
 
@@ -294,6 +297,10 @@ club_sub <- function(cl) {
 }
 
 dir.create(file.path(output_dir, "omiloi"), showWarnings = FALSE, recursive = TRUE)
+# Images of an earlier run (a club removed or moved to another day) must
+# not stay next to the new ones: remove only the files this script writes.
+unlink(c(list.files(output_dir, pattern = "^(ebdomada|imeres|imera_[a-z]+)\\.png$", full.names = TRUE),
+         list.files(file.path(output_dir, "omiloi"), pattern = "\\.png$", full.names = TRUE)))
 club_plots <- list()
 for (i in seq_len(nrow(club_info))) {
   cl <- club_info[i, ]
@@ -312,7 +319,10 @@ for (d in intersect(DAY_KEYS, club_info$first_day)) {
     left_join(cd %>% transmute(club_code = code,
                                lbl = sprintf("%s\n%d μαθητές / %d θέσεις%s", club_title(cd), enrolled, capacity,
                                              ifelse(grepl(";", days), paste0("\n", day_names), ""))),
-              by = "club_code")
+              by = "club_code") %>%
+    group_by(club_code) %>%
+    mutate(label = ifelse(n > 0, paste0(n, "\n", vapply(n, pct, "", total = sum(n))), "0")) %>%
+    ungroup()
   fc$lbl <- factor(fc$lbl, levels = unique(fc$lbl[order(match(fc$club_code, cd$code))]))
   n_clubs <- nrow(cd)
   ncol <- if (n_clubs <= 4) 2 else 3
@@ -320,12 +330,12 @@ for (d in intersect(DAY_KEYS, club_info$first_day)) {
   charts[[paste0("imera_", day_files[[d]])]] <- list(
     plot = ggplot(fc, aes(x = rank, y = n)) +
       geom_col(fill = BAR, width = 0.78, colour = SURFACE, linewidth = 0.4) +
-      geom_text(aes(label = n, colour = n == 0), vjust = -0.4, size = 2.6) +
+      geom_text(aes(label = label, colour = n == 0), vjust = -0.3, size = 2.4, lineheight = 0.9) +
       facet_wrap(~lbl, ncol = ncol, scales = "free") +
       scale_colour_manual(values = c(`FALSE` = INK, `TRUE` = MUTED), guide = "none") +
       scale_x_continuous(breaks = seq_len(max(fc$rank)), labels = ordinal(seq_len(max(fc$rank))),
                          expand = expansion(add = 0.6)) +
-      scale_y_continuous(expand = expansion(mult = c(0, 0.22)), breaks = function(l) pretty(l, 3)) +
+      scale_y_continuous(expand = expansion(mult = c(0, 0.32)), breaks = function(l) pretty(l, 3)) +
       labs(x = "Θέση του ομίλου στη δήλωση", y = "Μαθητές",
            title = sprintf("%s: οι όμιλοι της ημέρας", day_labels[[d]]),
            subtitle = "Σε ποια επιλογή μπήκαν οι μαθητές κάθε ομίλου. Η κλίμακα των μαθητών διαφέρει από όμιλο σε όμιλο.",
