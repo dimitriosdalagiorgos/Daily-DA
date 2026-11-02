@@ -67,3 +67,29 @@ test("lottery-compare script: perfect-week risk does not depend on which run cam
   assert.equal(bins.reduce((x, b) => x + b.students, 0), 2);
   assert.equal(bins[0].students, 2);
 });
+
+test("lottery-compare script: what the teachers' ⭐ did", () => {
+  // Club 10 (mon, 1 seat): ⭐ for student 2, who has the worse lottery
+  // number; student 1 is turned away, so the ⭐ made the difference.
+  // Club 11 (tue, 1 seat): ⭐ for student 1, who put it 2nd and got club
+  // 21 first. Club 12 (wed): ⭐ for student 3, who made no declaration.
+  const c = [
+    { code: "10", name: "Α", days: ["mon"], grades: ["Α"], capacity: 1 },
+    { code: "20", name: "Β", days: ["mon"], grades: ["Α"], capacity: 5 },
+    { code: "11", name: "Γ", days: ["tue"], grades: ["Α"], capacity: 1 },
+    { code: "21", name: "Δ", days: ["tue"], grades: ["Α"], capacity: 5 },
+    { code: "12", name: "Ε", days: ["wed"], grades: ["Α"], capacity: 2 },
+  ];
+  const st = [{ am: "1", grade: "Α" }, { am: "2", grade: "Α" }, { am: "3", grade: "Α" }];
+  const p = { 1: { mon: ["10", "20"], tue: ["21", "11"] }, 2: { mon: ["10", "20"] } };
+  const files = buildRPackage({ students: st, clubs: c, preferences: p, teacherLists: { 10: ["2"], 11: ["1"], 12: ["3"] },
+    lottery: new Map([["1", 1], ["2", 2], ["3", 3]]), seed: "t" });
+  const { report } = compareLotteries(files, { runs: 2 });
+  const row = (code) => report.demand.find((d) => d.code === code);
+  assert.deepEqual(row("10").star, { placed: 1, decisive: 1, higherChoice: 0, notListed: 0, dropped: 0, noDeclaration: 0, rejected: 0 });
+  assert.equal(row("11").star.higherChoice, 1);
+  assert.equal(row("12").star.noDeclaration, 1);
+  assert.deepEqual(row("21").placedWithoutStar, { contested: 0, uncontested: 1 });
+  assert.equal(report.starTotals.given, 3);
+  assert.equal(report.starTotals.star.decisive, 1);
+});
