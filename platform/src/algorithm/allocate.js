@@ -38,6 +38,9 @@
 //   exclusions:   { [clubCode]: [am, ...] }              students the club does not accept
 //   lottery:      Map<am, number>                        from drawLottery()
 //   mandatoryGrades: ["Α", ...]                          grades placed first
+//   lotteryByDay: { [day]: Map<am, number> }             optional, for analysis only
+//                 (scripts/lottery-compare.mjs): a different lottery number
+//                 each day instead of `lottery`. Not used by the platform or R.
 //   audit:        false → no step-by-step log (`log` stays empty); same result.
 //                 For the capacity suggestion, which reruns the week many times.
 
@@ -159,13 +162,14 @@ function deferredAcceptance(dayClubs, lists, priorityOf, log) {
  *   byStudent: Record<string, Record<string, string|null>>,
  * }}
  */
-export function allocateWeek({ students, clubs, preferences, teacherLists = {}, exclusions = {}, lottery, mandatoryGrades = [], audit = true }) {
+export function allocateWeek({ students, clubs, preferences, teacherLists = {}, exclusions = {}, lottery, lotteryByDay, mandatoryGrades = [], audit = true }) {
   const clubsByCode = indexClubs(clubs);
   const studentsByAm = new Map();
   for (const s of students) {
     const am = String(s.am);
     if (studentsByAm.has(am)) throw new Error(`Διπλός ΑΜ: ${am}`);
     if (!lottery.has(am)) throw new Error(`Ο ΑΜ ${am} δεν έχει αριθμό κλήρωσης.`);
+    if (lotteryByDay && DAYS.some((d) => !lotteryByDay[d]?.has(am))) throw new Error(`Ο ΑΜ ${am} δεν έχει αριθμό κλήρωσης για κάθε ημέρα.`);
     studentsByAm.set(am, { ...s, am });
   }
 
@@ -252,7 +256,7 @@ export function allocateWeek({ students, clubs, preferences, teacherLists = {}, 
       rank,
       group: mandatoryGrades.includes(studentsByAm.get(am).grade) ? 0 : 1,
       teacherPos: teacherPos.get(code)?.get(am) ?? Infinity,
-      lottery: lottery.get(am),
+      lottery: (lotteryByDay?.[day] ?? lottery).get(am),
     });
     const seats = deferredAcceptance(dayClubs, lists, priorityOf, log);
 
