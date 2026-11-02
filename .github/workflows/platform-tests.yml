@@ -42,6 +42,29 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends r-base-core \
             r-cran-dplyr r-cran-readr r-cran-tidyr r-cran-purrr r-cran-stringr r-cran-writexl
       - run: node reference/compare.mjs --random 8
+      # What-if tools: the suggested seats (scripts/propose.mjs) on the
+      # sample package, both runs in R, and R/compare_runs.R must list the
+      # students who move.
+      - name: propose.mjs and compare_runs.R
+        env:
+          LANG: C.UTF-8
+          LC_ALL: C.UTF-8
+        run: |
+          d=$(mktemp -d)
+          node --input-type=module -e '
+            import { writeFileSync, mkdirSync } from "node:fs";
+            import { samplePackage } from "./scripts/build-gyroi.mjs";
+            const dir = process.argv[1];
+            mkdirSync(dir, { recursive: true });
+            for (const [name, content] of Object.entries(samplePackage())) writeFileSync(`${dir}/${name}`, content);
+            writeFileSync(`${dir}/mandatory_grades.csv`, "grade\nΑ\nΒ\nΓ\n");
+          ' "$d/prin"
+          node scripts/propose.mjs "$d/prin" --out "$d/meta"
+          Rscript ../R/run_week.R "$d/prin" > /dev/null
+          Rscript ../R/run_week.R "$d/meta" > /dev/null
+          Rscript ../R/compare_runs.R "$d/prin" "$d/meta" "$d/allages.xlsx" | tee "$d/out.txt"
+          grep -qE "^[1-9][0-9]* αλλαγές" "$d/out.txt"
+          test -s "$d/allages.xlsx"
 
   # The whole year in a real browser on the demo school.
   # Pinned: Playwright 1.56 cannot install Chromium on ubuntu-latest (26.04).
