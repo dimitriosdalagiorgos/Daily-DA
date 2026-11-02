@@ -204,14 +204,19 @@ function exAnte(runs) {
   }
   const rows = [...per.values()].map((list) => {
     const n = runs.length;
+    // A run where the student had no decision counts as no miss.
     const m = list.map((s) => s.misses);
     while (m.length < n) m.push(0);
     const mean = m.reduce((x, y) => x + y, 0) / n;
+    // The number of decisions can vary between runs (a multi-day club won
+    // in some lotteries and not in others), so "a perfect week" is measured
+    // over the runs where the student had 2+ decisions, whichever they are.
+    const several = list.filter((s) => s.decisions >= 2);
     return {
-      several: list[0].decisions >= 2,
+      several: several.length > 0,
       expectedMisses: mean,
       sd: Math.sqrt(m.reduce((x, y) => x + (y - mean) ** 2, 0) / n),
-      pPerfect: list.filter((s) => s.misses === 0).length / n,
+      pPerfect: several.length ? several.filter((s) => s.misses === 0).length / several.length : 0,
       pThreePlus: list.filter((s) => s.misses >= 3).length / n,
       pFourPlus: list.filter((s) => s.misses >= 4).length / n,
     };
