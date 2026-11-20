@@ -35,9 +35,20 @@ fi
 if ! { GIT_TERMINAL_PROMPT=0 git -C "$A" fetch -q --depth 1 origin main && git -C "$A" reset -q --hard FETCH_HEAD; }; then
   echo "✗ Η λήψη απέτυχε. Η πλατφόρμα έμεινε όπως ήταν."; exit 1
 fi
+# Closed outside the declaration period (stopped and disabled, WORKFLOW §7.7):
+# start it only for the check below, then stop it again.
+closed=0
+if ! systemctl is-active --quiet omiloi && [ "$(systemctl is-enabled omiloi 2>/dev/null)" = disabled ]; then
+  closed=1
+fi
+reclose() {
+  [ "$closed" -eq 1 ] || return 0
+  systemctl stop omiloi && echo "✓ Η πλατφόρμα παραμένει κλειστή (άνοιγμα: sudo systemctl enable --now omiloi)"
+}
 systemctl restart omiloi; sleep 3
 if systemctl is-active --quiet omiloi && curl -fs -o /dev/null "http://127.0.0.1:$P/api/public"; then
   echo "✓ Ενημερώθηκε: $(git -C "$A" log -1 --format='%h %ci %s')"
+  reclose
 else
   echo "✗ Η νέα έκδοση δεν ξεκίνησε. Μήνυμα:"; journalctl -u omiloi -n 5 --no-pager -o cat
   git -C "$A" reset -q --hard "$cur"; systemctl restart omiloi; sleep 3
@@ -46,5 +57,6 @@ else
   else
     echo "✗ Ούτε η προηγούμενη έκδοση ξεκίνησε. Δείτε: sudo journalctl -u omiloi -e"
   fi
+  reclose
   exit 1
 fi
