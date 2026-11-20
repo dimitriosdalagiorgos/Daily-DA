@@ -309,6 +309,13 @@ MDomain omiloi.example.gr
    ServerName omiloi.example.gr
    SSLEngine on
    ProxyPreserveHost On
+   # Σελίδα «η πλατφόρμα είναι κλειστή» όταν η πλατφόρμα είναι σταματημένη (WORKFLOW §7.7)
+   ErrorDocument 503 /omiloi-closed.html
+   Alias /omiloi-closed.html /var/www/omiloi/closed.html
+   <Directory /var/www/omiloi>
+      Require all granted
+   </Directory>
+   ProxyPass        /omiloi-closed.html !
    ProxyPass        / http://127.0.0.1:3100/
    ProxyPassReverse / http://127.0.0.1:3100/
    RequestHeader set X-Forwarded-Proto "https"
@@ -320,6 +327,12 @@ MDomain omiloi.example.gr
 - `MDContactEmail`: ένα email επικοινωνίας για το Let's Encrypt (χωρίς αυτό το πιστοποιητικό **δεν** εκδίδεται).
 - `MDRequireHttps temporary`: όποιος ανοίγει `http://` μεταφέρεται στο `https://`. Όταν όλα δουλεύουν για μερικές εβδομάδες, μπορεί να γίνει `permanent`.
 - Οι τρεις πρώτες γραμμές `MD…` ισχύουν για όλο τον Apache. Αν υπάρχουν ήδη σε άλλο αρχείο του μηχανήματος, εδώ αρκεί η γραμμή `MDomain`.
+- Οι γραμμές `ErrorDocument` … `ProxyPass /omiloi-closed.html !` δείχνουν μια ευγενική σελίδα («Η πλατφόρμα δηλώσεων ομίλων είναι κλειστή») όταν η πλατφόρμα δεν τρέχει: εκτός περιόδου δηλώσεων ή για λίγα δευτερόλεπτα σε επανεκκίνηση. Η γραμμή `ProxyPass /omiloi-closed.html !` πρέπει να είναι **πριν** από το `ProxyPass /`. Η σελίδα αντιγράφεται μία φορά (για να την αλλάξετε, αλλάξτε το αντίγραφο στο `/var/www/omiloi/`):
+
+    ```sh
+    sudo install -D -m 644 /opt/omiloi/app/platform/server/closed.html /var/www/omiloi/closed.html
+    ```
+
 - Ένα νέο `VirtualHost` με δικό του `ServerName` δεν επηρεάζει τους υπόλοιπους ιστότοπους του μηχανήματος (π.χ. το Koha). Αν όμως το μηχάνημα δεν είχε ως τώρα HTTPS, δείτε την §6.8.
 
 ```sh

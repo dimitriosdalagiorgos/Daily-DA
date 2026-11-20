@@ -28,8 +28,15 @@ mb()   { echo $(( $1 / 1048576 )); }
 
 echo "Έλεγχος πλατφόρμας ομίλων · $(date '+%d/%m/%Y %H:%M') · VM σε λειτουργία $(uptime -p | sed 's/^up //')"
 
-# Service, restarts and memory
-if systemctl is-active --quiet omiloi; then
+# Service, restarts and memory. Stopped *and* disabled = closed on purpose
+# outside the declaration period (WORKFLOW §7.7), not a failure.
+closed=0
+if ! systemctl is-active --quiet omiloi && [ "$(systemctl is-enabled omiloi 2>/dev/null)" = disabled ]; then
+  closed=1
+fi
+if [ "$closed" -eq 1 ]; then
+  ok "Η πλατφόρμα είναι κλειστή εκτός περιόδου (άνοιγμα: sudo systemctl enable --now omiloi)"
+elif systemctl is-active --quiet omiloi; then
   since=$(systemctl show omiloi -p ActiveEnterTimestamp --value)
   ok "Η πλατφόρμα τρέχει (από $(date -d "$since" '+%d/%m %H:%M' 2>/dev/null || echo "$since"))"
 else
@@ -54,6 +61,16 @@ esac
 # Answers: directly, and through the web server (Apache, or nginx: README §6.5)
 # with the HTTPS certificate
 W=apache2; systemctl is-active --quiet nginx && W=nginx
+if [ "$closed" -eq 1 ]; then
+  # Closed: the web server should answer 503 with the "closed" page
+  if [ -n "$H" ]; then
+    if curl -s -m 10 --resolve "$H:443:127.0.0.1" "https://$H/" | grep -q 'name="omiloi" content="closed"'; then
+      ok "Ο $W δείχνει τη σελίδα «κλειστή»"
+    else
+      warn "Ο $W δεν δείχνει τη σελίδα «κλειστή» (WORKFLOW §7.7, «Μία φορά»)"
+    fi
+  fi
+else
 j=$(curl -fs -m 10 "http://127.0.0.1:$P/api/public")
 if [ -n "$j" ]; then
   ph=$(echo "$j" | sed -n 's/.*"phase":"\([a-z]*\)".*/\1/p')
@@ -71,6 +88,9 @@ if [ -n "$H" ]; then
   else
     fail "Ο $W ή το HTTPS δεν απαντά: sudo systemctl restart $W"
   fi
+fi
+fi
+if [ -n "$H" ]; then
   if command -v openssl >/dev/null; then
     c=$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$H" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | sed 's/^notAfter=//')
     if [ -n "$c" ]; then
